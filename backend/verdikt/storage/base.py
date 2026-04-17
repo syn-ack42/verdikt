@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from verdikt.core.models import MaterialItem, PipelinePhase, Project
+from verdikt.core.models import Chunk, MaterialItem, PipelinePhase, Project
 
 
 class ProjectStore(ABC):
@@ -30,6 +30,20 @@ class MaterialStore(ABC):
 
     @abstractmethod
     def update_phase(self, item_id: str, phase: PipelinePhase) -> None: ...
+
+
+class ChunkStore(ABC):
+    @abstractmethod
+    def save_many(self, chunks: list[Chunk]) -> list[Chunk]: ...
+
+    @abstractmethod
+    def list_by_material(self, material_item_id: str) -> list[Chunk]: ...
+
+    @abstractmethod
+    def list_by_project(self, project_id: str) -> list[Chunk]: ...
+
+    @abstractmethod
+    def update_cluster(self, chunk_id: str, cluster_id: int) -> None: ...
 
 
 class VectorStore(ABC):

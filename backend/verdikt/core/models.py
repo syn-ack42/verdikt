@@ -86,6 +86,22 @@ class Project(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class Chunk(BaseModel):
+    """A rated-sized slice of a MaterialItem. Embedding and clustering operate on chunks."""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    material_item_id: str
+    project_id: str
+    text: str
+    position: int
+    word_count: int
+    cluster_id: Optional[int] = None
+    embedding_model: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class InferenceConfig(BaseModel):
     ollama_model: str = "llama3.1:8b"
     ollama_base_url: str = "http://localhost:11434"
