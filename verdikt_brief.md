@@ -1,0 +1,117 @@
+# Verdikt — Project Brief
+
+## What is this?
+
+Verdikt is an open-source **preference learning platform**. It helps people discover what they actually like — and why — by rating samples of content across configurable dimensions, then using those ratings to automatically evaluate and recommend new material.
+
+The core loop is simple: show the user a representative sample → get a multi-dimensional rating → build a preference model → apply it to unseen material → recommend with explanation.
+
+The insight driving the design: taste is tacit knowledge. People know what they like when they see it, but can't articulate it upfront. Verdikt surfaces that knowledge systematically, without requiring the user to describe their preferences in advance.
+
+## What problem does it solve?
+
+Discovery on content platforms (AO3, fanfiction.net, ebook stores) is broken. Recommendation algorithms optimise for engagement, not match to individual taste. Tag search is blunt. "People who liked X" assumes your taste matches a crowd. None of these tools learn *your* specific preference across multiple independent dimensions.
+
+Verdikt fixes this by being personal, private, and multi-dimensional. Your preference model lives locally. It knows you find a certain writing style tedious even when the subject matter is compelling. It knows you'll tolerate weak prose for the right setting. Recommendations come with reasons, not just scores.
+
+## Design principles
+
+**Privacy first.** Preference data never leaves the user's machine unless they explicitly choose otherwise. No cloud sync by default. The preference profile can be encrypted at rest. This is not negotiable — it's central to the value proposition and the ethical basis for the monetisation model.
+
+**Pluggable everything.** Content sources are plugins. Embedding models are plugins. The rating dimensions are configured per project. The domain (text today, images and audio tomorrow) is an abstraction, not a hardcoded assumption. New sources and new media types should drop in without touching core code.
+
+**Project-scoped isolation.** A "project" is the unit of work. One project might be "dark fantasy fiction", another "food photography". Each has its own corpus, its own rating dimensions, its own preference profile, its own recommendation history. Projects do not share data.
+
+**Earn the automation.** The system starts human-driven (rate this sample) and earns the right to automate (here are 20 recommendations) by accumulating enough signal. It should be honest about its confidence. Early recommendations come with low-confidence flags. This is not a system that pretends to know you from ten ratings.
+
+**Explainability over scores.** Every recommendation includes a breakdown by dimension and a natural-language explanation from the LLM judge. A score of 4.2 is useless. "Strong match on atmosphere and prose style; subject matter is outside your typical range" is actionable.
+
+## Architecture intent
+
+The system has five layers. Each layer has a single responsibility and communicates with adjacent layers through well-defined interfaces.
+
+**Plugin layer** — fetches raw material from the outside world and normalises it into MaterialItems. Plugins know nothing about preference learning. They fetch, parse, and emit. Each plugin declares its configuration schema (JSON Schema); the UI renders config forms automatically from this. Plugins are Python packages installed via entry_points — dropping in a new plugin requires no changes to core code.
+
+**Pipeline layer** — processes MaterialItems through phases: ingest → chunk/embed/cluster → rate → crystallise → evaluate → recommend. Phases are orchestrated by Prefect. Each phase is idempotent where possible. The pipeline layer knows nothing about UI or storage implementation details.
+
+**Storage layer** — SQLite (via SQLAlchemy) for structured data (projects, materials, chunks, ratings, profiles, recommendations). ChromaDB for vector embeddings, one collection per project. Raw files on disk, organised by project. Storage is an abstraction — the pipeline layer calls storage interfaces, not SQLite directly.
+
+**Inference layer** — Ollama running locally for LLM tasks (preference profile crystallisation, LLM judging, explanation generation). sentence-transformers for embeddings. This layer is also abstracted — swapping Ollama for an API-based model should require a config change, not a code change.
+
+**UI layer** — React frontend, FastAPI backend. The UI has three main surfaces: project dashboard (manage projects, view status), rating interface (the core human loop), recommendation browser (browse, filter, act on recommendations). The rating interface is the most important screen in the application — it will be used hundreds of times per project and must be fast, keyboard-navigable, and low-friction.
+
+## The MaterialItem contract
+
+Everything a plugin emits becomes a MaterialItem. This is the universal currency that flows through the entire system. It carries:
+- Identity: uuid, project_id
+- Provenance: source plugin, URL, work title, author, work ID, chapter position within larger work
+- Content: raw bytes or string, domain (text/image/audio), content type
+- Pipeline state: whether chunks and embeddings have been generated
+
+The plugin fills provenance and content. The pipeline fills everything else. This contract must be stable — it is the interface that third-party plugin authors depend on.
+
+## The rating loop in detail
+
+This is the heart of the application. The user is presented with a representative chunk of source material and asked to rate it on N configurable dimensions (typically 4–6). Dimensions are defined per project with a label, description, 1–5 scale, and optional weight.
+
+Chunk selection is intelligent:
+- Early sessions: diversity sampling via clustering (maximise coverage of the material space, avoid rating three chapters from the same book)
+- Later sessions: active learning / uncertainty sampling (present chunks where the current preference model is least confident — these are maximally informative)
+- Always: a skip option with a reason (unrepresentative chunk, too short, etc.)
+
+A session of 20–30 ratings should feel fast. The UI must not get in the way. Keyboard shortcuts for rating. Instant progression to the next chunk. No loading spinners between ratings.
+
+## Profile crystallisation
+
+After sufficient ratings (configurable threshold, suggested minimum ~50), the system crystallises a preference profile. This is a structured JSON document that describes the user's taste across dimensions, derived by an LLM from the rated corpus — weighted by scores. The user reviews and can edit this profile. It becomes the system prompt for the LLM judge.
+
+The profile is human-readable by design. If a user can't recognise themselves in it, it's wrong and they should be able to fix it. It is also versionable — profiles can be snapshotted so the user can see how their taste has evolved.
+
+## Recommendation engine
+
+New candidate material goes through two stages:
+1. Embedding similarity pre-filter: cheap, fast, drops obvious mismatches
+2. LLM judge: scores surviving candidates per dimension against the preference profile, returns structured scores + natural language explanation
+
+Output is a ranked list with per-dimension breakdown and explanation. The user can act on recommendations (mark as read, rate it properly to reinforce the model, link out to source).
+
+## Monetisation and ethics
+
+Verdikt refers users to vendor sites (Amazon, etc.) for material it has recommended. The ethical basis: it only refers people to things they have said, through their own ratings, that they would likely enjoy. It does not sell preference data. It does not reveal taste profiles to vendors. The referral is a pointer to a thing the user wants — the vendor learns only that someone clicked a link, not why.
+
+Preference data stays local and can be encrypted. This is the explicit trade: Verdikt earns referral revenue because users trust that their data is private. Violating that trust destroys the product.
+
+## Domain extensibility
+
+The platform is built text-first but must not be text-only in its architecture. The chunker, embedder, and rating UI display are domain-specific components behind interfaces. An image project uses CLIP embeddings and displays images in the rating UI. An audio project uses a music embedding model and plays clips. Everything from clustering onward is domain-agnostic because it operates on embedding vectors and rating scalars.
+
+This extensibility is a design constraint from day one, not a future refactor.
+
+## Build order and milestones
+
+**Milestone 1 — Core plumbing**
+MaterialItem dataclass and SQLite schema. FileDropPlugin. Phase 1 pipeline (chunk, embed, cluster). No UI yet — CLI or notebook to verify.
+
+**Milestone 2 — The loop works**
+Rating UI (React). Rating storage. Basic profile crystallisation via Ollama. A human can go from file dump → rate samples → see a preference profile.
+
+**Milestone 3 — Plugin architecture proven**
+AO3Plugin implemented. Plugin registry and entry_points system. Config schema → auto-generated UI forms. A third-party developer could write a plugin by reading the interface alone.
+
+**Milestone 4 — Recommendations**
+Embedding pre-filter. LLM judge with profile. Recommendation browser UI. Feedback loop (rating a recommendation reinforces the model).
+
+**Milestone 5 — Production hardening**
+Profile encryption. Project export/import. Confidence indicators. Active learning for chunk selection. Performance with large corpora (10k+ items).
+
+**Milestone 6 — Domain extensibility**
+Image domain support (CLIP embeddings, image display in rating UI). Validates that the domain abstraction actually works.
+
+## What this is not
+
+Verdikt is not a social recommendation system. There is no "users who liked X also liked Y". Taste is personal and the system treats it that way.
+
+Verdikt is not a scraping tool. Plugins that fetch from external sites must respect rate limits, robots.txt, and terms of service. The AO3 plugin in particular must be polite — AO3 is a community resource and the Verdikt community should not be the reason it goes down.
+
+Verdikt is not an AI that tells you what you should like. It learns what you do like and finds more of it. The user's ratings are ground truth. The system has no opinion about whether your taste is good.
+
