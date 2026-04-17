@@ -1,9 +1,26 @@
 from __future__ import annotations
 
 import re
+from abc import ABC, abstractmethod
 
 
-class TextChunker:
+class ChunkerBase(ABC):
+    """Domain-agnostic chunker interface.
+
+    Text, image, and audio domains each provide a concrete implementation.
+    The pipeline runner accepts ChunkerBase — never a concrete type.
+    """
+
+    @abstractmethod
+    def chunk(self, content: str | bytes) -> list[str | bytes]:
+        """Split content into domain-appropriate chunks."""
+
+    @abstractmethod
+    def measure(self, chunk: str | bytes) -> int:
+        """Return the domain-native size of a chunk (words, frames, tiles, etc.)."""
+
+
+class TextChunker(ChunkerBase):
     """Splits text into paragraph-respecting chunks within a word-count window.
 
     Paragraphs are never split unless a single paragraph exceeds max_words,
@@ -16,12 +33,12 @@ class TextChunker:
         self._min = min_words
         self._max = max_words
 
-    def chunk(self, text: str) -> list[str]:
+    def chunk(self, content: str | bytes) -> list[str]:
+        text = content.decode("utf-8") if isinstance(content, bytes) else content
         if not text or not text.strip():
             return []
 
         paragraphs = self._split_paragraphs(text)
-        # Expand any paragraph that exceeds max_words into sentence-level pieces
         expanded: list[str] = []
         for para in paragraphs:
             if self._word_count(para) > self._max:
@@ -47,6 +64,10 @@ class TextChunker:
             chunks.append("\n\n".join(buffer))
 
         return chunks
+
+    def measure(self, chunk: str | bytes) -> int:
+        text = chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk
+        return self._word_count(text)
 
     def _split_oversized(self, para: str) -> list[str]:
         sentences = self._SENTENCE_SPLIT.split(para)

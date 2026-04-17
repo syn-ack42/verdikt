@@ -115,8 +115,8 @@ def pipeline_run(project_id: str) -> None:
             ),
             embedder=SentenceTransformerEmbedder(),
             chunker=TextChunker(
-                min_words=proj.chunk_min_words,
-                max_words=proj.chunk_max_words,
+                min_words=proj.chunk_min_size,
+                max_words=proj.chunk_max_size,
             ),
         )
         result = runner.run(project_id)

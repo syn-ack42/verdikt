@@ -15,8 +15,7 @@ class SQLiteProjectStore(ProjectStore):
         self._s = session
 
     def create(self, project: Project) -> Project:
-        row = self._to_row(project)
-        self._s.add(row)
+        self._s.add(self._to_row(project))
         self._s.flush()
         return project
 
@@ -25,8 +24,7 @@ class SQLiteProjectStore(ProjectStore):
         return self._from_row(row) if row else None
 
     def list_all(self) -> list[Project]:
-        rows = self._s.query(ProjectRow).all()
-        return [self._from_row(r) for r in rows]
+        return [self._from_row(r) for r in self._s.query(ProjectRow).all()]
 
     @staticmethod
     def _to_row(p: Project) -> ProjectRow:
@@ -35,26 +33,23 @@ class SQLiteProjectStore(ProjectStore):
             name=p.name,
             description=p.description,
             domain=p.domain if isinstance(p.domain, str) else p.domain.value,
-            rating_dimensions=json.dumps(
-                [d.model_dump() for d in p.rating_dimensions]
-            ),
-            chunk_min_words=p.chunk_min_words,
-            chunk_max_words=p.chunk_max_words,
+            rating_dimensions=json.dumps([d.model_dump() for d in p.rating_dimensions]),
+            chunk_min_size=p.chunk_min_size,
+            chunk_max_size=p.chunk_max_size,
             crystallisation_threshold=p.crystallisation_threshold,
             created_at=p.created_at,
         )
 
     @staticmethod
     def _from_row(r: ProjectRow) -> Project:
-        dims = [RatingDimension(**d) for d in json.loads(r.rating_dimensions)]
         return Project(
             id=r.id,
             name=r.name,
             description=r.description,
             domain=r.domain,
-            rating_dimensions=dims,
-            chunk_min_words=r.chunk_min_words,
-            chunk_max_words=r.chunk_max_words,
+            rating_dimensions=[RatingDimension(**d) for d in json.loads(r.rating_dimensions)],
+            chunk_min_size=r.chunk_min_size,
+            chunk_max_size=r.chunk_max_size,
             crystallisation_threshold=r.crystallisation_threshold,
             created_at=r.created_at,
         )
@@ -65,8 +60,7 @@ class SQLiteMaterialStore(MaterialStore):
         self._s = session
 
     def save(self, item: MaterialItem) -> MaterialItem:
-        row = self._to_row(item)
-        self._s.add(row)
+        self._s.add(self._to_row(item))
         self._s.flush()
         return item
 
@@ -79,9 +73,7 @@ class SQLiteMaterialStore(MaterialStore):
         project_id: str,
         phase: PipelinePhase | None = None,
     ) -> list[MaterialItem]:
-        q = self._s.query(MaterialItemRow).filter(
-            MaterialItemRow.project_id == project_id
-        )
+        q = self._s.query(MaterialItemRow).filter(MaterialItemRow.project_id == project_id)
         if phase is not None:
             phase_val = phase.value if hasattr(phase, "value") else phase
             q = q.filter(MaterialItemRow.pipeline_phase == phase_val)
@@ -99,11 +91,9 @@ class SQLiteMaterialStore(MaterialStore):
     @staticmethod
     def _to_row(item: MaterialItem) -> MaterialItemRow:
         if isinstance(item.content, bytes):
-            raw = item.content
-            is_bytes = True
+            raw, is_bytes = item.content, True
         else:
-            raw = item.content.encode("utf-8")
-            is_bytes = False
+            raw, is_bytes = item.content.encode("utf-8"), False
         return MaterialItemRow(
             id=item.id,
             project_id=item.project_id,
@@ -112,7 +102,7 @@ class SQLiteMaterialStore(MaterialStore):
             work_title=item.work_title,
             author=item.author,
             work_id=item.work_id,
-            chapter_position=item.chapter_position,
+            sequence_position=item.sequence_position,
             content=raw,
             content_is_bytes=is_bytes,
             domain=item.domain if isinstance(item.domain, str) else item.domain.value,
@@ -132,7 +122,7 @@ class SQLiteMaterialStore(MaterialStore):
             work_title=r.work_title,
             author=r.author,
             work_id=r.work_id,
-            chapter_position=r.chapter_position,
+            sequence_position=r.sequence_position,
             content=content,
             domain=r.domain,
             content_type=r.content_type,
@@ -146,8 +136,7 @@ class SQLiteChunkStore(ChunkStore):
         self._s = session
 
     def save_many(self, chunks: list[Chunk]) -> list[Chunk]:
-        rows = [self._to_row(c) for c in chunks]
-        self._s.add_all(rows)
+        self._s.add_all([self._to_row(c) for c in chunks])
         self._s.flush()
         return chunks
 
@@ -171,21 +160,24 @@ class SQLiteChunkStore(ChunkStore):
 
     def update_cluster(self, chunk_id: str, cluster_id: int) -> None:
         self._s.execute(
-            update(ChunkRow)
-            .where(ChunkRow.id == chunk_id)
-            .values(cluster_id=cluster_id)
+            update(ChunkRow).where(ChunkRow.id == chunk_id).values(cluster_id=cluster_id)
         )
         self._s.flush()
 
     @staticmethod
     def _to_row(c: Chunk) -> ChunkRow:
+        if isinstance(c.content, bytes):
+            raw, is_str = c.content, False
+        else:
+            raw, is_str = c.content.encode("utf-8"), True
         return ChunkRow(
             id=c.id,
             material_item_id=c.material_item_id,
             project_id=c.project_id,
-            text=c.text,
+            content=raw,
+            content_is_str=is_str,
             position=c.position,
-            word_count=c.word_count,
+            size=c.size,
             cluster_id=c.cluster_id,
             embedding_model=c.embedding_model,
             created_at=c.created_at,
@@ -193,13 +185,14 @@ class SQLiteChunkStore(ChunkStore):
 
     @staticmethod
     def _from_row(r: ChunkRow) -> Chunk:
+        content: str | bytes = r.content.decode("utf-8") if r.content_is_str else r.content
         return Chunk(
             id=r.id,
             material_item_id=r.material_item_id,
             project_id=r.project_id,
-            text=r.text,
+            content=content,
             position=r.position,
-            word_count=r.word_count,
+            size=r.size,
             cluster_id=r.cluster_id,
             embedding_model=r.embedding_model,
             created_at=r.created_at,

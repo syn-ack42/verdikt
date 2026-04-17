@@ -142,9 +142,9 @@ def _make_chunk(material_item_id: str = "m1", project_id: str = "p1", position: 
     return Chunk(
         material_item_id=material_item_id,
         project_id=project_id,
-        text="chunk text " * 10,
+        content="chunk text " * 10,
         position=position,
-        word_count=20,
+        size=20,
     )
 
 

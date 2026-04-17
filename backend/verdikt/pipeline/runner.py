@@ -5,7 +5,7 @@ from math import isqrt
 
 from verdikt.core.models import Chunk, PipelinePhase
 from verdikt.inference.base import EmbedderBase
-from verdikt.pipeline.chunker import TextChunker
+from verdikt.pipeline.chunker import ChunkerBase
 from verdikt.storage.base import ChunkStore, MaterialStore, VectorStore
 
 
@@ -36,7 +36,7 @@ class PipelineRunner:
         chunk_store: ChunkStore,
         vector_store: VectorStore,
         embedder: EmbedderBase,
-        chunker: TextChunker,
+        chunker: ChunkerBase,
     ) -> None:
         self._materials = material_store
         self._chunks = chunk_store
@@ -54,17 +54,16 @@ class PipelineRunner:
         items = self._materials.list_by_project(project_id, phase=PipelinePhase.INGESTED)
         total = 0
         for item in items:
-            text = item.content if isinstance(item.content, str) else item.content.decode("utf-8")
-            chunk_texts = self._chunker.chunk(text)
+            chunk_contents = self._chunker.chunk(item.content)
             chunks = [
                 Chunk(
                     material_item_id=item.id,
                     project_id=project_id,
-                    text=t,
+                    content=c,
                     position=i,
-                    word_count=len(t.split()),
+                    size=self._chunker.measure(c),
                 )
-                for i, t in enumerate(chunk_texts)
+                for i, c in enumerate(chunk_contents)
             ]
             if chunks:
                 self._chunks.save_many(chunks)
@@ -81,7 +80,7 @@ class PipelineRunner:
         if not all_chunks:
             return PhaseResult(phase="embed", items_processed=0)
 
-        embeddings = self._embedder.embed([c.text for c in all_chunks])
+        embeddings = self._embedder.embed([c.content for c in all_chunks])
         for chunk, embedding in zip(all_chunks, embeddings):
             self._vectors.upsert(
                 item_id=chunk.id,
@@ -114,7 +113,7 @@ class PipelineRunner:
 
         # Re-embed rather than loading from ChromaDB — ordering from bulk get() is
         # fragile; at M1 scale re-embedding is fast. TODO(M5): load from vector store.
-        embeddings = self._embedder.embed([c.text for c in all_chunks])
+        embeddings = self._embedder.embed([c.content for c in all_chunks])
         n_clusters = max(2, isqrt(len(all_chunks)))
         labels = KMeans(n_clusters=n_clusters, random_state=42, n_init="auto").fit_predict(embeddings)
 

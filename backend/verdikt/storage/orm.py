@@ -18,8 +18,8 @@ class ProjectRow(Base):
     description: Mapped[str | None] = mapped_column(String, nullable=True)
     domain: Mapped[str] = mapped_column(String, nullable=False)
     rating_dimensions: Mapped[str] = mapped_column(Text, nullable=False)  # JSON
-    chunk_min_words: Mapped[int] = mapped_column(Integer, nullable=False)
-    chunk_max_words: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunk_min_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunk_max_size: Mapped[int] = mapped_column(Integer, nullable=False)
     crystallisation_threshold: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -34,7 +34,7 @@ class MaterialItemRow(Base):
     work_title: Mapped[str | None] = mapped_column(String, nullable=True)
     author: Mapped[str | None] = mapped_column(String, nullable=True)
     work_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    chapter_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sequence_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
     content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     content_is_bytes: Mapped[bool] = mapped_column(nullable=False)
     domain: Mapped[str] = mapped_column(String, nullable=False)
@@ -49,9 +49,10 @@ class ChunkRow(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     material_item_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    content_is_str: Mapped[bool] = mapped_column(nullable=False)  # True → decode as UTF-8 on read
     position: Mapped[int] = mapped_column(Integer, nullable=False)
-    word_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
     cluster_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

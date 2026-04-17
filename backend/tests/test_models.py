@@ -9,7 +9,7 @@ from verdikt.core.models import (
 
 
 def test_chunk_defaults():
-    c = Chunk(material_item_id="m1", project_id="p1", text="hello", position=0, word_count=1)
+    c = Chunk(material_item_id="m1", project_id="p1", content="hello", position=0, size=1)
     assert c.id  # UUID generated
     assert c.cluster_id is None
     assert c.embedding_model is None
@@ -31,8 +31,8 @@ def test_project_defaults():
     p = Project(name="test")
     assert p.rating_dimensions == []
     assert p.created_at is not None
-    assert p.chunk_min_words == 600
-    assert p.chunk_max_words == 800
+    assert p.chunk_min_size == 600
+    assert p.chunk_max_size == 800
     assert p.crystallisation_threshold == 50
 
 
