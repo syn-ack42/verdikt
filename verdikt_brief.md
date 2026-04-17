@@ -16,7 +16,7 @@ Verdikt fixes this by being personal, private, and multi-dimensional. Your prefe
 
 ## Design principles
 
-**Privacy first.** Preference data never leaves the user's machine unless they explicitly choose otherwise. No cloud sync by default. The preference profile can be encrypted at rest. This is not negotiable — it's central to the value proposition and the ethical basis for the monetisation model.
+**Privacy first.** Preference data never leaves the user's machine unless they explicitly choose otherwise. No cloud sync by default. The preference profile can be encrypted at rest. This is not negotiable — it's central to the value proposition and the ethical basis for a potential monetisation model.
 
 **Pluggable everything.** Content sources are plugins. Embedding models are plugins. The rating dimensions are configured per project. The domain (text today, images and audio tomorrow) is an abstraction, not a hardcoded assumption. New sources and new media types should drop in without touching core code.
 
@@ -77,9 +77,9 @@ Output is a ranked list with per-dimension breakdown and explanation. The user c
 
 ## Monetisation and ethics
 
-Verdikt refers users to vendor sites (Amazon, etc.) for material it has recommended. The ethical basis: it only refers people to things they have said, through their own ratings, that they would likely enjoy. It does not sell preference data. It does not reveal taste profiles to vendors. The referral is a pointer to a thing the user wants — the vendor learns only that someone clicked a link, not why.
+Verdikt has the innate ability to refer users to vendor sites (Amazon, etc.) for material it has recommended. A service hosting Verdikt can do this in a uniquely ethical and strictly private way. The ethical basis: it only refers people to things they have said, through their own ratings, that they would likely enjoy. It does not sell preference data. It does not reveal taste profiles to vendors. The referral is a pointer to a thing the user wants — the vendor learns only that someone clicked a link, not why.
 
-Preference data stays local and can be encrypted. This is the explicit trade: Verdikt earns referral revenue because users trust that their data is private. Violating that trust destroys the product.
+Preference data stays local and can be encrypted. This is the explicit trade: A Verdikt service can earn referral revenue because users trust that their data is private. Violating that trust destroys the product.
 
 ## Domain extensibility
 

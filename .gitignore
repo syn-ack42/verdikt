@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.env
+.env.*
+dist/
+build/
+*.egg-info/
+.eggs/
+*.egg
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Project data (never commit user content or preference data)
+*.db
+*.sqlite3
+data/
+chroma_db/
+*.verdikt/
+
+# Logs
+*.log
+logs/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+.npm/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+*.swp
+*.swo
+*~
+
+# Claude Code (local settings and AI memory are personal, not project state)
+.claude/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Python compiled extensions
+*.so
+*.pyd
+*.dylib
+
+# Tox / coverage artefacts
+.tox/
+.hypothesis/
+
+# Ollama / model weights (don't commit locally pulled models)
+*.gguf
+*.bin
+models/
+
+# macOS quarantine / resource forks
+__MACOSX/
