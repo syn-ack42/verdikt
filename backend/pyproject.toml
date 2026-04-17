@@ -39,6 +39,10 @@ testpaths = ["tests"]
 markers = [
     "infra: requires running Ollama and ChromaDB (skip with -m 'not infra')",
 ]
+filterwarnings = [
+    "ignore::sklearn.exceptions.ConvergenceWarning",
+    "ignore::FutureWarning:sentence_transformers",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

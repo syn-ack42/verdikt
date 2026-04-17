@@ -8,8 +8,9 @@ pytestmark = pytest.mark.infra
 
 @pytest.fixture
 def store():
+    import uuid
     client = chromadb.EphemeralClient()
-    return ChromaVectorStore(client, "test_collection")
+    return ChromaVectorStore(client, f"test_{uuid.uuid4().hex}")
 
 
 def test_upsert_and_query(store):

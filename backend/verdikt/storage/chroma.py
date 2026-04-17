@@ -7,6 +7,7 @@ from verdikt.storage.base import VectorStore
 
 class ChromaVectorStore(VectorStore):
     def __init__(self, client: chromadb.ClientAPI, collection_name: str) -> None:
+        self._client = client
         self._collection = client.get_or_create_collection(collection_name)
 
     def upsert(self, item_id: str, embedding: list[float], metadata: dict) -> None:
@@ -32,4 +33,4 @@ class ChromaVectorStore(VectorStore):
         ]
 
     def delete_collection(self) -> None:
-        self._collection.client.delete_collection(self._collection.name)
+        self._client.delete_collection(self._collection.name)
