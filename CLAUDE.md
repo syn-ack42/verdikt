@@ -64,6 +64,12 @@ Two-stage: embedding similarity pre-filter (cheap) → LLM judge scoring survivi
 5. Profile encryption + project export/import + confidence indicators + active learning + large corpus performance
 6. Image domain support (CLIP) — validates domain abstraction
 
+## Branch conventions
+
+- **`main`** — stable, milestone-complete. Only receives merges from `develop` when a milestone ships.
+- **`develop`** — integration branch. All feature work lands here; must stay runnable.
+- **`feature/<milestone>-<name>`** — e.g. `feature/m1-chunker`. Branch off `develop`, merge back with a merge commit (no squash).
+
 ## AO3 plugin constraint
 
 The AO3 plugin must respect rate limits, `robots.txt`, and AO3's terms of service. AO3 is a community resource; the plugin must not cause availability problems.
