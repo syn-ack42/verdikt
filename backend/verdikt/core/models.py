@@ -50,6 +50,8 @@ class MaterialItem(BaseModel):
 
     # Provenance — filled by the plugin
     source_plugin: str
+    source_path: Optional[str] = None  # absolute file path; used as identity key for upserts
+    project_seq: Optional[int] = None  # project-scoped sequential number assigned on save
     url: Optional[str] = None
     work_title: Optional[str] = None
     author: Optional[str] = None
@@ -58,6 +60,7 @@ class MaterialItem(BaseModel):
 
     # Content — filled by the plugin
     content: bytes | str
+    content_hash: Optional[str] = None  # SHA-256 hex of raw content; used to detect changes on re-ingest
     domain: Domain
     content_type: ContentType
 

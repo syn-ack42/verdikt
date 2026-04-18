@@ -45,6 +45,10 @@ class MockVectorStore(VectorStore):
     def delete_collection(self) -> None:
         self.upserted.clear()
 
+    def delete_items(self, ids: list[str]) -> None:
+        for id_ in ids:
+            self.upserted.remove(id_) if id_ in self.upserted else None
+
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 

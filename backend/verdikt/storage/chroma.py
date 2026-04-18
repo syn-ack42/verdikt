@@ -34,3 +34,7 @@ class ChromaVectorStore(VectorStore):
 
     def delete_collection(self) -> None:
         self._client.delete_collection(self._collection.name)
+
+    def delete_items(self, ids: list[str]) -> None:
+        if ids:
+            self._collection.delete(ids=ids)

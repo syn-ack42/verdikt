@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import update
+from sqlalchemy import delete as sql_delete, func, select, update
 from sqlalchemy.orm import Session
 
 from verdikt.core.models import Chunk, MaterialItem, PipelinePhase, Project, RatingDimension
@@ -22,6 +22,16 @@ class SQLiteProjectStore(ProjectStore):
     def get(self, project_id: str) -> Project | None:
         row = self._s.get(ProjectRow, project_id)
         return self._from_row(row) if row else None
+
+    def delete(self, project_id: str) -> None:
+        self._s.execute(sql_delete(ProjectRow).where(ProjectRow.id == project_id))
+        self._s.flush()
+
+    def get_by_name(self, name: str) -> list[Project]:
+        rows = self._s.execute(
+            select(ProjectRow).where(ProjectRow.name == name)
+        ).scalars().all()
+        return [self._from_row(r) for r in rows]
 
     def list_all(self) -> list[Project]:
         return [self._from_row(r) for r in self._s.query(ProjectRow).all()]
@@ -60,9 +70,17 @@ class SQLiteMaterialStore(MaterialStore):
         self._s = session
 
     def save(self, item: MaterialItem) -> MaterialItem:
+        item.project_seq = self._next_seq(item.project_id)
         self._s.add(self._to_row(item))
         self._s.flush()
         return item
+
+    def _next_seq(self, project_id: str) -> int:
+        result = self._s.execute(
+            select(func.max(MaterialItemRow.project_seq))
+            .where(MaterialItemRow.project_id == project_id)
+        ).scalar()
+        return (result or 0) + 1
 
     def get(self, item_id: str) -> MaterialItem | None:
         row = self._s.get(MaterialItemRow, item_id)
@@ -73,7 +91,11 @@ class SQLiteMaterialStore(MaterialStore):
         project_id: str,
         phase: PipelinePhase | None = None,
     ) -> list[MaterialItem]:
-        q = self._s.query(MaterialItemRow).filter(MaterialItemRow.project_id == project_id)
+        q = (
+            self._s.query(MaterialItemRow)
+            .filter(MaterialItemRow.project_id == project_id)
+            .order_by(MaterialItemRow.project_seq)
+        )
         if phase is not None:
             phase_val = phase.value if hasattr(phase, "value") else phase
             q = q.filter(MaterialItemRow.pipeline_phase == phase_val)
@@ -88,6 +110,55 @@ class SQLiteMaterialStore(MaterialStore):
         )
         self._s.flush()
 
+    def get_by_seq(self, project_id: str, seq: int) -> MaterialItem | None:
+        row = self._s.execute(
+            select(MaterialItemRow).where(
+                MaterialItemRow.project_id == project_id,
+                MaterialItemRow.project_seq == seq,
+            )
+        ).scalar_one_or_none()
+        return self._from_row(row) if row else None
+
+    def get_by_source_path(self, project_id: str, source_path: str) -> MaterialItem | None:
+        row = self._s.execute(
+            select(MaterialItemRow).where(
+                MaterialItemRow.project_id == project_id,
+                MaterialItemRow.source_path == source_path,
+            )
+        ).scalar_one_or_none()
+        return self._from_row(row) if row else None
+
+    def delete(self, item_id: str) -> None:
+        self._s.execute(sql_delete(MaterialItemRow).where(MaterialItemRow.id == item_id))
+        self._s.flush()
+
+    def get_by_source(self, project_id: str, source_plugin: str, source_path: str) -> MaterialItem | None:
+        row = self._s.execute(
+            select(MaterialItemRow).where(
+                MaterialItemRow.project_id == project_id,
+                MaterialItemRow.source_plugin == source_plugin,
+                MaterialItemRow.source_path == source_path,
+            )
+        ).scalar_one_or_none()
+        return self._from_row(row) if row else None
+
+    def update_content(self, item_id: str, content: bytes | str, content_hash: str | None) -> None:
+        if isinstance(content, bytes):
+            raw, is_bytes = content, True
+        else:
+            raw, is_bytes = content.encode("utf-8"), False
+        self._s.execute(
+            update(MaterialItemRow)
+            .where(MaterialItemRow.id == item_id)
+            .values(
+                content=raw,
+                content_is_bytes=is_bytes,
+                content_hash=content_hash,
+                pipeline_phase=PipelinePhase.INGESTED.value,
+            )
+        )
+        self._s.flush()
+
     @staticmethod
     def _to_row(item: MaterialItem) -> MaterialItemRow:
         if isinstance(item.content, bytes):
@@ -98,6 +169,9 @@ class SQLiteMaterialStore(MaterialStore):
             id=item.id,
             project_id=item.project_id,
             source_plugin=item.source_plugin,
+            source_path=item.source_path,
+            project_seq=item.project_seq,
+            content_hash=item.content_hash,
             url=item.url,
             work_title=item.work_title,
             author=item.author,
@@ -118,6 +192,9 @@ class SQLiteMaterialStore(MaterialStore):
             id=r.id,
             project_id=r.project_id,
             source_plugin=r.source_plugin,
+            source_path=r.source_path,
+            project_seq=r.project_seq,
+            content_hash=r.content_hash,
             url=r.url,
             work_title=r.work_title,
             author=r.author,
@@ -162,6 +239,10 @@ class SQLiteChunkStore(ChunkStore):
         self._s.execute(
             update(ChunkRow).where(ChunkRow.id == chunk_id).values(cluster_id=cluster_id)
         )
+        self._s.flush()
+
+    def delete_by_material(self, material_item_id: str) -> None:
+        self._s.execute(sql_delete(ChunkRow).where(ChunkRow.material_item_id == material_item_id))
         self._s.flush()
 
     @staticmethod

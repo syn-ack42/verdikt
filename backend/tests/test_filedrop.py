@@ -99,6 +99,38 @@ def test_fetch_pdf_via_mock(tmp_path):
     assert "PDF page text" in items[0].content
 
 
+def test_recursive_traversal(tmp_path):
+    subdir = tmp_path / "sub"
+    subdir.mkdir()
+    (subdir / "nested.txt").write_text("Nested content here.", encoding="utf-8")
+    (tmp_path / "top.txt").write_text("Top level content.", encoding="utf-8")
+    items = list(FileDropPlugin(str(tmp_path)).fetch("proj1"))
+    assert len(items) == 2
+
+
+def test_source_path_is_absolute(tmp_path):
+    (tmp_path / "book.txt").write_text("Some content.", encoding="utf-8")
+    items = list(FileDropPlugin(str(tmp_path)).fetch("proj1"))
+    from pathlib import Path as _Path
+    assert _Path(items[0].source_path).is_absolute()
+
+
+def test_content_hash_is_sha256(tmp_path):
+    (tmp_path / "book.txt").write_text("Some content.", encoding="utf-8")
+    items = list(FileDropPlugin(str(tmp_path)).fetch("proj1"))
+    assert items[0].content_hash is not None
+    assert len(items[0].content_hash) == 64
+
+
+def test_parse_error_skipped_with_warning(tmp_path, capsys):
+    (tmp_path / "bad.pdf").write_bytes(b"not a pdf at all")
+    (tmp_path / "good.txt").write_text("Good content.", encoding="utf-8")
+    with patch("verdikt.plugins.filedrop.FileDropPlugin._parse_pdf", side_effect=ValueError("corrupt")):
+        items = list(FileDropPlugin(str(tmp_path)).fetch("proj1"))
+    assert len(items) == 1
+    assert "WARNING" in capsys.readouterr().err
+
+
 def test_fetch_epub_via_mock(tmp_path):
     epub_path = tmp_path / "book.epub"
     epub_path.write_bytes(b"PK fake epub")

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -43,18 +45,27 @@ class FileDropPlugin(PluginBase):
         }
 
     def fetch(self, project_id: str) -> Iterator[MaterialItem]:
-        for file_path in sorted(self.path.iterdir()):
-            if not file_path.is_file():
-                continue
+        all_files = sorted(
+            p for p in self.path.rglob("*")
+            if p.is_file() and p.suffix.lower() in self.SUPPORTED_EXTENSIONS
+        )
+        for file_path in all_files:
             ext = file_path.suffix.lower()
-            if ext not in self.SUPPORTED_EXTENSIONS:
+            try:
+                text = self._extract_text(file_path)
+            except Exception as exc:
+                print(f"WARNING: skipping {file_path.name} — {exc}", file=sys.stderr)
                 continue
-            text = self._extract_text(file_path)
             if not text or not text.strip():
                 continue
+            raw_bytes = text.encode("utf-8") if isinstance(text, str) else text
+            content_hash = hashlib.sha256(raw_bytes).hexdigest()
+            source_path = str(file_path.resolve())
             yield MaterialItem(
                 project_id=project_id,
                 source_plugin=self.plugin_name,
+                source_path=source_path,
+                content_hash=content_hash,
                 url=file_path.as_uri(),
                 work_title=file_path.stem,
                 content=text,
@@ -104,7 +115,7 @@ class FileDropPlugin(PluginBase):
     def _parse_pdf(path: Path) -> str:
         from pypdf import PdfReader
 
-        reader = PdfReader(str(path))
+        reader = PdfReader(str(path), strict=False)
         parts: list[str] = []
         for page in reader.pages:
             text = page.extract_text()

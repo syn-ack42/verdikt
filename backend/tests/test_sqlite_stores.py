@@ -185,3 +185,89 @@ def test_chunk_save_many_returns_correct_count(session):
     chunks = [_make_chunk(position=i) for i in range(5)]
     result = SQLiteChunkStore(session).save_many(chunks)
     assert len(result) == 5
+
+
+# ── ProjectStore.get_by_name / delete ────────────────────────────────────────
+
+def test_project_get_by_name_found(session):
+    store = SQLiteProjectStore(session)
+    proj = Project(name="FindMe")
+    store.create(proj)
+    session.flush()
+    results = store.get_by_name("FindMe")
+    assert len(results) == 1
+    assert results[0].id == proj.id
+
+
+def test_project_get_by_name_not_found(session):
+    assert SQLiteProjectStore(session).get_by_name("nope") == []
+
+
+def test_project_get_by_name_multiple(session):
+    store = SQLiteProjectStore(session)
+    store.create(Project(name="Dup"))
+    store.create(Project(name="Dup"))
+    session.flush()
+    assert len(store.get_by_name("Dup")) == 2
+
+
+def test_project_delete(session):
+    store = SQLiteProjectStore(session)
+    proj = Project(name="ToDelete")
+    store.create(proj)
+    session.flush()
+    store.delete(proj.id)
+    session.flush()
+    assert store.get(proj.id) is None
+
+
+# ── MaterialStore project_seq / get_by_seq ────────────────────────────────────
+
+def test_project_seq_auto_assigned(session):
+    store = SQLiteMaterialStore(session)
+    item1 = _make_item()
+    item2 = _make_item()
+    store.save(item1)
+    store.save(item2)
+    session.flush()
+    assert item1.project_seq == 1
+    assert item2.project_seq == 2
+
+
+def test_project_seq_independent_per_project(session):
+    store = SQLiteMaterialStore(session)
+    store.save(_make_item(project_id="p1"))
+    store.save(_make_item(project_id="p2"))
+    store.save(_make_item(project_id="p1"))
+    session.flush()
+    p1 = store.list_by_project("p1")
+    p2 = store.list_by_project("p2")
+    assert [i.project_seq for i in p1] == [1, 2]
+    assert [i.project_seq for i in p2] == [1]
+
+
+def test_get_by_seq_found(session):
+    store = SQLiteMaterialStore(session)
+    item = _make_item()
+    store.save(item)
+    session.flush()
+    result = store.get_by_seq("p1", 1)
+    assert result is not None
+    assert result.id == item.id
+
+
+def test_get_by_seq_not_found(session):
+    assert SQLiteMaterialStore(session).get_by_seq("p1", 99) is None
+
+
+def test_update_content_resets_phase(session):
+    store = SQLiteMaterialStore(session)
+    item = _make_item()
+    store.save(item)
+    store.update_phase(item.id, PipelinePhase.CLUSTERED)
+    store.update_content(item.id, "new content", "newhash")
+    session.flush()
+    result = store.get(item.id)
+    assert result.pipeline_phase == "ingested"
+    assert result.content == "new content"
+    assert result.content_hash == "newhash"
