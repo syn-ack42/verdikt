@@ -50,14 +50,17 @@ class MaterialItem(BaseModel):
 
     # Provenance — filled by the plugin
     source_plugin: str
+    source_path: Optional[str] = None  # absolute file path; used as identity key for upserts
+    project_seq: Optional[int] = None  # project-scoped sequential number assigned on save
     url: Optional[str] = None
     work_title: Optional[str] = None
     author: Optional[str] = None
     work_id: Optional[str] = None
-    chapter_position: Optional[int] = None
+    sequence_position: Optional[int] = None  # position within a larger work (chapter, track, etc.)
 
     # Content — filled by the plugin
     content: bytes | str
+    content_hash: Optional[str] = None  # SHA-256 hex of raw content; used to detect changes on re-ingest
     domain: Domain
     content_type: ContentType
 
@@ -80,9 +83,25 @@ class Project(BaseModel):
     description: Optional[str] = None
     domain: Domain = Domain.TEXT
     rating_dimensions: list[RatingDimension] = Field(default_factory=list)
-    chunk_min_words: int = 600
-    chunk_max_words: int = 800
+    chunk_min_size: int = 600   # domain-native units: words for text, seconds for audio, etc.
+    chunk_max_size: int = 800
     crystallisation_threshold: int = 50
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class Chunk(BaseModel):
+    """A rated-sized slice of a MaterialItem. Embedding and clustering operate on chunks."""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    material_item_id: str
+    project_id: str
+    content: bytes | str        # str for text domains, bytes for image/audio
+    position: int
+    size: int                   # domain-native units (words, frames, etc.)
+    cluster_id: Optional[int] = None
+    embedding_model: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

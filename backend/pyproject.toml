@@ -1,13 +1,12 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "verdikt"
 version = "0.1.0"
 description = "A local-first preference learning platform"
-readme = "../README.md"
-license = {file = "../LICENSE"}
+license = {text = "Apache-2.0"}
 requires-python = ">=3.11"
 dependencies = [
     "sqlalchemy>=2.0",
@@ -26,18 +25,23 @@ dependencies = [
     "click>=8.1",
     "ollama>=0.2",
     "numpy>=1.26",
+    "scikit-learn>=1.4",
 ]
 
 [project.scripts]
 verdikt = "verdikt.cli:app"
 
-[project.entry_points."verdikt.plugins"]
+[project.entry-points."verdikt.plugins"]
 filedrop = "verdikt.plugins.filedrop:FileDropPlugin"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
     "infra: requires running Ollama and ChromaDB (skip with -m 'not infra')",
+]
+filterwarnings = [
+    "ignore::sklearn.exceptions.ConvergenceWarning",
+    "ignore::FutureWarning:sentence_transformers",
 ]
 
 [tool.setuptools.packages.find]
