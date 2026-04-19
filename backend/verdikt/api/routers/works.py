@@ -300,6 +300,50 @@ def update_from_plugin(
     return {"updated": updated, "unchanged": unchanged}
 
 
+@router.get("/{work_ref}/detail")
+def get_work_detail(
+    project_id: str,
+    work_ref: str,
+    session: Session = Depends(get_session),
+    backend: StorageBackend = Depends(get_storage),
+) -> dict:
+    proj = _get_project_or_404(project_id, session)
+    mat_store = SQLiteMaterialStore(session)
+
+    if work_ref.isdigit():
+        item = mat_store.get_by_seq(proj.id, int(work_ref))
+    else:
+        item = mat_store.get_by_source_path(proj.id, work_ref)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Work not found")
+
+    content: str | None = None
+    if isinstance(item.content, bytes):
+        try:
+            content = item.content.decode("utf-8", errors="replace")
+        except Exception:
+            content = None
+    else:
+        content = item.content
+
+    # For filedrop, convert absolute fs path to storage-relative path if possible
+    storage_path: str | None = None
+    if item.source_plugin == "filedrop" and item.source_path:
+        try:
+            storage_root = backend.resolve("/")
+            abs_path = Path(item.source_path)
+            rel = abs_path.relative_to(storage_root)
+            storage_path = "/" + str(rel).replace("\\", "/")
+        except (ValueError, Exception):
+            pass
+
+    return {
+        **_work_response(item),
+        "content": content,
+        "storage_path": storage_path,
+    }
+
+
 @router.delete("/{work_ref}", status_code=204)
 def delete_work(
     project_id: str,

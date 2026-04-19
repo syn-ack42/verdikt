@@ -1,6 +1,6 @@
 import type {
   IngestResult, MaterialItem, NextChunkResponse, PipelineResult, PipelineStreamEvent,
-  PluginConfig, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, Rating, StorageListing, UpdateResult,
+  PluginConfig, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, Rating, StorageListing, UpdateResult, WorkDetail,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api'
@@ -32,6 +32,8 @@ export const api = {
       req<MaterialItem[]>('GET', `/projects/${projectId}/works${phase ? `?phase=${phase}` : ''}`),
     ingest: (projectId: string, storagePaths: string[]) =>
       req<IngestResult>('POST', `/projects/${projectId}/works/ingest`, { storage_paths: storagePaths }),
+    detail: (projectId: string, ref: string) =>
+      req<WorkDetail>('GET', `/projects/${projectId}/works/${encodeURIComponent(ref)}/detail`),
     delete: (projectId: string, ref: string) =>
       req<void>('DELETE', `/projects/${projectId}/works/${encodeURIComponent(ref)}`),
     getPluginConfig: (projectId: string) =>
@@ -121,6 +123,7 @@ export const api = {
       req<PreferenceProfile>('PUT', `/projects/${projectId}/profile`, body),
   },
   storage: {
+    downloadUrl: (path: string) => `${BASE}/storage/download?path=${encodeURIComponent(path)}`,
     list: (path = '/') => req<StorageListing>('GET', `/storage?path=${encodeURIComponent(path)}`),
     mkdir: (path: string) => req<{ path: string }>('POST', `/storage/mkdir?path=${encodeURIComponent(path)}`),
     delete: (path: string) => req<void>('DELETE', `/storage?path=${encodeURIComponent(path)}`),

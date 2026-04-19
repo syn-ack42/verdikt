@@ -5,6 +5,7 @@ import { api } from '../api/client'
 import StorageBrowser from '../components/StorageBrowser'
 import ProjectSettingsDialog from '../components/ProjectSettingsDialog'
 import PluginIngestDialog from '../components/PluginIngestDialog'
+import WorkDetailModal from '../components/WorkDetailModal'
 import type { IngestResult, PipelineStreamEvent } from '../api/types'
 
 type PhaseStatus = 'waiting' | 'running' | 'done' | 'error'
@@ -45,6 +46,7 @@ export default function ProjectDashboard() {
   const [showStorage, setShowStorage] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showPluginIngest, setShowPluginIngest] = useState(false)
+  const [detailWorkRef, setDetailWorkRef] = useState<string | number | null>(null)
   const [lastIngest, setLastIngest] = useState<IngestResult | null>(null)
   const [lastIngestError, setLastIngestError] = useState<string | null>(null)
   const [lastPluginIngest, setLastPluginIngest] = useState<IngestResult | null>(null)
@@ -226,6 +228,7 @@ export default function ProjectDashboard() {
             <th style={{ padding: '4px 8px' }}>Phase</th>
             <th style={{ padding: '4px 8px' }}>Ingested</th>
             <th style={{ padding: '4px 8px' }}></th>
+            <th style={{ padding: '4px 8px' }}></th>
           </tr>
         </thead>
         <tbody>
@@ -246,8 +249,16 @@ export default function ProjectDashboard() {
               <td style={{ padding: '4px 8px', color: '#888' }}>{w.ingested_at.slice(0, 10)}</td>
               <td style={{ padding: '4px 8px' }}>
                 <button
+                  onClick={() => setDetailWorkRef(w.project_seq ?? w.id)}
+                  style={{ color: '#6b7de0', fontSize: 11, background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  Details
+                </button>
+              </td>
+              <td style={{ padding: '4px 8px' }}>
+                <button
                   onClick={() => confirm('Remove this work? Associated ratings will also be deleted.') && removeWork.mutate(String(w.project_seq))}
-                  style={{ color: '#c00', fontSize: 11 }}
+                  style={{ color: '#c00', fontSize: 11, background: 'none', border: 'none', cursor: 'pointer' }}
                 >
                   Remove
                 </button>
@@ -283,6 +294,14 @@ export default function ProjectDashboard() {
             setLastPluginIngest(result)
             qc.invalidateQueries({ queryKey: ['works', projectId] })
           }}
+        />
+      )}
+
+      {detailWorkRef !== null && (
+        <WorkDetailModal
+          projectId={projectId!}
+          workRef={detailWorkRef}
+          onClose={() => setDetailWorkRef(null)}
         />
       )}
     </div>

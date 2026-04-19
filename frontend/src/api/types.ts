@@ -131,6 +131,11 @@ export interface UpdateResult {
   unchanged: number
 }
 
+export interface WorkDetail extends MaterialItem {
+  content: string | null
+  storage_path: string | null
+}
+
 export type PluginIngestEvent =
   | { work: string; status: 'added' | 'updated' | 'unchanged'; added: number; updated: number; skipped: number }
   | { complete: true; added: number; updated: number; skipped: number }
