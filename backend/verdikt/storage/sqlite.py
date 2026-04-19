@@ -5,9 +5,12 @@ import json
 from sqlalchemy import delete as sql_delete, func, select, update
 from sqlalchemy.orm import Session
 
-from verdikt.core.models import Chunk, MaterialItem, PipelinePhase, Project, RatingDimension
-from verdikt.storage.base import ChunkStore, MaterialStore, ProjectStore
-from verdikt.storage.orm import ChunkRow, MaterialItemRow, ProjectRow
+from verdikt.core.models import (
+    Chunk, DimensionProfile, MaterialItem, PipelinePhase,
+    PreferenceProfile, Project, Rating, RatingDimension,
+)
+from verdikt.storage.base import ChunkStore, MaterialStore, ProfileStore, ProjectStore, RatingStore
+from verdikt.storage.orm import ChunkRow, MaterialItemRow, PreferenceProfileRow, ProjectRow, RatingRow
 
 
 class SQLiteProjectStore(ProjectStore):
@@ -276,5 +279,131 @@ class SQLiteChunkStore(ChunkStore):
             size=r.size,
             cluster_id=r.cluster_id,
             embedding_model=r.embedding_model,
+            created_at=r.created_at,
+        )
+
+
+class SQLiteRatingStore(RatingStore):
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def save(self, rating: Rating) -> Rating:
+        self._s.add(self._to_row(rating))
+        self._s.flush()
+        return rating
+
+    def get(self, rating_id: str) -> Rating | None:
+        row = self._s.get(RatingRow, rating_id)
+        return self._from_row(row) if row else None
+
+    def list_by_project(self, project_id: str) -> list[Rating]:
+        rows = self._s.execute(
+            select(RatingRow).where(RatingRow.project_id == project_id)
+        ).scalars().all()
+        return [self._from_row(r) for r in rows]
+
+    def list_by_chunk(self, chunk_id: str) -> list[Rating]:
+        rows = self._s.execute(
+            select(RatingRow).where(RatingRow.chunk_id == chunk_id)
+        ).scalars().all()
+        return [self._from_row(r) for r in rows]
+
+    def count_by_project(self, project_id: str) -> int:
+        return self._s.execute(
+            select(func.count()).select_from(RatingRow).where(RatingRow.project_id == project_id)
+        ).scalar() or 0
+
+    def delete_by_material(self, material_item_id: str) -> None:
+        self._s.execute(
+            sql_delete(RatingRow).where(RatingRow.material_item_id == material_item_id)
+        )
+        self._s.flush()
+
+    @staticmethod
+    def _to_row(r: Rating) -> RatingRow:
+        return RatingRow(
+            id=r.id,
+            project_id=r.project_id,
+            chunk_id=r.chunk_id,
+            material_item_id=r.material_item_id,
+            dimension_scores=json.dumps(r.dimension_scores),
+            skipped=r.skipped,
+            skip_reason=r.skip_reason,
+            rated_at=r.rated_at,
+        )
+
+    @staticmethod
+    def _from_row(r: RatingRow) -> Rating:
+        return Rating(
+            id=r.id,
+            project_id=r.project_id,
+            chunk_id=r.chunk_id,
+            material_item_id=r.material_item_id,
+            dimension_scores=json.loads(r.dimension_scores),
+            skipped=r.skipped,
+            skip_reason=r.skip_reason,
+            rated_at=r.rated_at,
+        )
+
+
+class SQLiteProfileStore(ProfileStore):
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def save(self, profile: PreferenceProfile) -> PreferenceProfile:
+        self._s.add(self._to_row(profile))
+        self._s.flush()
+        return profile
+
+    def get_latest(self, project_id: str) -> PreferenceProfile | None:
+        row = self._s.execute(
+            select(PreferenceProfileRow)
+            .where(PreferenceProfileRow.project_id == project_id)
+            .order_by(PreferenceProfileRow.version.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        return self._from_row(row) if row else None
+
+    def list_versions(self, project_id: str) -> list[PreferenceProfile]:
+        rows = self._s.execute(
+            select(PreferenceProfileRow)
+            .where(PreferenceProfileRow.project_id == project_id)
+            .order_by(PreferenceProfileRow.version.desc())
+        ).scalars().all()
+        return [self._from_row(r) for r in rows]
+
+    def update(self, profile: PreferenceProfile) -> PreferenceProfile:
+        self._s.execute(
+            update(PreferenceProfileRow)
+            .where(PreferenceProfileRow.id == profile.id)
+            .values(
+                dimensions_json=json.dumps([d.model_dump() for d in profile.dimensions]),
+                overall_summary=profile.overall_summary,
+            )
+        )
+        self._s.flush()
+        return profile
+
+    @staticmethod
+    def _to_row(p: PreferenceProfile) -> PreferenceProfileRow:
+        return PreferenceProfileRow(
+            id=p.id,
+            project_id=p.project_id,
+            version=p.version,
+            dimensions_json=json.dumps([d.model_dump() for d in p.dimensions]),
+            overall_summary=p.overall_summary,
+            rating_count=p.rating_count,
+            created_at=p.created_at,
+        )
+
+    @staticmethod
+    def _from_row(r: PreferenceProfileRow) -> PreferenceProfile:
+        return PreferenceProfile(
+            id=r.id,
+            project_id=r.project_id,
+            version=r.version,
+            dimensions=[DimensionProfile(**d) for d in json.loads(r.dimensions_json)],
+            overall_summary=r.overall_summary,
+            rating_count=r.rating_count,
             created_at=r.created_at,
         )
