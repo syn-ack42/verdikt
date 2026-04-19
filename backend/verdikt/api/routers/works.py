@@ -12,7 +12,7 @@ from verdikt.core.models import Domain, MaterialItem, PipelinePhase
 from verdikt.plugins.filedrop import FileDropPlugin, _EXT_TO_CONTENT_TYPE
 from verdikt.storage.chroma import ChromaVectorStore
 from verdikt.storage.files import StorageBackend
-from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteMaterialStore, SQLiteProjectStore
+from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteMaterialStore, SQLiteProjectStore, SQLiteRatingStore
 
 import chromadb as _chromadb
 
@@ -135,6 +135,7 @@ def delete_work(
     vector_store = ChromaVectorStore(chroma, f"project_{proj.id}")
     chunks = chunk_store.list_by_material(item.id)
     vector_store.delete_items([c.id for c in chunks])
+    SQLiteRatingStore(session).delete_by_material(item.id)
     chunk_store.delete_by_material(item.id)
     mat_store.delete(item.id)
     session.commit()

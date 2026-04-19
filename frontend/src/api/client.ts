@@ -1,5 +1,5 @@
 import type {
-  IngestResult, MaterialItem, NextChunkResponse, PipelineResult,
+  IngestResult, MaterialItem, NextChunkResponse, PipelineResult, PipelineStreamEvent,
   PreferenceProfile, Project, Rating, StorageListing,
 } from './types'
 
@@ -24,7 +24,7 @@ export const api = {
     list: () => req<Project[]>('GET', '/projects'),
     get: (id: string) => req<Project>('GET', `/projects/${id}`),
     create: (body: Partial<Project>) => req<Project>('POST', '/projects', body),
-    update: (id: string, body: Partial<Project>) => req<Project>('PUT', `/projects/${id}`, body),
+    update: (id: string, body: Partial<Project> & { dimension_renames?: Record<string, string> }) => req<Project>('PUT', `/projects/${id}`, body),
     delete: (id: string) => req<void>('DELETE', `/projects/${id}`),
   },
   works: {
@@ -37,6 +37,28 @@ export const api = {
   },
   pipeline: {
     run: (projectId: string) => req<PipelineResult>('POST', `/projects/${projectId}/pipeline/run`),
+    runStream: async (projectId: string, onEvent: (e: PipelineStreamEvent) => void): Promise<void> => {
+      const res = await fetch(`${BASE}/projects/${projectId}/pipeline/run/stream`, { method: 'POST' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }))
+        throw Object.assign(new Error(err.detail ?? res.statusText), { status: res.status })
+      }
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()!
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try { onEvent(JSON.parse(line.slice(6))) } catch { /* skip malformed */ }
+          }
+        }
+      }
+    },
   },
   ratings: {
     next: (projectId: string) => req<NextChunkResponse>('GET', `/projects/${projectId}/ratings/next`),

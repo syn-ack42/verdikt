@@ -15,6 +15,7 @@ _EXT_TO_CONTENT_TYPE: dict[str, ContentType] = {
     ".htm": ContentType.HTML,
     ".epub": ContentType.EPUB,
     ".pdf": ContentType.PDF,
+    ".rtf": ContentType.RTF,
 }
 
 
@@ -114,6 +115,8 @@ class FileDropPlugin(PluginBase):
             return self._parse_epub(path)
         if ext == ".pdf":
             return self._parse_pdf(path)
+        if ext == ".rtf":
+            return self._parse_rtf(path)
         raise ValueError(f"Unsupported extension: {ext}")
 
     @staticmethod
@@ -151,3 +154,10 @@ class FileDropPlugin(PluginBase):
             if text:
                 parts.append(text)
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _parse_rtf(path: Path) -> str:
+        from striprtf.striprtf import rtf_to_text
+
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        return rtf_to_text(raw)

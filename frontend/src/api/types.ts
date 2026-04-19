@@ -37,6 +37,12 @@ export interface PipelineResult {
   phases: { phase: string; items_processed: number }[]
 }
 
+export type PipelineStreamEvent =
+  | { phase: string; status: 'running' }
+  | { phase: string; status: 'done'; items_processed: number }
+  | { phase: string; status: 'error'; error: string }
+  | { complete: true; total_processed: number }
+
 export interface ChunkInfo {
   id: string
   content: string | null

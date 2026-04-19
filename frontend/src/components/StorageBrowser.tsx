@@ -3,9 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { StorageEntry } from '../api/types'
 
+import type { IngestResult } from '../api/types'
+
 interface Props {
   onIngest: (paths: string[]) => void
   ingesting: boolean
+  ingestResult?: IngestResult | null
+  ingestError?: string | null
   onClose: () => void
 }
 
@@ -49,7 +53,7 @@ function Breadcrumbs({ path, onNavigate }: { path: string; onNavigate: (p: strin
   )
 }
 
-export default function StorageBrowser({ onIngest, ingesting, onClose }: Props) {
+export default function StorageBrowser({ onIngest, ingesting, ingestResult, ingestError, onClose }: Props) {
   const qc = useQueryClient()
   const [currentPath, setCurrentPath] = useState('/')
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -126,7 +130,7 @@ export default function StorageBrowser({ onIngest, ingesting, onClose }: Props) 
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div style={{
-        background: '#fff', borderRadius: 10, width: 680, maxHeight: '80vh',
+        background: '#fff', color: '#1a1a1a', borderRadius: 10, width: 680, maxHeight: '80vh',
         display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
         overflow: 'hidden',
       }}>
@@ -264,29 +268,38 @@ export default function StorageBrowser({ onIngest, ingesting, onClose }: Props) 
         </div>
 
         {/* Footer */}
-        <div style={{
-          padding: '12px 20px', borderTop: '1px solid #e0e0e0',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        }}>
-          <span style={{ fontSize: 13, color: '#888' }}>
-            {selected.size > 0 ? `${selected.size} selected` : 'Select files or folders to ingest'}
-          </span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={onClose} style={{ padding: '6px 14px', border: '1px solid #ddd', borderRadius: 4, cursor: 'pointer' }}>
-              Cancel
-            </button>
-            <button
-              onClick={() => onIngest(Array.from(selected))}
-              disabled={selected.size === 0 || ingesting}
-              style={{
-                padding: '6px 16px',
-                background: selected.size > 0 ? '#6b7de0' : '#ccc',
-                color: '#fff', border: 'none', borderRadius: 4,
-                cursor: selected.size > 0 ? 'pointer' : 'default',
-              }}
-            >
-              {ingesting ? 'Ingesting…' : `Ingest ${selected.size > 0 ? selected.size + ' item' + (selected.size > 1 ? 's' : '') : ''}`}
-            </button>
+        <div style={{ padding: '12px 20px', borderTop: '1px solid #e0e0e0' }}>
+          {ingestError && (
+            <p style={{ margin: '0 0 8px', fontSize: 13, color: '#c00' }}>{ingestError}</p>
+          )}
+          {ingestResult && ingestResult.added + ingestResult.updated === 0 && (
+            <p style={{ margin: '0 0 8px', fontSize: 13, color: '#b45309' }}>
+              {ingestResult.skipped > 0
+                ? `${ingestResult.skipped} file${ingestResult.skipped > 1 ? 's' : ''} already ingested — nothing changed.`
+                : 'No supported files found. Supported formats: .txt, .md, .html, .epub, .pdf, .rtf'}
+            </p>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, color: '#888' }}>
+              {selected.size > 0 ? `${selected.size} selected` : 'Select files or folders to ingest'}
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={onClose} style={{ padding: '6px 14px', border: '1px solid #ddd', borderRadius: 4, cursor: 'pointer' }}>
+                {ingestResult && ingestResult.added + ingestResult.updated === 0 ? 'Close' : 'Cancel'}
+              </button>
+              <button
+                onClick={() => onIngest(Array.from(selected))}
+                disabled={selected.size === 0 || ingesting}
+                style={{
+                  padding: '6px 16px',
+                  background: selected.size > 0 ? '#6b7de0' : '#ccc',
+                  color: '#fff', border: 'none', borderRadius: 4,
+                  cursor: selected.size > 0 ? 'pointer' : 'default',
+                }}
+              >
+                {ingesting ? 'Ingesting…' : `Ingest ${selected.size > 0 ? selected.size + ' item' + (selected.size > 1 ? 's' : '') : ''}`}
+              </button>
+            </div>
           </div>
         </div>
       </div>

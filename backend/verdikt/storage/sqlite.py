@@ -313,6 +313,12 @@ class SQLiteRatingStore(RatingStore):
             select(func.count()).select_from(RatingRow).where(RatingRow.project_id == project_id)
         ).scalar() or 0
 
+    def delete_by_material(self, material_item_id: str) -> None:
+        self._s.execute(
+            sql_delete(RatingRow).where(RatingRow.material_item_id == material_item_id)
+        )
+        self._s.flush()
+
     @staticmethod
     def _to_row(r: Rating) -> RatingRow:
         return RatingRow(

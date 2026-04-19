@@ -111,6 +111,9 @@ class RatingStore(ABC):
     @abstractmethod
     def count_by_project(self, project_id: str) -> int: ...
 
+    @abstractmethod
+    def delete_by_material(self, material_item_id: str) -> None: ...
+
 
 class ProfileStore(ABC):
     @abstractmethod

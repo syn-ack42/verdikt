@@ -85,12 +85,23 @@ def crystallise_profile(
         ollama_base_url=config.inference.ollama_base_url,
         model=config.inference.ollama_model,
     )
-    profile = crystalliser.crystallise(
-        project=proj,
-        ratings=ratings,
-        chunks_by_id=chunks_by_id,
-        current_version=current_version,
-    )
+    try:
+        profile = crystalliser.crystallise(
+            project=proj,
+            ratings=ratings,
+            chunks_by_id=chunks_by_id,
+            current_version=current_version,
+        )
+    except Exception as exc:
+        import httpx as _httpx
+        if isinstance(exc, _httpx.ConnectError):
+            raise HTTPException(
+                status_code=503,
+                detail=f"Cannot reach Ollama at {config.inference.ollama_base_url}. Is it running?",
+            )
+        if isinstance(exc, _httpx.HTTPStatusError):
+            raise HTTPException(status_code=502, detail=f"Ollama error: {exc.response.text[:200]}")
+        raise HTTPException(status_code=500, detail=f"Crystallisation failed: {exc}")
     profile_store.save(profile)
     session.commit()
     return _profile_response(profile)

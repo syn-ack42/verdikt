@@ -20,6 +20,7 @@ class ContentType(str, Enum):
     MARKDOWN = "text/markdown"
     EPUB = "application/epub+zip"
     PDF = "application/pdf"
+    RTF = "application/rtf"
     JPEG = "image/jpeg"
     PNG = "image/png"
     MP3 = "audio/mpeg"

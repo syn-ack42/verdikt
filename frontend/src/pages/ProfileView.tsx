@@ -1,8 +1,55 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { DimensionProfile } from '../api/types'
+
+const CRYSTALLISE_MESSAGES = [
+  'Analysing your ratings…',
+  'Building dimension profiles…',
+  'Comparing high and low scores…',
+  'Synthesising your preferences…',
+  'Generating dimension summaries…',
+  'Writing overall profile…',
+  'Almost there…',
+]
+
+function CrystalliseProgress() {
+  const [pos, setPos] = useState(0)
+  const [msgIndex, setMsgIndex] = useState(0)
+  const msgTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const bar = setInterval(() => setPos(p => (p + 0.004) % 1), 16)
+    const scheduleNext = (idx: number) => {
+      const delay = 2500 + Math.random() * 1500
+      msgTimer.current = setTimeout(() => {
+        const next = (idx + 1) % CRYSTALLISE_MESSAGES.length
+        setMsgIndex(next)
+        scheduleNext(next)
+      }, delay)
+    }
+    scheduleNext(0)
+    return () => {
+      clearInterval(bar)
+      if (msgTimer.current) clearTimeout(msgTimer.current)
+    }
+  }, [])
+
+  const translateX = -100 + pos * 400
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ height: 3, background: '#e8eaff', borderRadius: 2, overflow: 'hidden', marginBottom: 10 }}>
+        <div style={{
+          height: '100%', width: '25%', background: '#6b7de0', borderRadius: 2,
+          transform: `translateX(${translateX}%)`,
+        }} />
+      </div>
+      <p style={{ margin: 0, fontSize: 13, color: '#6b7de0' }}>{CRYSTALLISE_MESSAGES[msgIndex]}</p>
+    </div>
+  )
+}
 
 export default function ProfileView() {
   const { projectId } = useParams<{ projectId: string }>()!
@@ -81,14 +128,21 @@ export default function ProfileView() {
             disabled={crystallise.isPending}
             style={{ background: '#6b7de0', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 4 }}
           >
-            {crystallise.isPending ? 'Crystallising…' : 'Re-crystallise'}
+            {crystallise.isPending ? 'Crystallising…' : profile ? 'Re-crystallise' : 'Crystallise'}
           </button>
         </div>
       </div>
 
       {crystallise.error && (
-        <p style={{ color: '#c00' }}>{String((crystallise.error as any)?.message ?? crystallise.error)}</p>
+        <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 6, padding: '10px 14px', marginBottom: 16 }}>
+          <strong style={{ color: '#c00', fontSize: 13 }}>Crystallisation failed</strong>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#700' }}>
+            {(crystallise.error as any)?.message ?? String(crystallise.error)}
+          </p>
+        </div>
       )}
+
+      {crystallise.isPending && <CrystalliseProgress />}
 
       {!profile && !crystallise.isPending && (
         <div style={{ textAlign: 'center', padding: 48, color: '#888' }}>

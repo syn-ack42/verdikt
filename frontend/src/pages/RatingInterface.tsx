@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import RatingSlider from '../components/RatingSlider'
@@ -163,11 +163,3 @@ export default function RatingInterface() {
   )
 }
 
-function Link({ to, children }: { to: string; children: React.ReactNode }) {
-  const navigate = useNavigate()
-  return (
-    <button onClick={() => navigate(to)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7de0', padding: 0 }}>
-      {children}
-    </button>
-  )
-}

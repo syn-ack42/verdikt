@@ -28,6 +28,7 @@ class ProjectUpdate(BaseModel):
     chunk_min_size: int | None = None
     chunk_max_size: int | None = None
     crystallisation_threshold: int | None = None
+    dimension_renames: dict[str, str] | None = None  # old_name -> new_name
 
 
 def _project_response(p: Project) -> dict:
@@ -109,8 +110,18 @@ def update_project(
     if values:
         session.execute(sql_update(ProjectRow).where(ProjectRow.id == project_id).values(**values))
         session.flush()
-        session.commit()
 
+    if body.dimension_renames:
+        from verdikt.storage.orm import RatingRow
+        rows = session.query(RatingRow).filter(RatingRow.project_id == project_id).all()
+        for row in rows:
+            scores: dict = json.loads(row.dimension_scores)
+            new_scores = {body.dimension_renames.get(k, k): v for k, v in scores.items()}
+            if new_scores != scores:
+                row.dimension_scores = json.dumps(new_scores)
+        session.flush()
+
+    session.commit()
     proj = store.get(project_id)
     return _project_response(proj)
 

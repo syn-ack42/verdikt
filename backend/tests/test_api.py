@@ -201,3 +201,66 @@ def test_crystallise_below_threshold_422(client, project_id, clustered_chunk):
     })
     resp = client.post(f"/api/projects/{project_id}/profile/crystallise")
     assert resp.status_code == 422
+
+
+# ── Work deletion cascade ─────────────────────────────────────────────────────
+
+@pytest.fixture
+def work_with_rating(client, project_id, mem_engine):
+    """Insert a material item, a chunk, and a rating for that chunk."""
+    from verdikt.core.models import Chunk, Rating
+    from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteRatingStore
+
+    with Session(mem_engine) as s:
+        chunk = Chunk(
+            project_id=project_id,
+            material_item_id="mat_cascade",
+            content="Some text.",
+            position=0,
+            size=2,
+            cluster_id=0,
+        )
+        SQLiteChunkStore(s).save_many([chunk])
+
+        rating = Rating(
+            project_id=project_id,
+            chunk_id=chunk.id,
+            material_item_id="mat_cascade",
+            dimension_scores={"Prose": 4.0},
+        )
+        SQLiteRatingStore(s).save(rating)
+
+        # Insert a minimal material item row so the delete endpoint can find it
+        from verdikt.storage.orm import MaterialItemRow
+        from datetime import datetime, timezone
+        s.add(MaterialItemRow(
+            id="mat_cascade",
+            project_id=project_id,
+            project_seq=99,
+            source_plugin="filedrop",
+            source_path="/fake/path.txt",
+            content=b"Some text.",
+            content_is_bytes=False,
+            domain="text",
+            content_type="text/plain",
+            pipeline_phase="ingested",
+            ingested_at=datetime.now(timezone.utc),
+        ))
+        s.commit()
+    return chunk, rating
+
+
+def test_delete_work_removes_ratings(client, project_id, work_with_rating):
+    chunk, rating = work_with_rating
+
+    # Confirm rating exists
+    resp = client.get(f"/api/projects/{project_id}/ratings")
+    assert any(r["id"] == rating.id for r in resp.json())
+
+    # Delete the work by sequence number
+    resp = client.delete(f"/api/projects/{project_id}/works/99")
+    assert resp.status_code == 204
+
+    # Rating must be gone
+    resp = client.get(f"/api/projects/{project_id}/ratings")
+    assert not any(r["id"] == rating.id for r in resp.json())
