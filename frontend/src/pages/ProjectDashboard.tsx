@@ -2,11 +2,14 @@ import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
+import StorageBrowser from '../components/StorageBrowser'
+import type { IngestResult } from '../api/types'
 
 export default function ProjectDashboard() {
   const { projectId } = useParams<{ projectId: string }>()!
   const qc = useQueryClient()
-  const [ingestPath, setIngestPath] = useState('')
+  const [showStorage, setShowStorage] = useState(false)
+  const [lastIngest, setLastIngest] = useState<IngestResult | null>(null)
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['projects', projectId],
@@ -26,10 +29,11 @@ export default function ProjectDashboard() {
   })
 
   const ingest = useMutation({
-    mutationFn: () => api.works.ingest(projectId!, ingestPath),
-    onSuccess: () => {
+    mutationFn: (paths: string[]) => api.works.ingest(projectId!, paths),
+    onSuccess: (result) => {
+      setLastIngest(result)
       qc.invalidateQueries({ queryKey: ['works', projectId] })
-      setIngestPath('')
+      setShowStorage(false)
     },
   })
 
@@ -44,9 +48,6 @@ export default function ProjectDashboard() {
   })
 
   if (isLoading || !project) return <p>Loading…</p>
-
-  const phaseCounts: Record<string, number> = {}
-  works?.forEach(w => { phaseCounts[w.pipeline_phase] = (phaseCounts[w.pipeline_phase] ?? 0) + 1 })
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: 24 }}>
@@ -77,33 +78,26 @@ export default function ProjectDashboard() {
         </div>
       </div>
 
-      <div style={{ marginBottom: 24 }}>
-        <h3>Ingest Files</h3>
-        <form onSubmit={e => { e.preventDefault(); ingest.mutate() }} style={{ display: 'flex', gap: 8 }}>
-          <input
-            placeholder="Absolute directory path"
-            value={ingestPath}
-            onChange={e => setIngestPath(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <button type="submit" disabled={ingest.isPending || !ingestPath}>
-            {ingest.isPending ? 'Ingesting…' : 'Ingest'}
-          </button>
-        </form>
-        {ingest.data && (
-          <p style={{ color: '#390', fontSize: 13 }}>
-            Added: {ingest.data.added}, Updated: {ingest.data.updated}, Unchanged: {ingest.data.skipped}
-          </p>
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button
+          onClick={() => { setLastIngest(null); setShowStorage(true) }}
+          style={{ padding: '8px 18px', background: '#6b7de0', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}
+        >
+          Browse &amp; Ingest Files
+        </button>
+        {lastIngest && (
+          <span style={{ fontSize: 13, color: '#390' }}>
+            Added {lastIngest.added}, updated {lastIngest.updated}, unchanged {lastIngest.skipped}
+          </span>
         )}
-        {ingest.error && <p style={{ color: '#c00' }}>{String(ingest.error)}</p>}
+        {ingest.error && (
+          <span style={{ fontSize: 13, color: '#c00' }}>{String(ingest.error)}</span>
+        )}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h3 style={{ margin: 0 }}>Works</h3>
-        <button
-          onClick={() => runPipeline.mutate()}
-          disabled={runPipeline.isPending}
-        >
+        <button onClick={() => runPipeline.mutate()} disabled={runPipeline.isPending}>
           {runPipeline.isPending ? 'Running pipeline…' : 'Run Pipeline'}
         </button>
       </div>
@@ -132,9 +126,7 @@ export default function ProjectDashboard() {
               <td style={{ padding: '4px 8px' }}>
                 <span style={{
                   background: w.pipeline_phase === 'clustered' ? '#e8f5e9' : '#fff8e1',
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                  fontSize: 11,
+                  padding: '2px 6px', borderRadius: 4, fontSize: 11,
                 }}>
                   {w.pipeline_phase}
                 </span>
@@ -152,6 +144,14 @@ export default function ProjectDashboard() {
           ))}
         </tbody>
       </table>
+
+      {showStorage && (
+        <StorageBrowser
+          onIngest={paths => ingest.mutate(paths)}
+          ingesting={ingest.isPending}
+          onClose={() => setShowStorage(false)}
+        />
+      )}
     </div>
   )
 }

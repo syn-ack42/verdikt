@@ -77,6 +77,25 @@ export interface DimensionProfile {
   typical_score: number
 }
 
+export interface StorageEntry {
+  name: string
+  path: string
+  is_dir: boolean
+  size: number
+  modified_at: string
+}
+
+export interface StorageListing {
+  path: string
+  entries: StorageEntry[]
+}
+
+export interface IngestResult {
+  added: number
+  updated: number
+  skipped: number
+}
+
 export interface PreferenceProfile {
   id: string
   project_id: string

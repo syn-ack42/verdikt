@@ -1,6 +1,6 @@
 import type {
-  MaterialItem, NextChunkResponse, PipelineResult,
-  PreferenceProfile, Project, Rating,
+  IngestResult, MaterialItem, NextChunkResponse, PipelineResult,
+  PreferenceProfile, Project, Rating, StorageListing,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api'
@@ -30,8 +30,8 @@ export const api = {
   works: {
     list: (projectId: string, phase?: string) =>
       req<MaterialItem[]>('GET', `/projects/${projectId}/works${phase ? `?phase=${phase}` : ''}`),
-    ingest: (projectId: string, path: string) =>
-      req<{ added: number; updated: number; skipped: number }>('POST', `/projects/${projectId}/works/ingest`, { path }),
+    ingest: (projectId: string, storagePaths: string[]) =>
+      req<IngestResult>('POST', `/projects/${projectId}/works/ingest`, { storage_paths: storagePaths }),
     delete: (projectId: string, ref: string) =>
       req<void>('DELETE', `/projects/${projectId}/works/${encodeURIComponent(ref)}`),
   },
@@ -55,5 +55,23 @@ export const api = {
     crystallise: (projectId: string) => req<PreferenceProfile>('POST', `/projects/${projectId}/profile/crystallise`),
     update: (projectId: string, body: Partial<PreferenceProfile>) =>
       req<PreferenceProfile>('PUT', `/projects/${projectId}/profile`, body),
+  },
+  storage: {
+    list: (path = '/') => req<StorageListing>('GET', `/storage?path=${encodeURIComponent(path)}`),
+    mkdir: (path: string) => req<{ path: string }>('POST', `/storage/mkdir?path=${encodeURIComponent(path)}`),
+    delete: (path: string) => req<void>('DELETE', `/storage?path=${encodeURIComponent(path)}`),
+    upload: async (path: string, files: FileList | File[]): Promise<{ uploaded: string[]; path: string }> => {
+      const form = new FormData()
+      form.append('path', path)
+      for (const file of Array.from(files)) {
+        form.append('files', file, file.name)
+      }
+      const res = await fetch(`${BASE}/storage/upload`, { method: 'POST', body: form })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }))
+        throw Object.assign(new Error(err.detail ?? res.statusText), { status: res.status })
+      }
+      return res.json()
+    },
   },
 }

@@ -31,7 +31,12 @@ class AppConfig(BaseSettings):
     def project_materials_path(self, project_id: str) -> Path:
         return self.projects_path / project_id / "materials"
 
+    @property
+    def user_files_path(self) -> Path:
+        return self.data_dir / "user_files"
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.chroma_path.mkdir(parents=True, exist_ok=True)
         self.projects_path.mkdir(parents=True, exist_ok=True)
+        self.user_files_path.mkdir(parents=True, exist_ok=True)

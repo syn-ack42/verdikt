@@ -7,10 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_config, get_session
+from verdikt.api.deps import get_config, get_session, get_storage
 from verdikt.core.models import Domain, MaterialItem, PipelinePhase
 from verdikt.plugins.filedrop import FileDropPlugin, _EXT_TO_CONTENT_TYPE
 from verdikt.storage.chroma import ChromaVectorStore
+from verdikt.storage.files import StorageBackend
 from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteMaterialStore, SQLiteProjectStore
 
 import chromadb as _chromadb
@@ -55,25 +56,26 @@ def list_works(
 
 
 class IngestRequest(BaseModel):
-    path: str
+    storage_paths: list[str]  # storage-relative paths (files or directories)
 
 
-@router.post("/ingest", status_code=201)
-def ingest_path(
+def _ingest_fs_path(
+    fs_path: Path,
     project_id: str,
-    body: IngestRequest,
-    session: Session = Depends(get_session),
-) -> dict:
-    proj = _get_project_or_404(project_id, session)
-    ingest_path = Path(body.path).resolve()
-    if not ingest_path.is_dir():
-        raise HTTPException(status_code=422, detail=f"Directory not found: {ingest_path}")
-
-    store = SQLiteMaterialStore(session)
+    store: SQLiteMaterialStore,
+) -> tuple[int, int, int]:
+    """Ingest a single resolved filesystem path (file or directory). Returns (added, updated, skipped)."""
     added = updated = skipped = 0
-    for item in FileDropPlugin(str(ingest_path)).fetch(proj.id):
+    if fs_path.is_dir():
+        items = FileDropPlugin(str(fs_path)).fetch(project_id)
+    elif fs_path.is_file() and fs_path.suffix.lower() in FileDropPlugin.SUPPORTED_EXTENSIONS:
+        items = FileDropPlugin._fetch_single_file(fs_path, project_id)
+    else:
+        return 0, 0, 0
+
+    for item in items:
         existing = (
-            store.get_by_source(proj.id, item.source_plugin, item.source_path)
+            store.get_by_source(project_id, item.source_plugin, item.source_path)
             if item.source_path else None
         )
         if existing is None:
@@ -84,8 +86,31 @@ def ingest_path(
             updated += 1
         else:
             skipped += 1
+    return added, updated, skipped
+
+
+@router.post("/ingest", status_code=201)
+def ingest_from_storage(
+    project_id: str,
+    body: IngestRequest,
+    session: Session = Depends(get_session),
+    backend: StorageBackend = Depends(get_storage),
+) -> dict:
+    proj = _get_project_or_404(project_id, session)
+    store = SQLiteMaterialStore(session)
+    total_added = total_updated = total_skipped = 0
+
+    for storage_path in body.storage_paths:
+        if not backend.exists(storage_path):
+            raise HTTPException(status_code=422, detail=f"Storage path not found: {storage_path}")
+        fs_path = backend.resolve(storage_path)
+        a, u, s = _ingest_fs_path(fs_path, proj.id, store)
+        total_added += a
+        total_updated += u
+        total_skipped += s
+
     session.commit()
-    return {"added": added, "updated": updated, "skipped": skipped}
+    return {"added": total_added, "updated": total_updated, "skipped": total_skipped}
 
 
 @router.delete("/{work_ref}", status_code=204)

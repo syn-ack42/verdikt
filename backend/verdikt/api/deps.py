@@ -10,6 +10,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from verdikt.core.config import AppConfig
+from verdikt.storage.files import LocalStorageBackend, StorageBackend
 from verdikt.storage.orm import Base
 
 
@@ -35,3 +36,8 @@ def get_session(engine: Engine = Depends(get_engine)) -> Generator[Session, None
 def get_chroma_client() -> chromadb.ClientAPI:
     config = get_config()
     return chromadb.PersistentClient(path=str(config.chroma_path))
+
+
+def get_storage() -> StorageBackend:
+    config = get_config()
+    return LocalStorageBackend(config.user_files_path)

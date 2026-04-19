@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from verdikt.api.routers import pipeline, profile, projects, rating, works
+from verdikt.api.routers import pipeline, profile, projects, rating, storage, works
 from verdikt.core.config import AppConfig
 
 
@@ -27,6 +27,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(pipeline.router)
     app.include_router(rating.router)
     app.include_router(profile.router)
+    app.include_router(storage.router)
     return app
 
 
