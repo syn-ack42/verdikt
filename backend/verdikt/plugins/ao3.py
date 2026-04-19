@@ -73,11 +73,12 @@ class AO3Plugin(PluginBase):
                     "title": "AO3 Password",
                     "format": "password",
                 },
-                "search_url": {
-                    "type": "string",
-                    "title": "Search URL",
-                    "format": "uri",
-                    "description": "Full AO3 search URL (paste from browser address bar)",
+                "search_urls": {
+                    "type": "array",
+                    "title": "Search URLs",
+                    "items": {"type": "string", "format": "uri"},
+                    "default": [],
+                    "description": "AO3 search URLs (paste from browser — one per query)",
                 },
                 "work_urls": {
                     "type": "array",
@@ -243,9 +244,13 @@ class AO3Plugin(PluginBase):
         max_works: int = min(int(self._config.get("max_works", 20)), 100)
         work_ids: list[str] = []
 
-        search_url = self._config.get("search_url", "").strip()
-        if search_url:
-            work_ids.extend(self._get_work_ids_from_search(search_url, max_works))
+        for search_url in self._config.get("search_urls", []):
+            search_url = search_url.strip()
+            if search_url:
+                remaining = max_works - len(work_ids)
+                if remaining <= 0:
+                    break
+                work_ids.extend(self._get_work_ids_from_search(search_url, remaining))
 
         for wu in self._config.get("work_urls", []):
             wid = self._extract_work_id(wu)

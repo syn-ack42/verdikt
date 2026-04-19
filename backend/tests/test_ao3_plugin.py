@@ -186,7 +186,7 @@ def test_extract_work_id():
 def test_fetch_deduplicates_work_ids():
     plugin = AO3Plugin({
         "username": "u", "password": "p",
-        "search_url": "https://archiveofourown.org/works/search?q=test",
+        "search_urls": ["https://archiveofourown.org/works/search?q=test"],
         "work_urls": ["https://archiveofourown.org/works/12345"],
         "max_works": 10,
     })
