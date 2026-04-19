@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from verdikt.core.models import Domain, Project
+from verdikt.core.models import Domain, Project, RatingDimension
 from verdikt.storage.orm import Base
 
 
@@ -30,6 +30,19 @@ def session(engine):
 @pytest.fixture
 def sample_project() -> Project:
     return Project(name="Test Project", domain=Domain.TEXT)
+
+
+@pytest.fixture
+def sample_project_with_dims() -> Project:
+    return Project(
+        name="Test Project With Dims",
+        domain=Domain.TEXT,
+        rating_dimensions=[
+            RatingDimension(name="Prose Quality", description="Clarity and style", weight=1.0),
+            RatingDimension(name="Pacing", description="Narrative flow", weight=1.0),
+        ],
+        crystallisation_threshold=2,
+    )
 
 
 @pytest.fixture

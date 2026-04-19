@@ -4,16 +4,17 @@ A local-first, open-source preference learning platform. Rate content samples ac
 
 ## How it works
 
-1. **Ingest** — point Verdikt at local files or connect a content source plugin
-2. **Rate** — score representative chunks on dimensions you define (prose quality, atmosphere, pacing, etc.)
-3. **Crystallise** — after ~50 ratings, the system derives a structured preference profile via a local LLM
-4. **Recommend** — new material is scored against your profile; every recommendation includes a breakdown by dimension
+1. **Ingest** — upload files or drop them directly into the storage directory; select what to ingest via the browser
+2. **Pipeline** — Verdikt chunks, embeds, and clusters your content automatically
+3. **Rate** — score representative chunks on dimensions you define (prose quality, atmosphere, pacing, etc.) using keyboard shortcuts for speed
+4. **Crystallise** — once you have enough ratings, a local LLM synthesises a structured preference profile
+5. **Recommend** — new material is scored against your profile with a per-dimension breakdown *(coming in Milestone 4)*
 
 ## Requirements
 
 - Python 3.11+
-- Node 18+ (frontend, Milestone 2+)
-- [Ollama](https://ollama.com) with `llama3.1:8b` pulled
+- Node 18+
+- [Ollama](https://ollama.com) running locally with a model pulled, e.g.:
 
 ```bash
 ollama pull llama3.1:8b
@@ -27,65 +28,102 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e backend/
 ```
 
-## CLI (Milestone 1)
+## Running the web UI
+
+```bash
+# Terminal 1 — API server (default port 8765)
+verdikt serve --reload
+
+# Terminal 2 — frontend dev server
+cd frontend && npm install && npm run dev
+```
+
+Open `http://localhost:5173`.
+
+### Typical workflow
+
+1. Create a project — give it a name and configure rating dimensions (or keep the defaults)
+2. Click **Browse & Ingest Files** to upload files and select what to ingest
+3. Click **Run Pipeline** on the dashboard — watch chunk / embed / cluster progress live
+4. Click **Rate Chunks** and score passages with the keyboard
+5. Once the dashboard shows enough ratings, open **Profile** and click **Crystallise**
+
+### Rating keyboard shortcuts
+
+| Key | Action |
+|---|---|
+| `1`–`5` | Score the active dimension |
+| `Tab` / `→` | Next dimension |
+| `Shift+Tab` / `←` | Previous dimension |
+| `Enter` | Submit (all dimensions must be scored) |
+| `s` | Skip this chunk |
+
+## File storage
+
+Files for ingest are managed in `~/.verdikt/user_files/`. Two ways to add files:
+
+- **Upload via the UI** — click "Browse & Ingest Files" on any project dashboard, then "Upload files"
+- **Drop files directly** — copy files into `~/.verdikt/user_files/` (or a subdirectory); they appear in the browser immediately
+
+**Supported formats:** `.txt`, `.md`, `.html`, `.epub`, `.pdf`, `.rtf`
+
+The storage root is configurable via `VERDIKT_DATA_DIR` (defaults to `~/.verdikt`). The abstraction is designed to support remote backends such as S3 in a future release.
+
+## Project settings
+
+Each project has independently configurable:
+
+- **Name and description**
+- **Rating dimensions** — name, description, and weight; dimensions with existing ratings show a warning if you change their meaning
+- **Crystallisation threshold** — minimum non-skipped ratings required before crystallisation
+- **Chunk size** — min/max word count per chunk (affects pipeline output)
+
+When a dimension is renamed, all existing ratings are migrated to the new name automatically.
+
+## Configuration
+
+All configuration is via environment variables (prefix `VERDIKT_`):
+
+| Variable | Default | Description |
+|---|---|---|
+| `VERDIKT_DATA_DIR` | `~/.verdikt` | Root data directory |
+| `VERDIKT_ROOT_PATH` | *(empty)* | ASGI subpath prefix (e.g. `/verdikt`) |
+| `VERDIKT_CORS_ORIGINS` | `http://localhost:5173` | Allowed CORS origins |
+| `VERDIKT_INFERENCE__OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API URL |
+| `VERDIKT_INFERENCE__OLLAMA_MODEL` | `llama3.1:8b` | Model used for crystallisation |
+| `VERDIKT_INFERENCE__EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Sentence-transformers model |
+
+## CLI reference
+
+The CLI is useful for bulk operations and scripting. All project arguments accept either the UUID or the project name.
 
 ### Projects
 
-All commands accept either the project UUID or its name. If two projects share a name, use the UUID.
-
 ```bash
-# Create a project
 verdikt project create "dark-fantasy" --description "Dark fantasy fiction" --domain text
-
-# List all projects
 verdikt project list
-
-# Show project details (work count, chunk count, phase breakdown, settings)
 verdikt project show "dark-fantasy"
-
-# List works — each work has a project-local sequence number (#1, #2, ...)
 verdikt project works "dark-fantasy"
-verdikt project works "dark-fantasy" --phase clustered   # filter by pipeline phase
-
-# Delete a project and all its data (prompts for confirmation)
-verdikt project delete "dark-fantasy"
-verdikt project delete "dark-fantasy" --yes              # skip prompt
+verdikt project works "dark-fantasy" --phase clustered
+verdikt project delete "dark-fantasy" --yes
 ```
 
 ### Ingesting content
 
-Supported formats: `.txt`, `.md`, `.html`, `.epub`, `.pdf`
-
 ```bash
-# Ingest a directory (recursive). Re-running is safe: new files are added,
-# changed files are updated, unchanged files are skipped.
-verdikt ingest <project_id> ./my-books/
+# Ingest a directory (idempotent: new files added, changed files updated, unchanged skipped)
+verdikt ingest <project> ./my-books/
 
 # Add or update a single file
-verdikt add <project_id> /path/to/book.epub
+verdikt add <project> /path/to/book.epub
 ```
 
-Both commands identify files by their absolute path, so `ingest` and `add`
-use the same identity key and are fully interchangeable for a given file.
-
-### Inspecting works
-
-`project works` lists each work with its sequence number and filename. Use the sequence number or full path as `WORK_REF` in any work command.
+### Pipeline
 
 ```bash
-# Show full details for a work (phase, absolute path, hash, chunk count, cluster IDs)
-verdikt work show "dark-fantasy" 1          # by sequence number
-verdikt work show "dark-fantasy" /abs/path/to/book.epub   # by full path
-```
-
-### Running the pipeline
-
-```bash
-# Run chunk → embed → cluster for all pending works
 verdikt pipeline run "dark-fantasy"
 
-# Re-process a single work (resets to INGESTED, re-runs full pipeline;
-# cluster labels are re-computed project-wide)
+# Re-process a single work (resets to ingested, re-runs full pipeline)
 verdikt pipeline run-work "dark-fantasy" 2
 verdikt pipeline run-work "dark-fantasy" /abs/path/to/book.epub
 ```
@@ -93,35 +131,10 @@ verdikt pipeline run-work "dark-fantasy" /abs/path/to/book.epub
 ### Removing content
 
 ```bash
-# Remove a work and all its chunks and vectors (sequence number or full path)
+# Removes the work, its chunks, vectors, and all associated ratings
 verdikt remove "dark-fantasy" 3
 verdikt remove "dark-fantasy" /abs/path/to/book.epub
 ```
-
-### Typical workflow
-
-```bash
-verdikt project create "my-library" --description "Fiction collection"
-verdikt ingest "my-library" ~/books/fiction/
-verdikt pipeline run "my-library"
-
-# Later: add a new book and re-run
-verdikt add "my-library" ~/books/fiction/new-book.epub
-verdikt pipeline run "my-library"
-
-# Re-process a specific work by sequence number
-verdikt pipeline run-work "my-library" 5
-```
-
-### Resetting the data directory
-
-All data lives in `~/.verdikt`. To start fresh:
-
-```bash
-rm -rf ~/.verdikt
-```
-
-The directory and schema are recreated automatically on next use.
 
 ## Running tests
 
@@ -129,17 +142,38 @@ The directory and schema are recreated automatically on next use.
 cd backend
 
 # Unit tests only (no infrastructure required)
-pytest -m "not infra"
+pytest -m "not infra" -q
 
-# Full suite (requires sentence-transformers model download + ChromaDB)
-pytest
+# Full suite (requires Ollama + sentence-transformers model download)
+pytest -q
+
+# Ollama crystallisation integration test only
+pytest -m infra tests/test_crystalliser_infra.py -v
 ```
+
+## Data directory layout
+
+```
+~/.verdikt/
+  verdikt.db        SQLite database (projects, works, chunks, ratings, profiles)
+  chroma/           ChromaDB vector store (one collection per project)
+  projects/         Per-project data
+  user_files/       Upload root for the web UI file browser
+```
+
+To start fresh:
+
+```bash
+rm -rf ~/.verdikt
+```
+
+The directory and schema are recreated automatically on next use.
 
 ## Project structure
 
 ```
-backend/          Python package — pipeline, storage, plugins, inference, CLI
-frontend/         React + TypeScript UI (Milestone 2+)
+backend/          Python package — pipeline, storage, plugins, inference, API, CLI
+frontend/         React + TypeScript web UI
 ```
 
 ## License

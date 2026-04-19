@@ -15,6 +15,7 @@ _EXT_TO_CONTENT_TYPE: dict[str, ContentType] = {
     ".htm": ContentType.HTML,
     ".epub": ContentType.EPUB,
     ".pdf": ContentType.PDF,
+    ".rtf": ContentType.RTF,
 }
 
 
@@ -43,6 +44,35 @@ class FileDropPlugin(PluginBase):
             },
             "required": ["path"],
         }
+
+    @classmethod
+    def _fetch_single_file(cls, file_path: Path, project_id: str) -> Iterator[MaterialItem]:
+        """Yield a single MaterialItem for a file (used by storage-based ingest)."""
+        ext = file_path.suffix.lower()
+        if ext not in cls.SUPPORTED_EXTENSIONS:
+            return
+        instance = cls(str(file_path.parent))
+        try:
+            text = instance._extract_text(file_path)
+        except Exception as exc:
+            print(f"WARNING: skipping {file_path.name} — {exc}", file=sys.stderr)
+            return
+        if not text or not text.strip():
+            return
+        raw_bytes = text.encode("utf-8") if isinstance(text, str) else text
+        content_hash = hashlib.sha256(raw_bytes).hexdigest()
+        source_path = str(file_path.resolve())
+        yield MaterialItem(
+            project_id=project_id,
+            source_plugin=cls.plugin_name,
+            source_path=source_path,
+            content_hash=content_hash,
+            url=file_path.as_uri(),
+            work_title=file_path.stem,
+            content=text,
+            domain=Domain.TEXT,
+            content_type=_EXT_TO_CONTENT_TYPE[ext],
+        )
 
     def fetch(self, project_id: str) -> Iterator[MaterialItem]:
         all_files = sorted(
@@ -85,6 +115,8 @@ class FileDropPlugin(PluginBase):
             return self._parse_epub(path)
         if ext == ".pdf":
             return self._parse_pdf(path)
+        if ext == ".rtf":
+            return self._parse_rtf(path)
         raise ValueError(f"Unsupported extension: {ext}")
 
     @staticmethod
@@ -122,3 +154,10 @@ class FileDropPlugin(PluginBase):
             if text:
                 parts.append(text)
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _parse_rtf(path: Path) -> str:
+        from striprtf.striprtf import rtf_to_text
+
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        return rtf_to_text(raw)
