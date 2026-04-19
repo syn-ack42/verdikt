@@ -116,7 +116,7 @@ class AO3Plugin(PluginBase):
         home.raise_for_status()
         self._delay()
 
-        sign_in_url = f"{AO3_BASE}/users/sign_in"
+        sign_in_url = f"{AO3_BASE}/users/login"
         resp = self._session.get(
             sign_in_url,
             timeout=30,
@@ -125,7 +125,7 @@ class AO3Plugin(PluginBase):
         if resp.status_code == 404:
             raise LoginError(
                 "AO3 sign-in page returned 404. The login URL may have changed or "
-                "AO3 is blocking automated access. Check https://archiveofourown.org/users/sign_in "
+                "AO3 is blocking automated access. Check https://archiveofourown.org/users/login "
                 "in a browser to confirm the URL is correct."
             )
         resp.raise_for_status()
@@ -152,7 +152,7 @@ class AO3Plugin(PluginBase):
             allow_redirects=True,
             headers={"Referer": sign_in_url},
         )
-        if "/users/sign_in" in login_resp.url:
+        if "/users/login" in login_resp.url:
             raise LoginError("AO3 login failed — check username and password")
 
         self._logged_in = True

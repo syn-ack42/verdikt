@@ -19,7 +19,7 @@ from verdikt.plugins.ao3 import AO3Plugin, LoginError
 
 SIGN_IN_HTML = """
 <html><body>
-<form action="/users/sign_in">
+<form action="/users/login">
   <input name="authenticity_token" value="test_token_abc123" />
 </form>
 </body></html>
@@ -106,7 +106,7 @@ def test_login_raises_on_redirect_back_to_sign_in():
     plugin = AO3Plugin({"username": "u", "password": "wrong"})
     get_responses = [_make_response("<html></html>"), _make_response(SIGN_IN_HTML)]
     with patch.object(plugin._session, "get", side_effect=get_responses), \
-         patch.object(plugin._session, "post", return_value=_make_response("", url="https://archiveofourown.org/users/sign_in")), \
+         patch.object(plugin._session, "post", return_value=_make_response("", url="https://archiveofourown.org/users/login")), \
          patch.object(plugin, "_delay"):
         with pytest.raises(LoginError):
             plugin._login()
@@ -196,7 +196,7 @@ def test_fetch_deduplicates_work_ids():
         _call_count["n"] += 1
         if _call_count["n"] == 1:
             return _make_response("<html></html>")  # homepage
-        if "sign_in" in url:
+        if "login" in url:
             return _make_response(SIGN_IN_HTML)
         if "search" in url:
             return _make_response(SEARCH_PAGE_HTML)
@@ -228,7 +228,7 @@ def test_fetch_sets_project_id():
         _call_count["n"] += 1
         if _call_count["n"] == 1:
             return _make_response("<html></html>")  # homepage
-        if "sign_in" in url:
+        if "login" in url:
             return _make_response(SIGN_IN_HTML)
         return _make_response(WORK_HTML)
 
