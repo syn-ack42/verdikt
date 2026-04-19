@@ -1,6 +1,6 @@
 import type {
   IngestResult, MaterialItem, NextChunkResponse, PipelineResult, PipelineStreamEvent,
-  PluginConfig, PluginInfo, PreferenceProfile, Project, Rating, StorageListing, UpdateResult,
+  PluginConfig, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, Rating, StorageListing, UpdateResult,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api'
@@ -40,6 +40,37 @@ export const api = {
       req<PluginConfig>('PUT', `/projects/${projectId}/works/plugin-config`, { plugin_name: pluginName, config }),
     ingestPlugin: (projectId: string, pluginName: string, config: Record<string, unknown>) =>
       req<IngestResult>('POST', `/projects/${projectId}/works/ingest-plugin`, { plugin_name: pluginName, config }),
+    ingestPluginStream: async (
+      projectId: string,
+      pluginName: string,
+      config: Record<string, unknown>,
+      onEvent: (e: PluginIngestEvent) => void,
+    ): Promise<void> => {
+      const res = await fetch(`${BASE}/projects/${projectId}/works/ingest-plugin/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plugin_name: pluginName, config }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }))
+        throw Object.assign(new Error(err.detail ?? res.statusText), { status: res.status })
+      }
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()!
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try { onEvent(JSON.parse(line.slice(6))) } catch { /* skip malformed */ }
+          }
+        }
+      }
+    },
     updatePlugin: (projectId: string) =>
       req<UpdateResult>('POST', `/projects/${projectId}/works/update-plugin`),
   },

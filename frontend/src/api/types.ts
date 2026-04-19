@@ -130,3 +130,8 @@ export interface UpdateResult {
   updated: number
   unchanged: number
 }
+
+export type PluginIngestEvent =
+  | { work: string; status: 'added' | 'updated' | 'unchanged'; added: number; updated: number; skipped: number }
+  | { complete: true; added: number; updated: number; skipped: number }
+  | { error: string }

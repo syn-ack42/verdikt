@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from collections.abc import Generator
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -214,6 +217,68 @@ def ingest_from_plugin(
     added, updated, skipped = _run_plugin_ingest(proj.id, body.plugin_name, saved_cfg.config, mat_store)
     session.commit()
     return {"added": added, "updated": updated, "skipped": skipped}
+
+
+@router.post("/ingest-plugin/stream")
+def ingest_from_plugin_stream(
+    project_id: str,
+    body: PluginIngestRequest,
+    session: Session = Depends(get_session),
+) -> StreamingResponse:
+    proj = _get_project_or_404(project_id, session)
+    cfg_store = SQLitePluginConfigStore(session)
+    mat_store = SQLiteMaterialStore(session)
+
+    if body.config is not None:
+        cfg_store.save(PluginConfig(
+            project_id=proj.id,
+            plugin_name=body.plugin_name,
+            config=body.config,
+            updated_at=datetime.now(timezone.utc),
+        ))
+
+    saved_cfg = cfg_store.get(proj.id, body.plugin_name)
+    if saved_cfg is None:
+        def _err() -> Generator[str, None, None]:
+            yield f"data: {json.dumps({'error': 'No plugin config found. Provide config in request body.'})}\n\n"
+        return StreamingResponse(_err(), media_type="text/event-stream")
+
+    try:
+        cls = get_plugin(body.plugin_name)
+    except KeyError:
+        def _err2() -> Generator[str, None, None]:
+            yield f"data: {json.dumps({'error': f'Unknown plugin: {body.plugin_name!r}'})}\n\n"
+        return StreamingResponse(_err2(), media_type="text/event-stream")
+
+    plugin = cls(saved_cfg.config)
+
+    def event_stream() -> Generator[str, None, None]:
+        added = updated = skipped = 0
+        try:
+            for item in plugin.fetch(proj.id):
+                existing = (
+                    mat_store.get_by_source(proj.id, item.source_plugin, item.source_path)
+                    if item.source_path else None
+                )
+                if existing is None:
+                    mat_store.save(item)
+                    added += 1
+                    status = "added"
+                elif existing.content_hash != item.content_hash:
+                    mat_store.update_content(existing.id, item.content, item.content_hash)
+                    updated += 1
+                    status = "updated"
+                else:
+                    skipped += 1
+                    status = "unchanged"
+                session.commit()
+                yield f"data: {json.dumps({'work': item.work_title or item.source_path or item.work_id, 'status': status, 'added': added, 'updated': updated, 'skipped': skipped})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+            return
+        yield f"data: {json.dumps({'complete': True, 'added': added, 'updated': updated, 'skipped': skipped})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.post("/update-plugin", status_code=200)
