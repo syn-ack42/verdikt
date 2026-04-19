@@ -86,13 +86,15 @@ def test_plugin_name():
 
 def test_login_extracts_token_and_posts():
     plugin = AO3Plugin({"username": "u", "password": "p"})
+    # First call → homepage, second call → sign-in page
+    get_responses = [_make_response("<html></html>"), _make_response(SIGN_IN_HTML)]
 
-    with patch.object(plugin._session, "get", return_value=_make_response(SIGN_IN_HTML)) as mock_get, \
+    with patch.object(plugin._session, "get", side_effect=get_responses) as mock_get, \
          patch.object(plugin._session, "post", return_value=_make_response("", url="https://archiveofourown.org/users/u")) as mock_post, \
          patch.object(plugin, "_delay"):
         plugin._login()
 
-    mock_get.assert_called_once()
+    assert mock_get.call_count == 2
     call_data = mock_post.call_args[1]["data"]
     assert call_data["authenticity_token"] == "test_token_abc123"
     assert call_data["user[login]"] == "u"
@@ -102,16 +104,29 @@ def test_login_extracts_token_and_posts():
 
 def test_login_raises_on_redirect_back_to_sign_in():
     plugin = AO3Plugin({"username": "u", "password": "wrong"})
-    with patch.object(plugin._session, "get", return_value=_make_response(SIGN_IN_HTML)), \
+    get_responses = [_make_response("<html></html>"), _make_response(SIGN_IN_HTML)]
+    with patch.object(plugin._session, "get", side_effect=get_responses), \
          patch.object(plugin._session, "post", return_value=_make_response("", url="https://archiveofourown.org/users/sign_in")), \
          patch.object(plugin, "_delay"):
         with pytest.raises(LoginError):
             plugin._login()
 
 
+def test_login_raises_on_404():
+    plugin = AO3Plugin({"username": "u", "password": "p"})
+    not_found = _make_response("", status_code=404)
+    not_found.raise_for_status = MagicMock(side_effect=Exception("404"))
+    get_responses = [_make_response("<html></html>"), not_found]
+    with patch.object(plugin._session, "get", side_effect=get_responses), \
+         patch.object(plugin, "_delay"):
+        with pytest.raises((LoginError, Exception)):
+            plugin._login()
+
+
 def test_login_raises_when_no_token():
     plugin = AO3Plugin({"username": "u", "password": "p"})
-    with patch.object(plugin._session, "get", return_value=_make_response("<html><body></body></html>")), \
+    get_responses = [_make_response("<html></html>"), _make_response("<html><body></body></html>")]
+    with patch.object(plugin._session, "get", side_effect=get_responses), \
          patch.object(plugin, "_delay"):
         with pytest.raises(LoginError):
             plugin._login()
@@ -175,8 +190,12 @@ def test_fetch_deduplicates_work_ids():
         "work_urls": ["https://archiveofourown.org/works/12345"],
         "max_works": 10,
     })
+    _call_count = {"n": 0}
 
     def fake_get(url, **kwargs):
+        _call_count["n"] += 1
+        if _call_count["n"] == 1:
+            return _make_response("<html></html>")  # homepage
         if "sign_in" in url:
             return _make_response(SIGN_IN_HTML)
         if "search" in url:
@@ -203,8 +222,12 @@ def test_fetch_sets_project_id():
         "work_urls": ["https://archiveofourown.org/works/12345"],
         "max_works": 1,
     })
+    _call_count = {"n": 0}
 
     def fake_get(url, **kwargs):
+        _call_count["n"] += 1
+        if _call_count["n"] == 1:
+            return _make_response("<html></html>")  # homepage
         if "sign_in" in url:
             return _make_response(SIGN_IN_HTML)
         return _make_response(WORK_HTML)

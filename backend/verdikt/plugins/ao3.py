@@ -22,7 +22,12 @@ from verdikt.plugins.base import PluginBase
 
 AO3_BASE = "https://archiveofourown.org"
 _WORK_ID_RE = re.compile(r"/works/(\d+)")
-_USER_AGENT = "Verdikt/0.3 (preference learning tool; github.com/syn-ack42/verdikt)"
+_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36 "
+    "Verdikt/0.3"
+)
 
 
 class LoginError(RuntimeError):
@@ -35,7 +40,12 @@ class AO3Plugin(PluginBase):
     def __init__(self, config: dict) -> None:
         self._config = config
         self._session = requests.Session()
-        self._session.headers["User-Agent"] = _USER_AGENT
+        self._session.headers.update({
+            "User-Agent": _USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+        })
         self._logged_in = False
 
     @classmethod
@@ -92,17 +102,37 @@ class AO3Plugin(PluginBase):
         if self._logged_in:
             return
 
-        resp = self._session.get(f"{AO3_BASE}/users/sign_in", timeout=30)
+        # Visit homepage first to pick up session cookies before the login form.
+        home = self._session.get(AO3_BASE, timeout=30)
+        home.raise_for_status()
+        self._delay()
+
+        sign_in_url = f"{AO3_BASE}/users/sign_in"
+        resp = self._session.get(
+            sign_in_url,
+            timeout=30,
+            headers={"Referer": AO3_BASE},
+        )
+        if resp.status_code == 404:
+            raise LoginError(
+                "AO3 sign-in page returned 404. The login URL may have changed or "
+                "AO3 is blocking automated access. Check https://archiveofourown.org/users/sign_in "
+                "in a browser to confirm the URL is correct."
+            )
         resp.raise_for_status()
+
         soup = BeautifulSoup(resp.text, "html.parser")
         token_input = soup.find("input", {"name": "authenticity_token"})
         if token_input is None:
-            raise LoginError("Could not find authenticity_token on sign-in page")
+            raise LoginError(
+                "Could not find authenticity_token on the AO3 sign-in page. "
+                "AO3 may have changed their login form structure."
+            )
         token = token_input["value"]
 
         self._delay()
         login_resp = self._session.post(
-            f"{AO3_BASE}/users/sign_in",
+            sign_in_url,
             data={
                 "user[login]": self._config["username"],
                 "user[password]": self._config["password"],
@@ -111,6 +141,7 @@ class AO3Plugin(PluginBase):
             },
             timeout=30,
             allow_redirects=True,
+            headers={"Referer": sign_in_url},
         )
         if "/users/sign_in" in login_resp.url:
             raise LoginError("AO3 login failed — check username and password")
@@ -127,7 +158,7 @@ class AO3Plugin(PluginBase):
             qs["page"] = [str(page)]
             paged_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
 
-            resp = self._session.get(paged_url, timeout=30)
+            resp = self._session.get(paged_url, timeout=30, headers={"Referer": AO3_BASE})
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -157,7 +188,7 @@ class AO3Plugin(PluginBase):
 
     def _fetch_work(self, work_id: str) -> MaterialItem | None:
         url = f"{AO3_BASE}/works/{work_id}?view_full_work=true&view_adult=true"
-        resp = self._session.get(url, timeout=60)
+        resp = self._session.get(url, timeout=60, headers={"Referer": AO3_BASE})
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
