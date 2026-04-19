@@ -111,3 +111,22 @@ export interface PreferenceProfile {
   rating_count: number
   created_at: string
 }
+
+export interface PluginInfo {
+  name: string
+  title: string
+  description: string
+  config_schema: Record<string, unknown>
+}
+
+export interface PluginConfig {
+  id: string
+  project_id: string
+  plugin_name: string
+  config: Record<string, unknown>
+}
+
+export interface UpdateResult {
+  updated: number
+  unchanged: number
+}

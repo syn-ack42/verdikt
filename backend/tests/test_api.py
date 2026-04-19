@@ -264,3 +264,72 @@ def test_delete_work_removes_ratings(client, project_id, work_with_rating):
     # Rating must be gone
     resp = client.get(f"/api/projects/{project_id}/ratings")
     assert not any(r["id"] == rating.id for r in resp.json())
+
+
+# ── Plugin API ────────────────────────────────────────────────────────────────
+
+def test_list_plugins(client):
+    resp = client.get("/api/plugins")
+    assert resp.status_code == 200
+    names = [p["name"] for p in resp.json()]
+    assert "filedrop" in names
+    assert "ao3" in names
+    for p in resp.json():
+        assert "config_schema" in p
+        assert "title" in p
+
+
+def test_get_plugin_config_none_when_absent(client, project_id):
+    resp = client.get(f"/api/projects/{project_id}/works/plugin-config")
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
+def test_save_and_get_plugin_config(client, project_id):
+    body = {"plugin_name": "ao3", "config": {"username": "u", "password": "p", "max_works": 5}}
+    resp = client.put(f"/api/projects/{project_id}/works/plugin-config", json=body)
+    assert resp.status_code == 200
+    assert resp.json()["plugin_name"] == "ao3"
+    assert resp.json()["config"]["username"] == "u"
+
+    resp2 = client.get(f"/api/projects/{project_id}/works/plugin-config")
+    assert resp2.status_code == 200
+    assert resp2.json()["plugin_name"] == "ao3"
+
+
+def test_save_plugin_config_unknown_plugin(client, project_id):
+    body = {"plugin_name": "no_such_plugin", "config": {}}
+    resp = client.put(f"/api/projects/{project_id}/works/plugin-config", json=body)
+    assert resp.status_code == 422
+
+
+def test_ingest_plugin_filedrop(client, project_id, tmp_path):
+    txt_file = tmp_path / "sample.txt"
+    txt_file.write_text("Hello world content for testing plugin ingest.")
+    body = {
+        "plugin_name": "filedrop",
+        "config": {"path": str(tmp_path)},
+    }
+    resp = client.post(f"/api/projects/{project_id}/works/ingest-plugin", json=body)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["added"] == 1
+    assert data["updated"] == 0
+
+    resp2 = client.get(f"/api/projects/{project_id}/works")
+    assert resp2.status_code == 200
+    items = resp2.json()
+    assert any("sample" in (w.get("source_path") or "") for w in items)
+
+
+def test_ingest_plugin_no_config_returns_422(client, project_id):
+    resp = client.post(
+        f"/api/projects/{project_id}/works/ingest-plugin",
+        json={"plugin_name": "ao3"},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_plugin_no_config_returns_422(client, project_id):
+    resp = client.post(f"/api/projects/{project_id}/works/update-plugin")
+    assert resp.status_code == 422

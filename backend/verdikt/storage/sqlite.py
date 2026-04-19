@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 
 from verdikt.core.models import (
     Chunk, DimensionProfile, MaterialItem, PipelinePhase,
-    PreferenceProfile, Project, Rating, RatingDimension,
+    PluginConfig, PreferenceProfile, Project, Rating, RatingDimension,
 )
-from verdikt.storage.base import ChunkStore, MaterialStore, ProfileStore, ProjectStore, RatingStore
-from verdikt.storage.orm import ChunkRow, MaterialItemRow, PreferenceProfileRow, ProjectRow, RatingRow
+from verdikt.storage.base import ChunkStore, MaterialStore, PluginConfigStore, ProfileStore, ProjectStore, RatingStore
+from verdikt.storage.orm import ChunkRow, MaterialItemRow, PluginConfigRow, PreferenceProfileRow, ProjectRow, RatingRow
 
 
 class SQLiteProjectStore(ProjectStore):
@@ -134,6 +134,15 @@ class SQLiteMaterialStore(MaterialStore):
     def delete(self, item_id: str) -> None:
         self._s.execute(sql_delete(MaterialItemRow).where(MaterialItemRow.id == item_id))
         self._s.flush()
+
+    def list_by_source_plugin(self, project_id: str, source_plugin: str) -> list[MaterialItem]:
+        rows = self._s.execute(
+            select(MaterialItemRow).where(
+                MaterialItemRow.project_id == project_id,
+                MaterialItemRow.source_plugin == source_plugin,
+            ).order_by(MaterialItemRow.project_seq)
+        ).scalars().all()
+        return [self._from_row(r) for r in rows]
 
     def get_by_source(self, project_id: str, source_plugin: str, source_path: str) -> MaterialItem | None:
         row = self._s.execute(
@@ -406,4 +415,71 @@ class SQLiteProfileStore(ProfileStore):
             overall_summary=r.overall_summary,
             rating_count=r.rating_count,
             created_at=r.created_at,
+        )
+
+
+class SQLitePluginConfigStore(PluginConfigStore):
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def save(self, cfg: PluginConfig) -> PluginConfig:
+        existing = self._s.execute(
+            select(PluginConfigRow)
+            .where(PluginConfigRow.project_id == cfg.project_id)
+            .where(PluginConfigRow.plugin_name == cfg.plugin_name)
+        ).scalar_one_or_none()
+        if existing:
+            existing.config_json = json.dumps(cfg.config)
+            existing.updated_at = cfg.updated_at
+            cfg = PluginConfig(
+                id=existing.id,
+                project_id=existing.project_id,
+                plugin_name=existing.plugin_name,
+                config=cfg.config,
+                created_at=existing.created_at,
+                updated_at=existing.updated_at,
+            )
+        else:
+            self._s.add(PluginConfigRow(
+                id=cfg.id,
+                project_id=cfg.project_id,
+                plugin_name=cfg.plugin_name,
+                config_json=json.dumps(cfg.config),
+                created_at=cfg.created_at,
+                updated_at=cfg.updated_at,
+            ))
+        self._s.flush()
+        return cfg
+
+    def get(self, project_id: str, plugin_name: str) -> PluginConfig | None:
+        row = self._s.execute(
+            select(PluginConfigRow)
+            .where(PluginConfigRow.project_id == project_id)
+            .where(PluginConfigRow.plugin_name == plugin_name)
+        ).scalar_one_or_none()
+        return self._from_row(row) if row else None
+
+    def list_by_project(self, project_id: str) -> list[PluginConfig]:
+        rows = self._s.execute(
+            select(PluginConfigRow).where(PluginConfigRow.project_id == project_id)
+        ).scalars().all()
+        return [self._from_row(r) for r in rows]
+
+    def delete(self, project_id: str, plugin_name: str) -> None:
+        self._s.execute(
+            sql_delete(PluginConfigRow)
+            .where(PluginConfigRow.project_id == project_id)
+            .where(PluginConfigRow.plugin_name == plugin_name)
+        )
+        self._s.flush()
+
+    @staticmethod
+    def _from_row(r: PluginConfigRow) -> PluginConfig:
+        return PluginConfig(
+            id=r.id,
+            project_id=r.project_id,
+            plugin_name=r.plugin_name,
+            config=json.loads(r.config_json),
+            created_at=r.created_at,
+            updated_at=r.updated_at,
         )

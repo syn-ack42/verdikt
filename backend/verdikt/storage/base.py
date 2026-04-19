@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from verdikt.core.models import Chunk, MaterialItem, PipelinePhase, PreferenceProfile, Project, Rating
+from verdikt.core.models import Chunk, MaterialItem, PipelinePhase, PluginConfig, PreferenceProfile, Project, Rating
 
 
 class ProjectStore(ABC):
@@ -50,6 +50,9 @@ class MaterialStore(ABC):
 
     @abstractmethod
     def get_by_seq(self, project_id: str, seq: int) -> MaterialItem | None: ...
+
+    @abstractmethod
+    def list_by_source_plugin(self, project_id: str, source_plugin: str) -> list[MaterialItem]: ...
 
     @abstractmethod
     def delete(self, item_id: str) -> None: ...
@@ -127,3 +130,17 @@ class ProfileStore(ABC):
 
     @abstractmethod
     def update(self, profile: PreferenceProfile) -> PreferenceProfile: ...
+
+
+class PluginConfigStore(ABC):
+    @abstractmethod
+    def save(self, cfg: PluginConfig) -> PluginConfig: ...
+
+    @abstractmethod
+    def get(self, project_id: str, plugin_name: str) -> PluginConfig | None: ...
+
+    @abstractmethod
+    def list_by_project(self, project_id: str) -> list[PluginConfig]: ...
+
+    @abstractmethod
+    def delete(self, project_id: str, plugin_name: str) -> None: ...

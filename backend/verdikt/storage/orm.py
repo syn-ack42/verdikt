@@ -84,3 +84,14 @@ class PreferenceProfileRow(Base):
     overall_summary: Mapped[str] = mapped_column(Text, nullable=False)
     rating_count: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PluginConfigRow(Base):
+    __tablename__ = "plugin_configs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    plugin_name: Mapped[str] = mapped_column(String, nullable=False)
+    config_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

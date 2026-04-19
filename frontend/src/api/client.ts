@@ -1,6 +1,6 @@
 import type {
   IngestResult, MaterialItem, NextChunkResponse, PipelineResult, PipelineStreamEvent,
-  PreferenceProfile, Project, Rating, StorageListing,
+  PluginConfig, PluginInfo, PreferenceProfile, Project, Rating, StorageListing, UpdateResult,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api'
@@ -34,6 +34,17 @@ export const api = {
       req<IngestResult>('POST', `/projects/${projectId}/works/ingest`, { storage_paths: storagePaths }),
     delete: (projectId: string, ref: string) =>
       req<void>('DELETE', `/projects/${projectId}/works/${encodeURIComponent(ref)}`),
+    getPluginConfig: (projectId: string) =>
+      req<PluginConfig | null>('GET', `/projects/${projectId}/works/plugin-config`),
+    savePluginConfig: (projectId: string, pluginName: string, config: Record<string, unknown>) =>
+      req<PluginConfig>('PUT', `/projects/${projectId}/works/plugin-config`, { plugin_name: pluginName, config }),
+    ingestPlugin: (projectId: string, pluginName: string, config: Record<string, unknown>) =>
+      req<IngestResult>('POST', `/projects/${projectId}/works/ingest-plugin`, { plugin_name: pluginName, config }),
+    updatePlugin: (projectId: string) =>
+      req<UpdateResult>('POST', `/projects/${projectId}/works/update-plugin`),
+  },
+  plugins: {
+    list: () => req<PluginInfo[]>('GET', '/plugins'),
   },
   pipeline: {
     run: (projectId: string) => req<PipelineResult>('POST', `/projects/${projectId}/pipeline/run`),

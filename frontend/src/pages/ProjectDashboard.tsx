@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import StorageBrowser from '../components/StorageBrowser'
 import ProjectSettingsDialog from '../components/ProjectSettingsDialog'
+import PluginIngestDialog from '../components/PluginIngestDialog'
 import type { IngestResult, PipelineStreamEvent } from '../api/types'
 
 type PhaseStatus = 'waiting' | 'running' | 'done' | 'error'
@@ -43,8 +44,11 @@ export default function ProjectDashboard() {
   const qc = useQueryClient()
   const [showStorage, setShowStorage] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showPluginIngest, setShowPluginIngest] = useState(false)
   const [lastIngest, setLastIngest] = useState<IngestResult | null>(null)
   const [lastIngestError, setLastIngestError] = useState<string | null>(null)
+  const [lastPluginIngest, setLastPluginIngest] = useState<IngestResult | null>(null)
+  const [updateResult, setUpdateResult] = useState<{ updated: number; unchanged: number } | null>(null)
   const [pipelineRunning, setPipelineRunning] = useState(false)
   const [phaseProgress, setPhaseProgress] = useState<PhaseProgress[]>([])
   const [pipelineError, setPipelineError] = useState<string | null>(null)
@@ -82,6 +86,14 @@ export default function ProjectDashboard() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['works', projectId] })
       qc.invalidateQueries({ queryKey: ['ratings', projectId] })
+    },
+  })
+
+  const updatePlugin = useMutation({
+    mutationFn: () => api.works.updatePlugin(projectId!),
+    onSuccess: (result) => {
+      setUpdateResult(result)
+      qc.invalidateQueries({ queryKey: ['works', projectId] })
     },
   })
 
@@ -144,17 +156,43 @@ export default function ProjectDashboard() {
         </div>
       </div>
 
-      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <button
           onClick={() => { setLastIngest(null); setLastIngestError(null); setShowStorage(true) }}
           style={{ padding: '8px 18px', background: '#6b7de0', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}
         >
           Browse &amp; Ingest Files
         </button>
+        <button
+          onClick={() => { setLastPluginIngest(null); setShowPluginIngest(true) }}
+          style={{ padding: '8px 18px', background: '#6b7de0', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}
+        >
+          Plugin Ingest
+        </button>
+        <button
+          onClick={() => { setUpdateResult(null); updatePlugin.mutate() }}
+          disabled={updatePlugin.isPending}
+          style={{ padding: '8px 18px', background: 'none', border: '1px solid #6b7de0', color: '#6b7de0', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}
+        >
+          {updatePlugin.isPending ? 'Updating…' : 'Update from Plugin'}
+        </button>
         {lastIngest && (
           <span style={{ fontSize: 13, color: '#390' }}>
             Added {lastIngest.added}, updated {lastIngest.updated}, unchanged {lastIngest.skipped}
           </span>
+        )}
+        {lastPluginIngest && (
+          <span style={{ fontSize: 13, color: '#390' }}>
+            Plugin: added {lastPluginIngest.added}, updated {lastPluginIngest.updated}, unchanged {lastPluginIngest.skipped}
+          </span>
+        )}
+        {updateResult && (
+          <span style={{ fontSize: 13, color: '#390' }}>
+            Updated {updateResult.updated}, unchanged {updateResult.unchanged}
+          </span>
+        )}
+        {updatePlugin.error && (
+          <span style={{ fontSize: 13, color: '#c00' }}>{(updatePlugin.error as any)?.message ?? 'Update failed'}</span>
         )}
         {ingest.error && (
           <span style={{ fontSize: 13, color: '#c00' }}>{String(ingest.error)}</span>
@@ -234,6 +272,17 @@ export default function ProjectDashboard() {
           project={project}
           ratings={ratings ?? []}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {showPluginIngest && (
+        <PluginIngestDialog
+          projectId={projectId!}
+          onClose={() => setShowPluginIngest(false)}
+          onSuccess={(result) => {
+            setLastPluginIngest(result)
+            qc.invalidateQueries({ queryKey: ['works', projectId] })
+          }}
         />
       )}
     </div>

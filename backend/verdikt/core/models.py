@@ -138,3 +138,12 @@ class PreferenceProfile(BaseModel):
     overall_summary: str
     rating_count: int     # number of ratings this profile was derived from
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PluginConfig(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str
+    plugin_name: str
+    config: dict
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
