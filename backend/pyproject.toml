@@ -26,6 +26,7 @@ dependencies = [
     "ollama>=0.2",
     "numpy>=1.26",
     "scikit-learn>=1.4",
+    "prefect>=3.0",
 ]
 
 [project.scripts]

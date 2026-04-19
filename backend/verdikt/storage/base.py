@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from verdikt.core.models import Chunk, MaterialItem, PipelinePhase, Project
+from verdikt.core.models import Chunk, MaterialItem, PipelinePhase, PreferenceProfile, Project, Rating
 
 
 class ProjectStore(ABC):
@@ -93,3 +93,34 @@ class VectorStore(ABC):
 
     @abstractmethod
     def delete_items(self, ids: list[str]) -> None: ...
+
+
+class RatingStore(ABC):
+    @abstractmethod
+    def save(self, rating: Rating) -> Rating: ...
+
+    @abstractmethod
+    def get(self, rating_id: str) -> Rating | None: ...
+
+    @abstractmethod
+    def list_by_project(self, project_id: str) -> list[Rating]: ...
+
+    @abstractmethod
+    def list_by_chunk(self, chunk_id: str) -> list[Rating]: ...
+
+    @abstractmethod
+    def count_by_project(self, project_id: str) -> int: ...
+
+
+class ProfileStore(ABC):
+    @abstractmethod
+    def save(self, profile: PreferenceProfile) -> PreferenceProfile: ...
+
+    @abstractmethod
+    def get_latest(self, project_id: str) -> PreferenceProfile | None: ...
+
+    @abstractmethod
+    def list_versions(self, project_id: str) -> list[PreferenceProfile]: ...
+
+    @abstractmethod
+    def update(self, profile: PreferenceProfile) -> PreferenceProfile: ...

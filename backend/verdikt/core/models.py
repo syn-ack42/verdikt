@@ -109,3 +109,31 @@ class InferenceConfig(BaseModel):
     ollama_model: str = "llama3.1:8b"
     ollama_base_url: str = "http://localhost:11434"
     embedding_model: str = "all-MiniLM-L6-v2"
+
+
+class Rating(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str
+    chunk_id: str
+    material_item_id: str
+    dimension_scores: dict[str, float]  # dimension name → 1.0–5.0
+    skipped: bool = False
+    skip_reason: Optional[str] = None
+    rated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class DimensionProfile(BaseModel):
+    name: str
+    description: str
+    summary: str          # LLM-generated preference text for this dimension
+    typical_score: float  # mean of user's scores on this dimension
+
+
+class PreferenceProfile(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str
+    version: int = 1      # increments on each crystallisation
+    dimensions: list[DimensionProfile]
+    overall_summary: str
+    rating_count: int     # number of ratings this profile was derived from
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

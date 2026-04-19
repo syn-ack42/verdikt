@@ -5,11 +5,16 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from verdikt.core.models import InferenceConfig
+
 
 class AppConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="VERDIKT_")
+    model_config = SettingsConfigDict(env_prefix="VERDIKT_", env_nested_delimiter="__")
 
     data_dir: Path = Field(default_factory=lambda: Path.home() / ".verdikt")
+    root_path: str = ""                                        # set VERDIKT_ROOT_PATH for reverse proxy subpath
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    inference: InferenceConfig = Field(default_factory=InferenceConfig)
 
     @property
     def db_path(self) -> Path:

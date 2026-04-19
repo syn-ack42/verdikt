@@ -13,6 +13,7 @@ from verdikt.core.config import AppConfig
 from verdikt.core.models import Domain, MaterialItem, PipelinePhase, Project
 from verdikt.inference.embedder import SentenceTransformerEmbedder
 from verdikt.pipeline.chunker import TextChunker
+from verdikt.pipeline.flows import run_pipeline_flow
 from verdikt.pipeline.runner import PipelineRunner
 from verdikt.plugins.filedrop import FileDropPlugin, _EXT_TO_CONTENT_TYPE
 from verdikt.storage.chroma import ChromaVectorStore
@@ -383,6 +384,18 @@ def remove(project_id: str, work_ref: str) -> None:
     click.echo(f"Removed '{label}' ({n_chunks} chunk(s) deleted).")
 
 
+# ── serve ─────────────────────────────────────────────────────────────────────
+
+@app.command()
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8000, show_default=True)
+@click.option("--reload", is_flag=True, help="Enable auto-reload (development).")
+def serve(host: str, port: int, reload: bool) -> None:
+    """Start the Verdikt API server."""
+    import uvicorn
+    uvicorn.run("verdikt.api.app:app", host=host, port=port, reload=reload)
+
+
 # ── pipeline ──────────────────────────────────────────────────────────────────
 
 @app.group()
@@ -400,7 +413,7 @@ def pipeline_run(project_id: str) -> None:
         proj = _resolve_project(session, project_id)
         click.echo("Loading embedding model...")
         runner = _make_runner(session, config, proj)
-        result = runner.run(proj.id)
+        result = run_pipeline_flow(project_id=proj.id, runner=runner)
         session.commit()
 
     if result.total_processed == 0:
@@ -438,7 +451,7 @@ def pipeline_run_work(project_id: str, work_ref: str) -> None:
         click.echo(f"Reset '{label}' ({n_chunks} old chunk(s) removed). Loading embedding model...")
 
         runner = _make_runner(session, config, proj)
-        result = runner.run(proj.id)
+        result = run_pipeline_flow(project_id=proj.id, runner=runner)
         session.commit()
 
     for phase in result.phases:

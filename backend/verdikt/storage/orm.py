@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, LargeBinary, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -58,4 +58,29 @@ class ChunkRow(Base):
     size: Mapped[int] = mapped_column(Integer, nullable=False)
     cluster_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class RatingRow(Base):
+    __tablename__ = "ratings"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    chunk_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    material_item_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    dimension_scores: Mapped[str] = mapped_column(Text, nullable=False)  # JSON
+    skipped: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    skip_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    rated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PreferenceProfileRow(Base):
+    __tablename__ = "preference_profiles"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    dimensions_json: Mapped[str] = mapped_column(Text, nullable=False)  # JSON list[DimensionProfile]
+    overall_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    rating_count: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
