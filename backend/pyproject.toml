@@ -29,6 +29,7 @@ dependencies = [
     "scikit-learn>=1.4",
     "prefect>=3.0",
     "requests>=2.31",
+    "curl-cffi>=0.7",
 ]
 
 [project.scripts]

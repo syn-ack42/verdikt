@@ -14,8 +14,14 @@ import time
 from collections.abc import Iterator
 from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
 
-import requests
 from bs4 import BeautifulSoup
+
+try:
+    from curl_cffi import requests
+    _IMPERSONATE = "chrome120"
+except ImportError:
+    import requests  # type: ignore[no-redef]
+    _IMPERSONATE = None
 
 from verdikt.core.models import ContentType, Domain, MaterialItem
 from verdikt.plugins.base import PluginBase
@@ -39,13 +45,16 @@ class AO3Plugin(PluginBase):
 
     def __init__(self, config: dict) -> None:
         self._config = config
-        self._session = requests.Session()
-        self._session.headers.update({
-            "User-Agent": _USER_AGENT,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-        })
+        if _IMPERSONATE:
+            self._session = requests.Session(impersonate=_IMPERSONATE)
+        else:
+            self._session = requests.Session()
+            self._session.headers.update({
+                "User-Agent": _USER_AGENT,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+            })
         self._logged_in = False
 
     @classmethod
