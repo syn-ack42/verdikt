@@ -388,7 +388,7 @@ def remove(project_id: str, work_ref: str) -> None:
 
 @app.command()
 @click.option("--host", default="127.0.0.1", show_default=True)
-@click.option("--port", default=8000, show_default=True)
+@click.option("--port", default=8765, show_default=True)
 @click.option("--reload", is_flag=True, help="Enable auto-reload (development).")
 def serve(host: str, port: int, reload: bool) -> None:
     """Start the Verdikt API server."""
