@@ -28,9 +28,26 @@ SIGN_IN_HTML = """
 SEARCH_PAGE_HTML = """
 <html><body>
   <ol class="work index group">
-    <li id="work_12345"><a href="/works/12345">Work One</a></li>
-    <li id="work_67890"><a href="/works/67890">Work Two</a></li>
-    <li id="work_11111"><a href="/works/11111">Work Three</a></li>
+    <li id="work_12345">
+      <div class="header module">
+        <!-- updated_at=1710460800 -->
+        <a href="/works/12345">Work One</a>
+        <p class="datetime">15 Mar 2024</p>
+      </div>
+    </li>
+    <li id="work_67890">
+      <div class="header module">
+        <!-- updated_at=1704844800 -->
+        <a href="/works/67890">Work Two</a>
+        <p class="datetime">10 Jan 2024</p>
+      </div>
+    </li>
+    <li id="work_11111">
+      <div class="header module">
+        <a href="/works/11111">Work Three</a>
+        <p class="datetime">01 Dec 2023</p>
+      </div>
+    </li>
   </ol>
 </body></html>
 """
@@ -133,6 +150,7 @@ def test_login_raises_when_no_token():
 
 
 def test_get_work_ids_from_search():
+    from datetime import datetime, timezone
     plugin = AO3Plugin({"username": "u", "password": "p"})
     responses = [
         _make_response(SEARCH_PAGE_HTML),
@@ -140,16 +158,21 @@ def test_get_work_ids_from_search():
     ]
     with patch.object(plugin._session, "get", side_effect=responses), \
          patch.object(plugin, "_delay"):
-        ids = plugin._get_work_ids_from_search("https://archiveofourown.org/works/search?query=test", 10)
-    assert ids == ["12345", "67890", "11111"]
+        results = plugin._get_work_ids_from_search("https://archiveofourown.org/works/search?query=test", 10)
+    assert list(results.keys()) == ["12345", "67890", "11111"]
+    # work_12345 and work_67890 have updated_at timestamps in the HTML comment
+    assert results["12345"] == datetime.fromtimestamp(1710460800, tz=timezone.utc)
+    assert results["67890"] == datetime.fromtimestamp(1704844800, tz=timezone.utc)
+    # work_11111 has no comment timestamp, falls back to <p class="datetime">
+    assert results["11111"] == datetime(2023, 12, 1, tzinfo=timezone.utc)
 
 
 def test_get_work_ids_respects_max_works():
     plugin = AO3Plugin({"username": "u", "password": "p"})
     with patch.object(plugin._session, "get", return_value=_make_response(SEARCH_PAGE_HTML)), \
          patch.object(plugin, "_delay"):
-        ids = plugin._get_work_ids_from_search("https://archiveofourown.org/works/search?query=test", 2)
-    assert ids == ["12345", "67890"]
+        results = plugin._get_work_ids_from_search("https://archiveofourown.org/works/search?query=test", 2)
+    assert list(results.keys()) == ["12345", "67890"]
 
 
 def test_fetch_work_parses_content():
@@ -163,8 +186,48 @@ def test_fetch_work_parses_content():
     assert "Chapter one content here" in item.content
     assert "Chapter two content here" in item.content
     assert item.source_path == "https://archiveofourown.org/works/12345"
-    assert item.work_id == "12345"
+    assert item.plugin_metadata.get("work_id") == "12345"
     assert item.content_hash == hashlib.sha256(item.content.encode("utf-8")).hexdigest()
+
+
+def test_fetch_work_uses_passed_source_updated_at():
+    from datetime import datetime, timezone
+    plugin = AO3Plugin({"username": "u", "password": "p"})
+    date = datetime(2024, 3, 15, tzinfo=timezone.utc)
+    with patch.object(plugin._session, "get", return_value=_make_response(WORK_HTML)):
+        item = plugin._fetch_work("12345", source_updated_at=date)
+    assert item is not None
+    assert item.plugin_metadata.get("source_updated_at") == date.isoformat()
+
+
+def test_fetch_sets_source_updated_at_from_search():
+    from datetime import datetime, timezone
+    plugin = AO3Plugin({
+        "username": "u", "password": "p",
+        "search_urls": ["https://archiveofourown.org/works/search?q=test"],
+        "max_works": 1,
+    })
+    _call_count = {"n": 0}
+
+    def fake_get(url, **kwargs):
+        _call_count["n"] += 1
+        if _call_count["n"] == 1:
+            return _make_response("<html></html>")  # homepage
+        if "login" in url:
+            return _make_response(SIGN_IN_HTML)
+        if "search" in url:
+            return _make_response(SEARCH_PAGE_HTML)
+        return _make_response(WORK_HTML)
+
+    def fake_post(*args, **kwargs):
+        return _make_response("", url="https://archiveofourown.org/users/u")
+
+    with patch.object(plugin._session, "get", side_effect=fake_get), \
+         patch.object(plugin._session, "post", side_effect=fake_post), \
+         patch.object(plugin, "_delay"):
+        items = list(plugin.fetch("proj1"))
+
+    assert items[0].plugin_metadata.get("source_updated_at") == datetime(2024, 3, 15, tzinfo=timezone.utc).isoformat()
 
 
 def test_fetch_work_returns_none_on_404():
@@ -211,7 +274,7 @@ def test_fetch_deduplicates_work_ids():
         items = list(plugin.fetch("proj1"))
 
     # work 12345 appears in both search results and work_urls → deduplicated
-    work_ids = [i.work_id for i in items]
+    work_ids = [i.plugin_metadata.get("work_id") for i in items]
     assert work_ids.count("12345") == 1
     assert len(set(work_ids)) == len(work_ids)
 

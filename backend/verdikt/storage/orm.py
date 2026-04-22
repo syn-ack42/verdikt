@@ -36,7 +36,6 @@ class MaterialItemRow(Base):
     url: Mapped[str | None] = mapped_column(String, nullable=True)
     work_title: Mapped[str | None] = mapped_column(String, nullable=True)
     author: Mapped[str | None] = mapped_column(String, nullable=True)
-    work_id: Mapped[str | None] = mapped_column(String, nullable=True)
     sequence_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
     content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     content_is_bytes: Mapped[bool] = mapped_column(nullable=False)
@@ -44,6 +43,7 @@ class MaterialItemRow(Base):
     content_type: Mapped[str] = mapped_column(String, nullable=False)
     pipeline_phase: Mapped[str] = mapped_column(String, nullable=False)
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    plugin_metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
 
 
 class ChunkRow(Base):

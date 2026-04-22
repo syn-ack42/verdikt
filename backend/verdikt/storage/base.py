@@ -46,6 +46,11 @@ class MaterialStore(ABC):
         ...
 
     @abstractmethod
+    def update_plugin_metadata(self, item_id: str, plugin_metadata: dict) -> None:
+        """Overwrite plugin_metadata without touching content or pipeline phase."""
+        ...
+
+    @abstractmethod
     def get_by_source_path(self, project_id: str, source_path: str) -> MaterialItem | None: ...
 
     @abstractmethod

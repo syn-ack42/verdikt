@@ -42,7 +42,7 @@ function ArrayField({
             value={item}
             onChange={e => set(i, e.target.value)}
             placeholder={prop.description ?? prop.title ?? ''}
-            style={{ flex: 1, padding: '4px 8px', border: '1px solid #ddd', borderRadius: 4 }}
+            style={{ flex: 1, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)' }}
           />
           <button type="button" onClick={() => remove(i)} style={{ color: '#c00', border: 'none', background: 'none', cursor: 'pointer' }}>×</button>
         </div>
@@ -75,7 +75,7 @@ export default function PluginConfigEditor({ schema, value, onChange, errors }: 
               {label}{isRequired && <span style={{ color: '#c00' }}> *</span>}
             </label>
             {prop.description && (
-              <p style={{ margin: '0 0 4px', fontSize: 12, color: '#888' }}>{prop.description}</p>
+              <p style={{ margin: '0 0 4px', fontSize: 12, color: 'var(--text-muted)' }}>{prop.description}</p>
             )}
             {type === 'array' ? (
               <ArrayField prop={prop} value={currentVal} onChange={v => update(key, v)} />
@@ -100,9 +100,11 @@ export default function PluginConfigEditor({ schema, value, onChange, errors }: 
                 style={{
                   width: '100%',
                   padding: '6px 8px',
-                  border: `1px solid ${error ? '#f59e0b' : '#ddd'}`,
+                  border: `1px solid ${error ? '#f59e0b' : 'var(--border)'}`,
                   borderRadius: 4,
                   boxSizing: 'border-box',
+                  background: 'var(--bg)',
+                  color: 'var(--text)',
                 }}
               />
             )}

@@ -29,6 +29,7 @@ export interface MaterialItem {
   pipeline_phase: string
   content_hash: string | null
   ingested_at: string
+  plugin_metadata: Record<string, unknown>
 }
 
 export interface PipelineResult {
@@ -38,7 +39,8 @@ export interface PipelineResult {
 }
 
 export type PipelineStreamEvent =
-  | { phase: string; status: 'running' }
+  | { phase: string; status: 'running'; total?: number }
+  | { phase: string; status: 'progress'; current: number; total: number }
   | { phase: string; status: 'done'; items_processed: number }
   | { phase: string; status: 'error'; error: string }
   | { complete: true; total_processed: number }
@@ -126,17 +128,53 @@ export interface PluginConfig {
   config: Record<string, unknown>
 }
 
+export type PluginConfigMap = Record<string, PluginConfig>
+
 export interface UpdateResult {
   updated: number
   unchanged: number
 }
+
+export interface UpdatePluginStatus {
+  running: boolean
+  phase: 'checking' | 'fetching' | null
+  updated: number
+  unchanged: number
+}
+
+export type UpdatePluginEvent =
+  | { phase: 'checking'; total: number }
+  | { phase: 'fetching'; needs_update: number; unchanged: number }
+  | { work: string; status: 'updated' | 'unchanged'; updated: number; unchanged: number }
+  | { complete: true; updated: number; unchanged: number }
+  | { error: string }
 
 export interface WorkDetail extends MaterialItem {
   content: string | null
   storage_path: string | null
 }
 
+export interface RatedChunkEntry {
+  rating_id: string
+  chunk_id: string
+  chunk_position: number
+  chunk_count: number
+  chunk_content: string | null
+  material_item_id: string
+  work_seq: number | null
+  work_title: string | null
+  author: string | null
+  dimension_scores: Record<string, number>
+  avg_score: number | null
+  rated_at: string
+}
+
+export interface CrystalliseStatus {
+  running: boolean
+}
+
 export type PluginIngestEvent =
+  | { total: number }
   | { work: string; status: 'added' | 'updated' | 'unchanged'; added: number; updated: number; skipped: number }
   | { complete: true; added: number; updated: number; skipped: number }
   | { error: string }

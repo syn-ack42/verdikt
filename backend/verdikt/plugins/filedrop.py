@@ -106,20 +106,21 @@ class FileDropPlugin(PluginBase):
                 content_type=_EXT_TO_CONTENT_TYPE[ext],
             )
 
-    def _extract_text(self, path: Path) -> str:
+    @staticmethod
+    def _extract_text(path: Path) -> str:
         ext = path.suffix.lower()
         if ext == ".txt":
             return path.read_text(encoding="utf-8", errors="replace")
         if ext == ".md":
             return path.read_text(encoding="utf-8", errors="replace")
         if ext in {".html", ".htm"}:
-            return self._parse_html(path)
+            return FileDropPlugin._parse_html(path)
         if ext == ".epub":
-            return self._parse_epub(path)
+            return FileDropPlugin._parse_epub(path)
         if ext == ".pdf":
-            return self._parse_pdf(path)
+            return FileDropPlugin._parse_pdf(path)
         if ext == ".rtf":
-            return self._parse_rtf(path)
+            return FileDropPlugin._parse_rtf(path)
         raise ValueError(f"Unsupported extension: {ext}")
 
     @staticmethod

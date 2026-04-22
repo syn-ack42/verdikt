@@ -154,21 +154,28 @@ class SQLiteMaterialStore(MaterialStore):
         ).scalar_one_or_none()
         return self._from_row(row) if row else None
 
-    def update_content(self, item_id: str, content: bytes | str, content_hash: str | None) -> None:
+    def update_plugin_metadata(self, item_id: str, plugin_metadata: dict) -> None:
+        self._s.execute(
+            update(MaterialItemRow)
+            .where(MaterialItemRow.id == item_id)
+            .values(plugin_metadata_json=json.dumps(plugin_metadata))
+        )
+        self._s.flush()
+
+    def update_content(self, item_id: str, content: bytes | str, content_hash: str | None, plugin_metadata: dict | None = None) -> None:
         if isinstance(content, bytes):
             raw, is_bytes = content, True
         else:
             raw, is_bytes = content.encode("utf-8"), False
-        self._s.execute(
-            update(MaterialItemRow)
-            .where(MaterialItemRow.id == item_id)
-            .values(
-                content=raw,
-                content_is_bytes=is_bytes,
-                content_hash=content_hash,
-                pipeline_phase=PipelinePhase.INGESTED.value,
-            )
-        )
+        values: dict = {
+            "content": raw,
+            "content_is_bytes": is_bytes,
+            "content_hash": content_hash,
+            "pipeline_phase": PipelinePhase.INGESTED.value,
+        }
+        if plugin_metadata is not None:
+            values["plugin_metadata_json"] = json.dumps(plugin_metadata)
+        self._s.execute(update(MaterialItemRow).where(MaterialItemRow.id == item_id).values(**values))
         self._s.flush()
 
     @staticmethod
@@ -187,7 +194,6 @@ class SQLiteMaterialStore(MaterialStore):
             url=item.url,
             work_title=item.work_title,
             author=item.author,
-            work_id=item.work_id,
             sequence_position=item.sequence_position,
             content=raw,
             content_is_bytes=is_bytes,
@@ -195,6 +201,7 @@ class SQLiteMaterialStore(MaterialStore):
             content_type=item.content_type if isinstance(item.content_type, str) else item.content_type.value,
             pipeline_phase=item.pipeline_phase if isinstance(item.pipeline_phase, str) else item.pipeline_phase.value,
             ingested_at=item.ingested_at,
+            plugin_metadata_json=json.dumps(item.plugin_metadata),
         )
 
     @staticmethod
@@ -210,19 +217,23 @@ class SQLiteMaterialStore(MaterialStore):
             url=r.url,
             work_title=r.work_title,
             author=r.author,
-            work_id=r.work_id,
             sequence_position=r.sequence_position,
             content=content,
             domain=r.domain,
             content_type=r.content_type,
             pipeline_phase=r.pipeline_phase,
             ingested_at=r.ingested_at,
+            plugin_metadata=json.loads(r.plugin_metadata_json or "{}"),
         )
 
 
 class SQLiteChunkStore(ChunkStore):
     def __init__(self, session: Session) -> None:
         self._s = session
+
+    def get(self, chunk_id: str) -> Chunk | None:
+        row = self._s.get(ChunkRow, chunk_id)
+        return self._from_row(row) if row else None
 
     def save_many(self, chunks: list[Chunk]) -> list[Chunk]:
         self._s.add_all([self._to_row(c) for c in chunks])
@@ -321,6 +332,14 @@ class SQLiteRatingStore(RatingStore):
         return self._s.execute(
             select(func.count()).select_from(RatingRow).where(RatingRow.project_id == project_id)
         ).scalar() or 0
+
+    def update_scores(self, rating_id: str, dimension_scores: dict) -> None:
+        self._s.execute(
+            update(RatingRow)
+            .where(RatingRow.id == rating_id)
+            .values(dimension_scores=json.dumps(dimension_scores), skipped=False, skip_reason=None)
+        )
+        self._s.flush()
 
     def delete_by_material(self, material_item_id: str) -> None:
         self._s.execute(

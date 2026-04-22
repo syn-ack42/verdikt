@@ -11,6 +11,22 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Semantic tokens — used by inline styles to stay theme-aware */
+  --bg: #242424;
+  --text: rgba(255, 255, 255, 0.87);
+  --modal-bg: #2d2d2d;
+  --hover: rgba(255, 255, 255, 0.08);
+  --text-muted: #aaa;
+  --surface: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.12);
+  --badge-green-bg: rgba(46, 125, 50, 0.25);
+  --badge-green-text: #81c784;
+  --badge-yellow-bg: rgba(245, 158, 11, 0.2);
+  --badge-yellow-text: #fbbf24;
+  --chunk-bg: rgba(255, 255, 255, 0.05);
+  --error-bg: rgba(220, 0, 0, 0.1);
+  --error-border: rgba(220, 0, 0, 0.35);
 }
 
 a {
@@ -37,12 +53,13 @@ h1 {
 
 button {
   border-radius: 8px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   padding: 0.6em 1.2em;
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: transparent;
+  color: inherit;
   cursor: pointer;
   transition: border-color 0.25s;
 }
@@ -58,11 +75,23 @@ button:focus-visible {
   :root {
     color: #213547;
     background-color: #ffffff;
+
+    --bg: #ffffff;
+    --text: #213547;
+    --modal-bg: #ffffff;
+    --hover: rgba(0, 0, 0, 0.04);
+    --text-muted: #666;
+    --surface: rgba(0, 0, 0, 0.03);
+    --border: #e0e0e0;
+    --badge-green-bg: #e8f5e9;
+    --badge-green-text: #2e7d32;
+    --badge-yellow-bg: #fff8e1;
+    --badge-yellow-text: #7c5e00;
+    --chunk-bg: rgba(0, 0, 0, 0.04);
+    --error-bg: #fff5f5;
+    --error-border: #fca5a5;
   }
   a:hover {
     color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
   }
 }

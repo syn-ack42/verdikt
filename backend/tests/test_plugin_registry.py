@@ -1,10 +1,10 @@
-from verdikt.plugins.filedrop import FileDropPlugin
+from verdikt.plugins.storage import StoragePlugin
 from verdikt.plugins.registry import get_plugin, load_plugins
 
 
-def test_load_plugins_contains_filedrop():
+def test_load_plugins_contains_storage():
     plugins = load_plugins()
-    assert "filedrop" in plugins
+    assert "storage" in plugins
 
 
 def test_load_plugins_contains_ao3():
@@ -12,8 +12,8 @@ def test_load_plugins_contains_ao3():
     assert "ao3" in plugins
 
 
-def test_get_plugin_filedrop():
-    assert get_plugin("filedrop") is FileDropPlugin
+def test_get_plugin_storage():
+    assert get_plugin("storage") is StoragePlugin
 
 
 def test_get_plugin_unknown_raises():

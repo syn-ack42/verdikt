@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from verdikt.api.deps import get_config, get_session
-from verdikt.core.models import PreferenceProfile
+from verdikt.core.models import DimensionProfile, PreferenceProfile
 from verdikt.inference.crystalliser import ProfileCrystalliser
 from verdikt.storage.sqlite import (
     SQLiteChunkStore, SQLiteProfileStore, SQLiteProjectStore, SQLiteRatingStore,
 )
 
 router = APIRouter(prefix="/api/projects/{project_id}/profile", tags=["profile"])
+
+# In-memory set of project_ids currently crystallising (single-process only)
+_crystallise_running: set[str] = set()
 
 
 def _get_project_or_404(project_id: str, session: Session):
@@ -54,6 +60,11 @@ def list_profile_versions(
     return [_profile_response(p) for p in SQLiteProfileStore(session).list_versions(project_id)]
 
 
+@router.get("/crystallise/status")
+def crystallise_status(project_id: str) -> dict:
+    return {"running": project_id in _crystallise_running}
+
+
 @router.post("/crystallise", status_code=201)
 def crystallise_profile(
     project_id: str,
@@ -85,6 +96,7 @@ def crystallise_profile(
         ollama_base_url=config.inference.ollama_base_url,
         model=config.inference.ollama_model,
     )
+    _crystallise_running.add(project_id)
     try:
         profile = crystalliser.crystallise(
             project=proj,
@@ -102,6 +114,9 @@ def crystallise_profile(
         if isinstance(exc, _httpx.HTTPStatusError):
             raise HTTPException(status_code=502, detail=f"Ollama error: {exc.response.text[:200]}")
         raise HTTPException(status_code=500, detail=f"Crystallisation failed: {exc}")
+    finally:
+        _crystallise_running.discard(project_id)
+
     profile_store.save(profile)
     session.commit()
     return _profile_response(profile)
@@ -120,16 +135,50 @@ def update_profile(
 ) -> dict:
     _get_project_or_404(project_id, session)
     profile_store = SQLiteProfileStore(session)
-    profile = profile_store.get_latest(project_id)
-    if profile is None:
+    current = profile_store.get_latest(project_id)
+    if current is None:
         raise HTTPException(status_code=404, detail="No profile found")
 
-    from verdikt.core.models import DimensionProfile
-    if body.dimensions is not None:
-        profile.dimensions = [DimensionProfile(**d) for d in body.dimensions]
-    if body.overall_summary is not None:
-        profile.overall_summary = body.overall_summary
-
-    profile_store.update(profile)
+    new_profile = PreferenceProfile(
+        id=str(uuid4()),
+        project_id=project_id,
+        version=current.version + 1,
+        dimensions=[DimensionProfile(**d) for d in body.dimensions] if body.dimensions is not None else current.dimensions,
+        overall_summary=body.overall_summary if body.overall_summary is not None else current.overall_summary,
+        rating_count=current.rating_count,
+        created_at=datetime.now(timezone.utc),
+    )
+    profile_store.save(new_profile)
     session.commit()
-    return _profile_response(profile)
+    return _profile_response(new_profile)
+
+
+@router.post("/versions/{version_id}/restore", status_code=201)
+def restore_profile_version(
+    project_id: str,
+    version_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    _get_project_or_404(project_id, session)
+    profile_store = SQLiteProfileStore(session)
+
+    versions = profile_store.list_versions(project_id)
+    target = next((v for v in versions if v.id == version_id), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    current = profile_store.get_latest(project_id)
+    new_version = (current.version if current else 0) + 1
+
+    restored = PreferenceProfile(
+        id=str(uuid4()),
+        project_id=project_id,
+        version=new_version,
+        dimensions=target.dimensions,
+        overall_summary=target.overall_summary,
+        rating_count=target.rating_count,
+        created_at=datetime.now(timezone.utc),
+    )
+    profile_store.save(restored)
+    session.commit()
+    return _profile_response(restored)

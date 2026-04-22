@@ -31,7 +31,7 @@ export default function RatingSlider({ name, score, active, onScore, onFocus }: 
               width: 36,
               height: 36,
               borderRadius: 4,
-              border: score === v ? '1px solid #6b7de0' : '1px solid #666',
+              border: score === v ? '1px solid #6b7de0' : '1px solid var(--border)',
               background: score === v ? '#6b7de0' : 'transparent',
               color: score === v ? '#fff' : 'inherit',
               fontWeight: score === v ? 700 : 400,

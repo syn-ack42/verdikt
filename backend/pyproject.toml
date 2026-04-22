@@ -36,7 +36,7 @@ dependencies = [
 verdikt = "verdikt.cli:app"
 
 [project.entry-points."verdikt.plugins"]
-filedrop = "verdikt.plugins.filedrop:FileDropPlugin"
+storage = "verdikt.plugins.storage:StoragePlugin"
 ao3 = "verdikt.plugins.ao3:AO3Plugin"
 
 [tool.pytest.ini_options]
