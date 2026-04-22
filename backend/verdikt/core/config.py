@@ -35,6 +35,10 @@ class AppConfig(BaseSettings):
     def user_files_path(self) -> Path:
         return self.data_dir / "user_files"
 
+    @property
+    def log_path(self) -> Path:
+        return self.data_dir / "verdikt.log"
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.chroma_path.mkdir(parents=True, exist_ok=True)

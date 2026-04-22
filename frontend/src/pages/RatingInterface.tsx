@@ -78,6 +78,10 @@ export default function RatingInterface() {
     return () => window.removeEventListener('keydown', handler)
   }, [data, project, dims, activeIdx, allScored, scores, submit])
 
+  useEffect(() => {
+    if (data?.chunk.id) window.scrollTo(0, 0)
+  }, [data?.chunk.id])
+
   if (isLoading) return <p style={{ padding: 24 }}>Loading…</p>
 
   if (error || !data) {
@@ -102,20 +106,20 @@ export default function RatingInterface() {
         <button onClick={() => navigate(`/projects/${projectId}`)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
           ← Dashboard
         </button>
-        <span style={{ fontSize: 13, color: '#888' }}>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
           {total_rated} / {total_chunks} rated
         </span>
       </div>
 
-      <div style={{ marginBottom: 8, fontSize: 12, color: '#999' }}>
+      <div style={{ marginBottom: 8, fontSize: 12, color: 'var(--text-muted)' }}>
         {material_item.work_title ?? material_item.source_path?.split('/').pop() ?? 'Unknown'}
         {material_item.author && ` — ${material_item.author}`}
         {' · '}cluster {chunk.cluster_id ?? '—'} · position {chunk.position}
       </div>
 
       <div style={{
-        background: '#fafafa',
-        border: '1px solid #e0e0e0',
+        background: 'var(--chunk-bg)',
+        border: '1px solid var(--border)',
         borderRadius: 8,
         padding: 20,
         marginBottom: 20,
@@ -144,18 +148,18 @@ export default function RatingInterface() {
         <button
           onClick={() => submit.mutate({})}
           disabled={!allScored || submit.isPending}
-          style={{ background: allScored ? '#6b7de0' : '#ccc', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: 4, cursor: allScored ? 'pointer' : 'default' }}
+          style={{ background: allScored ? '#6b7de0' : 'var(--border)', color: allScored ? '#fff' : 'var(--text-muted)', border: 'none', padding: '8px 20px', borderRadius: 4, cursor: allScored ? 'pointer' : 'default' }}
         >
           Submit (Enter)
         </button>
         <button
           onClick={() => submit.mutate({ skipped: true, reason: 'skipped' })}
           disabled={submit.isPending}
-          style={{ background: 'none', border: '1px solid #ccc', padding: '8px 16px', borderRadius: 4 }}
+          style={{ padding: '8px 16px', borderRadius: 4 }}
         >
           Skip (s)
         </button>
-        <span style={{ fontSize: 12, color: '#aaa', marginLeft: 8 }}>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>
           Tab/→ next dim · 1–5 score · Enter submit
         </span>
       </div>

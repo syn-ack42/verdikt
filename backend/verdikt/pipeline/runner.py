@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from dataclasses import dataclass, field
 from math import isqrt
+from typing import Any
 
 from verdikt.core.models import Chunk, PipelinePhase
 from verdikt.inference.base import EmbedderBase
@@ -46,39 +48,78 @@ class PipelineRunner:
 
     def run(self, project_id: str) -> PipelineResult:
         result = PipelineResult(project_id=project_id)
-        for phase_fn in (self._chunk, self._embed, self._cluster):
-            result.phases.append(phase_fn(project_id))
+        for phase_name, stream_fn in [
+            ("chunk", self._chunk_stream),
+            ("embed", self._embed_stream),
+            ("cluster", self._cluster_stream),
+        ]:
+            items_processed = 0
+            for event in stream_fn(project_id):
+                if event["type"] == "done":
+                    items_processed = event["items_processed"]
+            result.phases.append(PhaseResult(phase=phase_name, items_processed=items_processed))
         return result
 
+    # ── Public sync wrappers (used by Prefect tasks in flows.py) ──────────────
+
     def _chunk(self, project_id: str) -> PhaseResult:
-        items = self._materials.list_by_project(project_id, phase=PipelinePhase.INGESTED)
-        total = 0
-        for item in items:
+        result = None
+        for event in self._chunk_stream(project_id):
+            if event["type"] == "done":
+                result = PhaseResult(phase="chunk", items_processed=event["items_processed"])
+        return result  # type: ignore[return-value]
+
+    def _embed(self, project_id: str) -> PhaseResult:
+        result = None
+        for event in self._embed_stream(project_id):
+            if event["type"] == "done":
+                result = PhaseResult(phase="embed", items_processed=event["items_processed"])
+        return result  # type: ignore[return-value]
+
+    def _cluster(self, project_id: str) -> PhaseResult:
+        result = None
+        for event in self._cluster_stream(project_id):
+            if event["type"] == "done":
+                result = PhaseResult(phase="cluster", items_processed=event["items_processed"])
+        return result  # type: ignore[return-value]
+
+    # ── Streaming generators (used by the SSE pipeline endpoint) ─────────────
+
+    def _chunk_stream(self, project_id: str) -> Generator[dict[str, Any], None, None]:
+        items = list(self._materials.list_by_project(project_id, phase=PipelinePhase.INGESTED))
+        total = len(items)
+        yield {"type": "start", "total": total}
+        chunks_created = 0
+        for i, item in enumerate(items):
             chunk_contents = self._chunker.chunk(item.content)
             chunks = [
                 Chunk(
                     material_item_id=item.id,
                     project_id=project_id,
                     content=c,
-                    position=i,
+                    position=j,
                     size=self._chunker.measure(c),
                 )
-                for i, c in enumerate(chunk_contents)
+                for j, c in enumerate(chunk_contents)
             ]
             if chunks:
                 self._chunks.save_many(chunks)
-                total += len(chunks)
+                chunks_created += len(chunks)
             self._materials.update_phase(item.id, PipelinePhase.CHUNKED)
-        return PhaseResult(phase="chunk", items_processed=total)
+            yield {"type": "progress", "current": i + 1, "total": total}
+        yield {"type": "done", "items_processed": chunks_created}
 
-    def _embed(self, project_id: str) -> PhaseResult:
-        items = self._materials.list_by_project(project_id, phase=PipelinePhase.CHUNKED)
+    def _embed_stream(self, project_id: str) -> Generator[dict[str, Any], None, None]:
+        items = list(self._materials.list_by_project(project_id, phase=PipelinePhase.CHUNKED))
         all_chunks: list[Chunk] = []
         for item in items:
             all_chunks.extend(self._chunks.list_by_material(item.id))
 
+        yield {"type": "start", "total": len(all_chunks)}
+
         if not all_chunks:
-            return PhaseResult(phase="embed", items_processed=0)
+            yield {"type": "done", "items_processed": 0}
+            return
 
         embeddings = self._embedder.embed([c.content for c in all_chunks])
         for chunk, embedding in zip(all_chunks, embeddings):
@@ -96,23 +137,24 @@ class PipelineRunner:
         for item in items:
             self._materials.update_phase(item.id, PipelinePhase.EMBEDDED)
 
-        return PhaseResult(phase="embed", items_processed=len(all_chunks))
+        yield {"type": "done", "items_processed": len(all_chunks)}
 
-    def _cluster(self, project_id: str) -> PhaseResult:
+    def _cluster_stream(self, project_id: str) -> Generator[dict[str, Any], None, None]:
         from sklearn.cluster import KMeans
 
-        items = self._materials.list_by_project(project_id, phase=PipelinePhase.EMBEDDED)
+        items = list(self._materials.list_by_project(project_id, phase=PipelinePhase.EMBEDDED))
         all_chunks: list[Chunk] = []
         for item in items:
             all_chunks.extend(self._chunks.list_by_material(item.id))
 
+        yield {"type": "start", "total": len(all_chunks)}
+
         if len(all_chunks) < 2:
             for item in items:
                 self._materials.update_phase(item.id, PipelinePhase.CLUSTERED)
-            return PhaseResult(phase="cluster", items_processed=len(all_chunks))
+            yield {"type": "done", "items_processed": len(all_chunks)}
+            return
 
-        # Re-embed rather than loading from ChromaDB — ordering from bulk get() is
-        # fragile; at M1 scale re-embedding is fast. TODO(M5): load from vector store.
         embeddings = self._embedder.embed([c.content for c in all_chunks])
         n_clusters = max(2, isqrt(len(all_chunks)))
         labels = KMeans(n_clusters=n_clusters, random_state=42, n_init="auto").fit_predict(embeddings)
@@ -123,4 +165,4 @@ class PipelineRunner:
         for item in items:
             self._materials.update_phase(item.id, PipelinePhase.CLUSTERED)
 
-        return PhaseResult(phase="cluster", items_processed=len(all_chunks))
+        yield {"type": "done", "items_processed": len(all_chunks)}

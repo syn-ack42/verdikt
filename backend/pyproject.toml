@@ -28,13 +28,16 @@ dependencies = [
     "numpy>=1.26",
     "scikit-learn>=1.4",
     "prefect>=3.0",
+    "requests>=2.31",
+    "curl-cffi>=0.7",
 ]
 
 [project.scripts]
 verdikt = "verdikt.cli:app"
 
 [project.entry-points."verdikt.plugins"]
-filedrop = "verdikt.plugins.filedrop:FileDropPlugin"
+storage = "verdikt.plugins.storage:StoragePlugin"
+ao3 = "verdikt.plugins.ao3:AO3Plugin"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -16,7 +16,7 @@ export default function RatingSlider({ name, score, active, onScore, onFocus }: 
         gap: 12,
         padding: '6px 8px',
         borderRadius: 4,
-        background: active ? '#f0f4ff' : 'transparent',
+        background: active ? 'rgba(107,125,224,0.15)' : 'transparent',
         border: active ? '1px solid #6b7de0' : '1px solid transparent',
         cursor: 'default',
       }}
@@ -31,9 +31,9 @@ export default function RatingSlider({ name, score, active, onScore, onFocus }: 
               width: 36,
               height: 36,
               borderRadius: 4,
-              border: '1px solid #ccc',
-              background: score === v ? '#6b7de0' : '#fff',
-              color: score === v ? '#fff' : '#333',
+              border: score === v ? '1px solid #6b7de0' : '1px solid var(--border)',
+              background: score === v ? '#6b7de0' : 'transparent',
+              color: score === v ? '#fff' : 'inherit',
               fontWeight: score === v ? 700 : 400,
               cursor: 'pointer',
             }}
@@ -43,7 +43,7 @@ export default function RatingSlider({ name, score, active, onScore, onFocus }: 
         ))}
       </div>
       {score !== undefined && (
-        <span style={{ color: '#888', fontSize: 13 }}>✓</span>
+        <span style={{ color: '#6b7de0', fontSize: 13 }}>✓</span>
       )}
     </div>
   )

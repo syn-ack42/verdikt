@@ -106,3 +106,84 @@ def list_ratings(
 ) -> list[dict]:
     _get_project_or_404(project_id, session)
     return [_rating_response(r) for r in SQLiteRatingStore(session).list_by_project(project_id)]
+
+
+@router.get("/rated-chunks")
+def list_rated_chunks(
+    project_id: str,
+    work_seq: int | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict]:
+    _get_project_or_404(project_id, session)
+    rating_store = SQLiteRatingStore(session)
+    chunk_store = SQLiteChunkStore(session)
+    mat_store = SQLiteMaterialStore(session)
+
+    ratings = [r for r in rating_store.list_by_project(project_id) if not r.skipped]
+
+    if work_seq is not None:
+        material = mat_store.get_by_seq(project_id, work_seq)
+        if material is None:
+            return []
+        target_id = material.id
+        ratings = [r for r in ratings if r.material_item_id == target_id]
+
+    # Cache material info and chunk counts to avoid N+1
+    mat_cache: dict = {}
+    chunk_count_cache: dict = {}
+
+    result = []
+    for r in ratings:
+        mid = r.material_item_id
+        if mid not in mat_cache:
+            mat = mat_store.get(mid)
+            mat_cache[mid] = mat
+            if mat:
+                chunk_count_cache[mid] = len(chunk_store.list_by_material(mid))
+        mat = mat_cache.get(mid)
+        chunk = chunk_store.get(r.chunk_id)
+        if chunk is None:
+            continue
+        avg_score = (
+            sum(r.dimension_scores.values()) / len(r.dimension_scores)
+            if r.dimension_scores else None
+        )
+        result.append({
+            "rating_id": r.id,
+            "chunk_id": r.chunk_id,
+            "chunk_position": chunk.position,
+            "chunk_count": chunk_count_cache.get(mid, 0),
+            "chunk_content": chunk.content if isinstance(chunk.content, str) else None,
+            "material_item_id": mid,
+            "work_seq": mat.project_seq if mat else None,
+            "work_title": mat.work_title if mat else None,
+            "author": mat.author if mat else None,
+            "dimension_scores": r.dimension_scores,
+            "avg_score": round(avg_score, 2) if avg_score is not None else None,
+            "rated_at": r.rated_at.isoformat(),
+        })
+
+    result.sort(key=lambda x: (x["work_seq"] or 0, x["chunk_position"]))
+    return result
+
+
+class RatingUpdate(BaseModel):
+    dimension_scores: dict[str, float]
+
+
+@router.put("/{rating_id}")
+def update_rating(
+    project_id: str,
+    rating_id: str,
+    body: RatingUpdate,
+    session: Session = Depends(get_session),
+) -> dict:
+    _get_project_or_404(project_id, session)
+    rating_store = SQLiteRatingStore(session)
+    rating = rating_store.get(rating_id)
+    if rating is None or rating.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Rating not found")
+    rating_store.update_scores(rating_id, body.dimension_scores)
+    session.commit()
+    updated = rating_store.get(rating_id)
+    return _rating_response(updated)
