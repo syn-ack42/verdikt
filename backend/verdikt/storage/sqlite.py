@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 
 from verdikt.core.models import (
     Chunk, DimensionProfile, MaterialItem, PipelinePhase,
-    PreferenceProfile, Project, Rating, RatingDimension,
+    PluginConfig, PreferenceProfile, Project, Rating, RatingDimension,
 )
-from verdikt.storage.base import ChunkStore, MaterialStore, ProfileStore, ProjectStore, RatingStore
-from verdikt.storage.orm import ChunkRow, MaterialItemRow, PreferenceProfileRow, ProjectRow, RatingRow
+from verdikt.storage.base import ChunkStore, MaterialStore, PluginConfigStore, ProfileStore, ProjectStore, RatingStore
+from verdikt.storage.orm import ChunkRow, MaterialItemRow, PluginConfigRow, PreferenceProfileRow, ProjectRow, RatingRow
 
 
 class SQLiteProjectStore(ProjectStore):
@@ -135,6 +135,15 @@ class SQLiteMaterialStore(MaterialStore):
         self._s.execute(sql_delete(MaterialItemRow).where(MaterialItemRow.id == item_id))
         self._s.flush()
 
+    def list_by_source_plugin(self, project_id: str, source_plugin: str) -> list[MaterialItem]:
+        rows = self._s.execute(
+            select(MaterialItemRow).where(
+                MaterialItemRow.project_id == project_id,
+                MaterialItemRow.source_plugin == source_plugin,
+            ).order_by(MaterialItemRow.project_seq)
+        ).scalars().all()
+        return [self._from_row(r) for r in rows]
+
     def get_by_source(self, project_id: str, source_plugin: str, source_path: str) -> MaterialItem | None:
         row = self._s.execute(
             select(MaterialItemRow).where(
@@ -145,21 +154,28 @@ class SQLiteMaterialStore(MaterialStore):
         ).scalar_one_or_none()
         return self._from_row(row) if row else None
 
-    def update_content(self, item_id: str, content: bytes | str, content_hash: str | None) -> None:
+    def update_plugin_metadata(self, item_id: str, plugin_metadata: dict) -> None:
+        self._s.execute(
+            update(MaterialItemRow)
+            .where(MaterialItemRow.id == item_id)
+            .values(plugin_metadata_json=json.dumps(plugin_metadata))
+        )
+        self._s.flush()
+
+    def update_content(self, item_id: str, content: bytes | str, content_hash: str | None, plugin_metadata: dict | None = None) -> None:
         if isinstance(content, bytes):
             raw, is_bytes = content, True
         else:
             raw, is_bytes = content.encode("utf-8"), False
-        self._s.execute(
-            update(MaterialItemRow)
-            .where(MaterialItemRow.id == item_id)
-            .values(
-                content=raw,
-                content_is_bytes=is_bytes,
-                content_hash=content_hash,
-                pipeline_phase=PipelinePhase.INGESTED.value,
-            )
-        )
+        values: dict = {
+            "content": raw,
+            "content_is_bytes": is_bytes,
+            "content_hash": content_hash,
+            "pipeline_phase": PipelinePhase.INGESTED.value,
+        }
+        if plugin_metadata is not None:
+            values["plugin_metadata_json"] = json.dumps(plugin_metadata)
+        self._s.execute(update(MaterialItemRow).where(MaterialItemRow.id == item_id).values(**values))
         self._s.flush()
 
     @staticmethod
@@ -178,7 +194,6 @@ class SQLiteMaterialStore(MaterialStore):
             url=item.url,
             work_title=item.work_title,
             author=item.author,
-            work_id=item.work_id,
             sequence_position=item.sequence_position,
             content=raw,
             content_is_bytes=is_bytes,
@@ -186,6 +201,7 @@ class SQLiteMaterialStore(MaterialStore):
             content_type=item.content_type if isinstance(item.content_type, str) else item.content_type.value,
             pipeline_phase=item.pipeline_phase if isinstance(item.pipeline_phase, str) else item.pipeline_phase.value,
             ingested_at=item.ingested_at,
+            plugin_metadata_json=json.dumps(item.plugin_metadata),
         )
 
     @staticmethod
@@ -201,19 +217,23 @@ class SQLiteMaterialStore(MaterialStore):
             url=r.url,
             work_title=r.work_title,
             author=r.author,
-            work_id=r.work_id,
             sequence_position=r.sequence_position,
             content=content,
             domain=r.domain,
             content_type=r.content_type,
             pipeline_phase=r.pipeline_phase,
             ingested_at=r.ingested_at,
+            plugin_metadata=json.loads(r.plugin_metadata_json or "{}"),
         )
 
 
 class SQLiteChunkStore(ChunkStore):
     def __init__(self, session: Session) -> None:
         self._s = session
+
+    def get(self, chunk_id: str) -> Chunk | None:
+        row = self._s.get(ChunkRow, chunk_id)
+        return self._from_row(row) if row else None
 
     def save_many(self, chunks: list[Chunk]) -> list[Chunk]:
         self._s.add_all([self._to_row(c) for c in chunks])
@@ -313,6 +333,14 @@ class SQLiteRatingStore(RatingStore):
             select(func.count()).select_from(RatingRow).where(RatingRow.project_id == project_id)
         ).scalar() or 0
 
+    def update_scores(self, rating_id: str, dimension_scores: dict) -> None:
+        self._s.execute(
+            update(RatingRow)
+            .where(RatingRow.id == rating_id)
+            .values(dimension_scores=json.dumps(dimension_scores), skipped=False, skip_reason=None)
+        )
+        self._s.flush()
+
     def delete_by_material(self, material_item_id: str) -> None:
         self._s.execute(
             sql_delete(RatingRow).where(RatingRow.material_item_id == material_item_id)
@@ -406,4 +434,71 @@ class SQLiteProfileStore(ProfileStore):
             overall_summary=r.overall_summary,
             rating_count=r.rating_count,
             created_at=r.created_at,
+        )
+
+
+class SQLitePluginConfigStore(PluginConfigStore):
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def save(self, cfg: PluginConfig) -> PluginConfig:
+        existing = self._s.execute(
+            select(PluginConfigRow)
+            .where(PluginConfigRow.project_id == cfg.project_id)
+            .where(PluginConfigRow.plugin_name == cfg.plugin_name)
+        ).scalar_one_or_none()
+        if existing:
+            existing.config_json = json.dumps(cfg.config)
+            existing.updated_at = cfg.updated_at
+            cfg = PluginConfig(
+                id=existing.id,
+                project_id=existing.project_id,
+                plugin_name=existing.plugin_name,
+                config=cfg.config,
+                created_at=existing.created_at,
+                updated_at=existing.updated_at,
+            )
+        else:
+            self._s.add(PluginConfigRow(
+                id=cfg.id,
+                project_id=cfg.project_id,
+                plugin_name=cfg.plugin_name,
+                config_json=json.dumps(cfg.config),
+                created_at=cfg.created_at,
+                updated_at=cfg.updated_at,
+            ))
+        self._s.flush()
+        return cfg
+
+    def get(self, project_id: str, plugin_name: str) -> PluginConfig | None:
+        row = self._s.execute(
+            select(PluginConfigRow)
+            .where(PluginConfigRow.project_id == project_id)
+            .where(PluginConfigRow.plugin_name == plugin_name)
+        ).scalar_one_or_none()
+        return self._from_row(row) if row else None
+
+    def list_by_project(self, project_id: str) -> list[PluginConfig]:
+        rows = self._s.execute(
+            select(PluginConfigRow).where(PluginConfigRow.project_id == project_id)
+        ).scalars().all()
+        return [self._from_row(r) for r in rows]
+
+    def delete(self, project_id: str, plugin_name: str) -> None:
+        self._s.execute(
+            sql_delete(PluginConfigRow)
+            .where(PluginConfigRow.project_id == project_id)
+            .where(PluginConfigRow.plugin_name == plugin_name)
+        )
+        self._s.flush()
+
+    @staticmethod
+    def _from_row(r: PluginConfigRow) -> PluginConfig:
+        return PluginConfig(
+            id=r.id,
+            project_id=r.project_id,
+            plugin_name=r.plugin_name,
+            config=json.loads(r.config_json),
+            created_at=r.created_at,
+            updated_at=r.updated_at,
         )

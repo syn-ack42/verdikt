@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
+import logging
 from functools import lru_cache
 from typing import Generator
 
 import chromadb
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text as _text
 from fastapi import Depends
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -13,10 +15,38 @@ from verdikt.core.config import AppConfig
 from verdikt.storage.files import LocalStorageBackend, StorageBackend
 from verdikt.storage.orm import Base
 
+log = logging.getLogger(__name__)
+
 
 @lru_cache
 def get_config() -> AppConfig:
     return AppConfig()
+
+
+def _migrate(engine: Engine) -> None:
+    """Apply additive schema migrations that create_all can't handle (new columns on existing tables)."""
+    with engine.connect() as conn:
+        existing = {row[1] for row in conn.execute(_text("PRAGMA table_info(material_items)"))}
+
+        if "plugin_metadata_json" not in existing:
+            conn.execute(_text("ALTER TABLE material_items ADD COLUMN plugin_metadata_json TEXT NOT NULL DEFAULT '{}'"))
+            conn.commit()
+            log.info("migration: added plugin_metadata_json column")
+
+        # Backfill work_id from the old dedicated column into plugin_metadata_json for ao3 rows.
+        # The work_id column was removed from the ORM but may still exist in the DB.
+        if "work_id" in existing:
+            rows = conn.execute(_text(
+                "SELECT id, work_id, plugin_metadata_json FROM material_items "
+                "WHERE work_id IS NOT NULL AND plugin_metadata_json = '{}'"
+            )).fetchall()
+            if rows:
+                for row_id, work_id, _ in rows:
+                    conn.execute(_text(
+                        "UPDATE material_items SET plugin_metadata_json = :meta WHERE id = :id"
+                    ), {"meta": json.dumps({"work_id": work_id}), "id": row_id})
+                conn.commit()
+                log.info("migration: backfilled work_id into plugin_metadata_json for %d rows", len(rows))
 
 
 @lru_cache
@@ -25,6 +55,7 @@ def get_engine() -> Engine:
     config.ensure_dirs()
     engine = create_engine(f"sqlite:///{config.db_path}", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
+    _migrate(engine)
     return engine
 
 

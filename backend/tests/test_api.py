@@ -187,6 +187,24 @@ def test_list_ratings(client, project_id, clustered_chunk):
 
 # ── Profile ───────────────────────────────────────────────────────────────────
 
+@pytest.fixture
+def saved_profile(project_id, mem_engine):
+    """Insert a profile row directly (bypasses Ollama)."""
+    from verdikt.core.models import DimensionProfile, PreferenceProfile
+    from verdikt.storage.sqlite import SQLiteProfileStore
+    with Session(mem_engine) as s:
+        p = PreferenceProfile(
+            project_id=project_id,
+            version=1,
+            dimensions=[DimensionProfile(name="Prose", description="d", summary="s", typical_score=3.5)],
+            overall_summary="Likes prose.",
+            rating_count=5,
+        )
+        SQLiteProfileStore(s).save(p)
+        s.commit()
+    return p
+
+
 def test_get_profile_404_when_none(client, project_id):
     resp = client.get(f"/api/projects/{project_id}/profile")
     assert resp.status_code == 404
@@ -201,6 +219,82 @@ def test_crystallise_below_threshold_422(client, project_id, clustered_chunk):
     })
     resp = client.post(f"/api/projects/{project_id}/profile/crystallise")
     assert resp.status_code == 422
+
+
+def test_crystallise_status_not_running(client, project_id):
+    resp = client.get(f"/api/projects/{project_id}/profile/crystallise/status")
+    assert resp.status_code == 200
+    assert resp.json() == {"running": False}
+
+
+def test_get_profile_versions(client, project_id, saved_profile, mem_engine):
+    # Add a second version
+    from verdikt.core.models import DimensionProfile, PreferenceProfile
+    from verdikt.storage.sqlite import SQLiteProfileStore
+    with Session(mem_engine) as s:
+        p2 = PreferenceProfile(
+            project_id=project_id,
+            version=2,
+            dimensions=[DimensionProfile(name="Prose", description="d", summary="s2", typical_score=4.0)],
+            overall_summary="Revised.",
+            rating_count=10,
+        )
+        SQLiteProfileStore(s).save(p2)
+        s.commit()
+
+    resp = client.get(f"/api/projects/{project_id}/profile/versions")
+    assert resp.status_code == 200
+    versions = resp.json()
+    assert len(versions) == 2
+    assert versions[0]["version"] == 2  # descending order
+
+
+def test_update_profile_creates_new_version(client, project_id, saved_profile):
+    resp = client.put(f"/api/projects/{project_id}/profile", json={
+        "overall_summary": "Updated summary.",
+        "dimensions": [{"name": "Prose", "description": "d", "summary": "new", "typical_score": 3.5}],
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["version"] == saved_profile.version + 1
+    assert data["overall_summary"] == "Updated summary."
+    assert data["id"] != saved_profile.id
+
+    # Original version still exists
+    versions_resp = client.get(f"/api/projects/{project_id}/profile/versions")
+    assert len(versions_resp.json()) == 2
+
+
+def test_restore_profile_version(client, project_id, saved_profile, mem_engine):
+    # Create v2 so we can restore v1
+    from verdikt.core.models import DimensionProfile, PreferenceProfile
+    from verdikt.storage.sqlite import SQLiteProfileStore
+    with Session(mem_engine) as s:
+        p2 = PreferenceProfile(
+            project_id=project_id,
+            version=2,
+            dimensions=[DimensionProfile(name="Prose", description="d", summary="v2", typical_score=4.0)],
+            overall_summary="Version 2.",
+            rating_count=10,
+        )
+        SQLiteProfileStore(s).save(p2)
+        s.commit()
+
+    # Restore v1
+    resp = client.post(f"/api/projects/{project_id}/profile/versions/{saved_profile.id}/restore")
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["version"] == 3
+    assert data["overall_summary"] == saved_profile.overall_summary
+    assert data["id"] != saved_profile.id
+
+    versions_resp = client.get(f"/api/projects/{project_id}/profile/versions")
+    assert len(versions_resp.json()) == 3
+
+
+def test_restore_profile_version_404(client, project_id, saved_profile):
+    resp = client.post(f"/api/projects/{project_id}/profile/versions/nonexistent/restore")
+    assert resp.status_code == 404
 
 
 # ── Work deletion cascade ─────────────────────────────────────────────────────
@@ -264,3 +358,90 @@ def test_delete_work_removes_ratings(client, project_id, work_with_rating):
     # Rating must be gone
     resp = client.get(f"/api/projects/{project_id}/ratings")
     assert not any(r["id"] == rating.id for r in resp.json())
+
+
+# ── Plugin API ────────────────────────────────────────────────────────────────
+
+def test_list_plugins(client):
+    resp = client.get("/api/plugins")
+    assert resp.status_code == 200
+    names = [p["name"] for p in resp.json()]
+    assert "storage" in names
+    assert "ao3" in names
+    for p in resp.json():
+        assert "config_schema" in p
+        assert "title" in p
+
+
+def test_get_plugin_config_none_when_absent(client, project_id):
+    resp = client.get(f"/api/projects/{project_id}/works/plugin-config")
+    assert resp.status_code == 200
+    assert resp.json() == {}
+
+
+def test_save_and_get_plugin_config(client, project_id):
+    body = {"plugin_name": "ao3", "config": {"username": "u", "password": "p", "max_works": 5}}
+    resp = client.put(f"/api/projects/{project_id}/works/plugin-config", json=body)
+    assert resp.status_code == 200
+    assert resp.json()["plugin_name"] == "ao3"
+    assert resp.json()["config"]["username"] == "u"
+
+    resp2 = client.get(f"/api/projects/{project_id}/works/plugin-config")
+    assert resp2.status_code == 200
+    assert resp2.json()["ao3"]["plugin_name"] == "ao3"
+
+
+def test_save_plugin_config_unknown_plugin(client, project_id):
+    body = {"plugin_name": "no_such_plugin", "config": {}}
+    resp = client.put(f"/api/projects/{project_id}/works/plugin-config", json=body)
+    assert resp.status_code == 422
+
+
+def test_ingest_plugin_storage(mem_engine, tmp_path):
+    from verdikt.api.deps import get_engine, get_session, get_storage
+    from verdikt.storage.files import LocalStorageBackend
+    app = create_app()
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    (storage_root / "sample.txt").write_text("Hello world content for testing plugin ingest.")
+
+    def override_engine():
+        return mem_engine
+    def override_session():
+        with Session(mem_engine) as s:
+            yield s
+    def override_storage():
+        return LocalStorageBackend(storage_root)
+
+    app.dependency_overrides[get_engine] = override_engine
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_storage] = override_storage
+    client = TestClient(app)
+
+    # Create project
+    proj_resp = client.post("/api/projects", json={"name": "T", "domain": "text", "rating_dimensions": [{"name": "Q", "description": "d", "weight": 1.0}]})
+    pid = proj_resp.json()["id"]
+
+    body = {"plugin_name": "storage", "config": {"selections": [{"path": "/sample.txt", "mode": "file"}]}}
+    resp = client.post(f"/api/projects/{pid}/works/ingest-plugin", json=body)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["added"] == 1
+
+    items = client.get(f"/api/projects/{pid}/works").json()
+    assert any("sample" in (w.get("source_path") or "") for w in items)
+
+
+def test_ingest_plugin_no_config_returns_422(client, project_id):
+    resp = client.post(
+        f"/api/projects/{project_id}/works/ingest-plugin",
+        json={"plugin_name": "ao3"},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_plugin_no_config_returns_error_event(client, project_id):
+    with client.stream("POST", f"/api/projects/{project_id}/works/update-plugin/stream") as resp:
+        assert resp.status_code == 200
+        body = resp.read().decode()
+    assert '"error"' in body

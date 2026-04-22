@@ -56,7 +56,6 @@ class MaterialItem(BaseModel):
     url: Optional[str] = None
     work_title: Optional[str] = None
     author: Optional[str] = None
-    work_id: Optional[str] = None
     sequence_position: Optional[int] = None  # position within a larger work (chapter, track, etc.)
 
     # Content — filled by the plugin
@@ -64,6 +63,9 @@ class MaterialItem(BaseModel):
     content_hash: Optional[str] = None  # SHA-256 hex of raw content; used to detect changes on re-ingest
     domain: Domain
     content_type: ContentType
+
+    # Plugin-specific metadata — arbitrary JSON, keyed by the plugin (e.g. {"source_updated_at": "2024-03-15"})
+    plugin_metadata: dict = Field(default_factory=dict)
 
     # Pipeline state — managed by the pipeline
     pipeline_phase: PipelinePhase = PipelinePhase.INGESTED
@@ -138,3 +140,12 @@ class PreferenceProfile(BaseModel):
     overall_summary: str
     rating_count: int     # number of ratings this profile was derived from
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PluginConfig(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str
+    plugin_name: str
+    config: dict
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

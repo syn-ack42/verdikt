@@ -77,17 +77,24 @@ def run_pipeline_stream(
 
     def event_stream() -> Generator[str, None, None]:
         total = 0
-        for phase_name, phase_fn in [
-            ("chunk", runner._chunk),
-            ("embed", runner._embed),
-            ("cluster", runner._cluster),
+        for phase_name, stream_fn in [
+            ("chunk", runner._chunk_stream),
+            ("embed", runner._embed_stream),
+            ("cluster", runner._cluster_stream),
         ]:
-            yield f"data: {json.dumps({'phase': phase_name, 'status': 'running'})}\n\n"
             try:
-                phase_result = phase_fn(proj.id)
+                items_processed = 0
+                for event in stream_fn(proj.id):
+                    etype = event["type"]
+                    if etype == "start":
+                        yield f"data: {json.dumps({'phase': phase_name, 'status': 'running', 'total': event['total']})}\n\n"
+                    elif etype == "progress":
+                        yield f"data: {json.dumps({'phase': phase_name, 'status': 'progress', 'current': event['current'], 'total': event['total']})}\n\n"
+                    elif etype == "done":
+                        items_processed = event["items_processed"]
                 session.commit()
-                total += phase_result.items_processed
-                yield f"data: {json.dumps({'phase': phase_name, 'status': 'done', 'items_processed': phase_result.items_processed})}\n\n"
+                total += items_processed
+                yield f"data: {json.dumps({'phase': phase_name, 'status': 'done', 'items_processed': items_processed})}\n\n"
             except Exception as exc:
                 yield f"data: {json.dumps({'phase': phase_name, 'status': 'error', 'error': str(exc)})}\n\n"
                 return
