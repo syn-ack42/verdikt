@@ -83,23 +83,32 @@ class AO3Plugin(PluginBase):
                 "search_urls": {
                     "type": "array",
                     "title": "Search URLs",
-                    "items": {"type": "string", "format": "uri"},
+                    "description": "Each search has its own limit. New rows default to the previous row's limit.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "url": {
+                                "type": "string",
+                                "format": "uri",
+                                "title": "Search URL",
+                            },
+                            "max_works": {
+                                "type": "integer",
+                                "title": "Max",
+                                "default": 20,
+                                "minimum": 1,
+                                "maximum": 500,
+                            },
+                        },
+                    },
                     "default": [],
-                    "description": "AO3 search URLs (paste from browser — one per query)",
                 },
                 "work_urls": {
                     "type": "array",
                     "title": "Individual Work URLs",
                     "items": {"type": "string", "format": "uri"},
                     "default": [],
-                    "description": "Direct links to individual AO3 works",
-                },
-                "max_works": {
-                    "type": "integer",
-                    "title": "Max works",
-                    "default": 20,
-                    "minimum": 1,
-                    "maximum": 100,
+                    "description": "Direct links to individual works — always fetched, no limit",
                 },
                 "request_delay": {
                     "type": "number",
@@ -110,6 +119,24 @@ class AO3Plugin(PluginBase):
             },
             "required": ["username", "password"],
         }
+
+    def _normalise_search_entries(self) -> list[dict]:
+        """Return [{url, max_works}] normalised from both old string format and new object format."""
+        default_max = min(int(self._config.get("max_works", 20)), 500)
+        entries = []
+        prev_max = default_max
+        for item in self._config.get("search_urls", []):
+            if isinstance(item, str):
+                url = item.strip()
+                if url:
+                    entries.append({"url": url, "max_works": prev_max})
+            elif isinstance(item, dict):
+                url = str(item.get("url", "")).strip()
+                if url:
+                    mx = min(int(item.get("max_works", prev_max)), 500)
+                    entries.append({"url": url, "max_works": mx})
+                    prev_max = mx
+        return entries
 
     def _delay(self) -> None:
         delay = max(3.0, float(self._config.get("request_delay", 5.0)))
@@ -346,7 +373,9 @@ class AO3Plugin(PluginBase):
         )
 
     def estimate_count(self) -> int | None:
-        return min(int(self._config.get("max_works", 20)), 100)
+        entries = self._normalise_search_entries()
+        work_count = sum(1 for wu in self._config.get("work_urls", []) if str(wu).strip())
+        return sum(e["max_works"] for e in entries) + work_count
 
     def get_updated_ats(self, work_ids: list[str]) -> dict[str, datetime | None]:
         """Check last-modified dates for stored works without downloading full content.
@@ -357,14 +386,11 @@ class AO3Plugin(PluginBase):
         self._login()
 
         found: dict[str, datetime | None] = {}
-        max_works = min(int(self._config.get("max_works", 20)), 100)
 
-        for search_url in self._config.get("search_urls", []):
-            search_url = search_url.strip()
-            if search_url:
-                page_results = self._get_work_ids_from_search(search_url, max_works)
-                found.update(page_results)
-                self._delay()
+        for entry in self._normalise_search_entries():
+            page_results = self._get_work_ids_from_search(entry["url"], entry["max_works"])
+            found.update(page_results)
+            self._delay()
 
         search_found = set(found.keys())
         overlap = [wid for wid in work_ids if wid in search_found and found.get(wid) is not None]
@@ -409,33 +435,25 @@ class AO3Plugin(PluginBase):
     def fetch(self, project_id: str) -> Iterator[MaterialItem]:
         self._login()
 
-        max_works: int = min(int(self._config.get("max_works", 20)), 100)
-        # {work_id: last_updated} — collected from search pages
+        # Each search URL has its own max_works limit — no global cap across searches
         search_dates: dict[str, datetime | None] = {}
+        for entry in self._normalise_search_entries():
+            results = self._get_work_ids_from_search(entry["url"], entry["max_works"])
+            search_dates.update(results)
+            self._delay()
 
-        for search_url in self._config.get("search_urls", []):
-            search_url = search_url.strip()
-            if search_url:
-                remaining = max_works - len(search_dates)
-                if remaining <= 0:
-                    break
-                search_dates.update(self._get_work_ids_from_search(search_url, remaining))
-
-        # Add individual work_urls (date unknown until full fetch)
+        # Individual work_urls are always fetched — they don't count against any search total
         extra_ids: list[str] = []
         for wu in self._config.get("work_urls", []):
-            wid = self._extract_work_id(wu)
+            wid = self._extract_work_id(str(wu))
             if wid and wid not in search_dates:
                 extra_ids.append(wid)
 
         seen: set[str] = set()
-        all_ids = list(search_dates.keys()) + extra_ids
-
-        for wid in all_ids[:max_works]:
+        for wid in list(search_dates.keys()) + extra_ids:
             if wid in seen:
                 continue
             seen.add(wid)
-
             item = self._fetch_work(wid, source_updated_at=search_dates.get(wid))
             if item is not None:
                 item.project_id = project_id

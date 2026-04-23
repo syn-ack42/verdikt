@@ -307,6 +307,110 @@ def test_fetch_sets_project_id():
 
 
 # ---------------------------------------------------------------------------
+# Per-search-URL max_works and normalisation tests
+# ---------------------------------------------------------------------------
+
+def test_normalise_search_entries_string_format():
+    plugin = AO3Plugin({"username": "u", "password": "p", "max_works": 7,
+                        "search_urls": ["https://ao3.org/search?q=x"]})
+    entries = plugin._normalise_search_entries()
+    assert entries == [{"url": "https://ao3.org/search?q=x", "max_works": 7}]
+
+
+def test_normalise_search_entries_object_format():
+    plugin = AO3Plugin({"username": "u", "password": "p",
+                        "search_urls": [{"url": "https://ao3.org/search?q=x", "max_works": 15}]})
+    entries = plugin._normalise_search_entries()
+    assert entries == [{"url": "https://ao3.org/search?q=x", "max_works": 15}]
+
+
+def test_normalise_search_entries_inherits_prev_max():
+    """New entry without max_works inherits the previous entry's value."""
+    plugin = AO3Plugin({"username": "u", "password": "p",
+                        "search_urls": [
+                            {"url": "https://ao3.org/search?q=a", "max_works": 30},
+                            {"url": "https://ao3.org/search?q=b"},  # no max_works
+                        ]})
+    entries = plugin._normalise_search_entries()
+    assert entries[1]["max_works"] == 30
+
+
+def test_normalise_search_entries_skips_empty():
+    plugin = AO3Plugin({"username": "u", "password": "p",
+                        "search_urls": ["", {"url": "", "max_works": 5}, "  "]})
+    assert plugin._normalise_search_entries() == []
+
+
+def test_fetch_each_search_has_own_max():
+    """Each search URL uses its own max_works; results are not capped across searches."""
+    from unittest.mock import MagicMock
+    from datetime import datetime, timezone
+
+    plugin = AO3Plugin({"username": "u", "password": "p",
+                        "search_urls": [
+                            {"url": "https://ao3.org/search?q=a", "max_works": 2},
+                            {"url": "https://ao3.org/search?q=b", "max_works": 3},
+                        ]})
+
+    search_a = {"111": None, "222": None}
+    search_b = {"333": None, "444": None, "555": None}
+    call_order = []
+
+    def fake_search(url, max_works):
+        call_order.append((url, max_works))
+        if "q=a" in url:
+            return dict(list(search_a.items())[:max_works])
+        return dict(list(search_b.items())[:max_works])
+
+    fake_item = MagicMock()
+    fake_item.project_id = ""
+
+    with patch.object(plugin, "_login"), \
+         patch.object(plugin, "_get_work_ids_from_search", side_effect=fake_search), \
+         patch.object(plugin, "_fetch_work", return_value=fake_item), \
+         patch.object(plugin, "_delay"):
+        items = list(plugin.fetch("proj1"))
+
+    assert call_order[0] == ("https://ao3.org/search?q=a", 2)
+    assert call_order[1] == ("https://ao3.org/search?q=b", 3)
+    assert len(items) == 5  # 2 + 3, no global cap
+
+
+def test_fetch_work_urls_always_fetched():
+    """Individual work_urls are fetched regardless of search results."""
+    from unittest.mock import MagicMock
+
+    plugin = AO3Plugin({"username": "u", "password": "p",
+                        "search_urls": [{"url": "https://ao3.org/search?q=a", "max_works": 1}],
+                        "work_urls": [
+                            "https://archiveofourown.org/works/9001",
+                            "https://archiveofourown.org/works/9002",
+                        ]})
+
+    fake_item = MagicMock()
+    fake_item.project_id = ""
+
+    with patch.object(plugin, "_login"), \
+         patch.object(plugin, "_get_work_ids_from_search", return_value={"8000": None}), \
+         patch.object(plugin, "_fetch_work", return_value=fake_item), \
+         patch.object(plugin, "_delay"):
+        items = list(plugin.fetch("proj1"))
+
+    # 1 from search + 2 from work_urls = 3 total
+    assert len(items) == 3
+
+
+def test_estimate_count_uses_per_search_max():
+    plugin = AO3Plugin({"username": "u", "password": "p",
+                        "search_urls": [
+                            {"url": "https://ao3.org/search?q=a", "max_works": 10},
+                            {"url": "https://ao3.org/search?q=b", "max_works": 25},
+                        ],
+                        "work_urls": ["https://archiveofourown.org/works/1", "https://archiveofourown.org/works/2"]})
+    assert plugin.estimate_count() == 37  # 10 + 25 + 2
+
+
+# ---------------------------------------------------------------------------
 # Integration tests — require real AO3 credentials and network access
 # ---------------------------------------------------------------------------
 
