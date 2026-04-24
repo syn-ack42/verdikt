@@ -55,8 +55,9 @@ def next_chunk(
         raise HTTPException(status_code=404, detail=detail)
 
     material_item = mat_store.get(chunk.material_item_id)
-    total_chunks = len(chunk_store.list_by_project(proj.id))
-    total_rated = rating_store.count_by_project(proj.id)
+    skipped = rating_store.count_skipped(proj.id)
+    total_chunks = len(chunk_store.list_by_project(proj.id)) - skipped
+    total_rated = rating_store.count_by_project(proj.id) - skipped
 
     response: dict = {
         "chunk": {
@@ -81,6 +82,7 @@ def next_chunk(
         ai_rating = next((r for r in ai_ratings if r.chunk_id == chunk.id), None)
         response["prefilled_scores"] = ai_rating.dimension_scores if ai_rating else {}
         response["ai_rating_id"] = ai_rating.id if ai_rating else None
+        response["ai_explanations"] = ai_rating.explanations if ai_rating else {}
 
     return response
 

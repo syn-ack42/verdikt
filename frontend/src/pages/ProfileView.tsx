@@ -152,11 +152,10 @@ export default function ProfileView() {
   const handleCrystallise = () => {
     const nextVersion = (profile?.version ?? 0) + 1
     const parts = [
-      `Crystallise profile? This runs Ollama locally and may take a minute.`,
       profile ? `A new version (v${nextVersion}) will be created.` : null,
       dirty ? `Your unsaved manual edits will be discarded.` : null,
     ].filter(Boolean)
-    if (!confirm(parts.join('\n'))) return
+    if (parts.length > 0 && !confirm(parts.join('\n'))) return
     crystallise.mutate()
   }
 

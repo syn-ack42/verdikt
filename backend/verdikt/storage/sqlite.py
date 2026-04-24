@@ -333,6 +333,14 @@ class SQLiteRatingStore(RatingStore):
             select(func.count()).select_from(RatingRow).where(RatingRow.project_id == project_id)
         ).scalar() or 0
 
+    def count_skipped(self, project_id: str) -> int:
+        return self._s.execute(
+            select(func.count()).select_from(RatingRow).where(
+                RatingRow.project_id == project_id,
+                RatingRow.skipped == True,  # noqa: E712
+            )
+        ).scalar() or 0
+
     def update_scores(self, rating_id: str, dimension_scores: dict) -> None:
         self._s.execute(
             update(RatingRow)

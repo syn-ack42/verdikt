@@ -30,7 +30,7 @@ def _configure_logging(config: AppConfig) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     # Downgrade high-frequency polling endpoints from INFO to DEBUG in the access log
-    _POLL_PATHS = ("/update-plugin/status",)
+    _POLL_PATHS = ("/update-plugin/status", "/crystallise/status", "/ai-rating/status")
 
     class _PollFilter(logging.Filter):
         def filter(self, record: logging.LogRecord) -> bool:

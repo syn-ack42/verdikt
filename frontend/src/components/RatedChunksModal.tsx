@@ -125,6 +125,26 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
               }}>
                 {editing.chunk_content ?? '(binary content)'}
               </div>
+              {editing.explanations && Object.keys(editing.explanations).length > 0 && (
+                <div
+                  onClick={() => setExpandedExpl(expandedExpl === editing.rating_id ? null : editing.rating_id)}
+                  style={{ borderRadius: 6, background: 'var(--surface, rgba(128,128,128,0.06))', padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--text-muted)' }}
+                >
+                  {expandedExpl === editing.rating_id ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {Object.entries(editing.explanations).map(([k, v]) => (
+                        <div key={k}><span style={{ fontWeight: 600, color: 'var(--text)' }}>{k}:</span> {v}</div>
+                      ))}
+                      <span style={{ fontSize: 11, marginTop: 2 }}>▴ collapse</span>
+                    </div>
+                  ) : (
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ marginRight: 6, fontSize: 11 }}>▾</span>
+                      {Object.entries(editing.explanations).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                    </div>
+                  )}
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 4 }}>
                 {dimensions.map((dim, i) => (
                   <RatingSlider

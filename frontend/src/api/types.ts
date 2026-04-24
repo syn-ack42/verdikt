@@ -67,6 +67,7 @@ export interface NextChunkResponse {
   total_chunks: number
   prefilled_scores?: Record<string, number>
   ai_rating_id?: string | null
+  ai_explanations?: Record<string, string>
 }
 
 export interface Rating {

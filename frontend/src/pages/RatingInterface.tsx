@@ -15,6 +15,7 @@ export default function RatingInterface() {
   const [mode, setMode] = useState<'normal' | 'confirm_ai'>('normal')
   const aiOriginalScores = useRef<Record<string, number>>({})
   const chunkBoxRef = useRef<HTMLDivElement>(null)
+  const [explExpanded, setExplExpanded] = useState(false)
 
   const nextKey = ['ratings', projectId, 'next', mode] as const
 
@@ -22,6 +23,7 @@ export default function RatingInterface() {
     queryKey: nextKey,
     queryFn: () => api.ratings.next(projectId!, mode),
     retry: false,
+    refetchOnWindowFocus: false,
   })
 
   const { data: project } = useQuery({
@@ -78,6 +80,7 @@ export default function RatingInterface() {
       aiOriginalScores.current = {}
       setScores({})
     }
+    setExplExpanded(false)
   }, [data?.chunk?.id, data?.ai_rating_id, mode])
 
   const allScored = dims.length > 0 && dims.every(d => scores[d.name] !== undefined)
@@ -202,6 +205,27 @@ export default function RatingInterface() {
       }}>
         {chunk.content ?? '(binary content)'}
       </div>
+
+      {mode === 'confirm_ai' && data?.ai_explanations && Object.keys(data.ai_explanations).length > 0 && (
+        <div
+          onClick={() => setExplExpanded(v => !v)}
+          style={{ marginBottom: 12, borderRadius: 6, background: 'var(--surface, rgba(128,128,128,0.06))', padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--text-muted)' }}
+        >
+          {explExpanded ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {Object.entries(data.ai_explanations).map(([k, v]) => (
+                <div key={k}><span style={{ fontWeight: 600, color: 'var(--text)' }}>{k}:</span> {v}</div>
+              ))}
+              <span style={{ fontSize: 11, marginTop: 2 }}>▴ collapse</span>
+            </div>
+          ) : (
+            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ marginRight: 6, fontSize: 11 }}>▾</span>
+              {Object.entries(data.ai_explanations).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 4, marginBottom: 16 }}>
         {dims.map((dim, i) => (

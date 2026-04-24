@@ -133,6 +133,11 @@ class RatingStore(ABC):
         ...
 
     @abstractmethod
+    def count_skipped(self, project_id: str) -> int:
+        """Number of skipped ratings for a project."""
+        ...
+
+    @abstractmethod
     def count_by_type(self, project_id: str) -> dict:
         """Returns {"human": n, "ai": n} counts for non-skipped ratings."""
         ...

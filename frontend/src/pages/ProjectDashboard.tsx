@@ -410,6 +410,7 @@ export default function ProjectDashboard() {
               setAiRatingError(null)
               try {
                 await api.aiRating.start(projectId!)
+                refetchAiStatus()
               } catch (e: any) {
                 const msg = e?.message ?? String(e)
                 if (msg.includes('No crystallised profile')) {
