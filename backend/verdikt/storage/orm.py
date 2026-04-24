@@ -71,6 +71,8 @@ class RatingRow(Base):
     dimension_scores: Mapped[str] = mapped_column(Text, nullable=False)  # JSON
     skipped: Mapped[bool] = mapped_column(Boolean, nullable=False)
     skip_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_ai: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    explanations: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON dict[str, str]
     rated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

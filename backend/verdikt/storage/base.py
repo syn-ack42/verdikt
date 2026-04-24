@@ -122,6 +122,21 @@ class RatingStore(ABC):
     @abstractmethod
     def delete_by_material(self, material_item_id: str) -> None: ...
 
+    @abstractmethod
+    def list_unconfirmed_ai(self, project_id: str) -> list[Rating]:
+        """AI-generated ratings not yet confirmed by a human, ordered by avg score desc."""
+        ...
+
+    @abstractmethod
+    def get_all_rated_chunk_ids(self, project_id: str) -> set[str]:
+        """Chunk IDs that have any rating (human or AI)."""
+        ...
+
+    @abstractmethod
+    def count_by_type(self, project_id: str) -> dict:
+        """Returns {"human": n, "ai": n} counts for non-skipped ratings."""
+        ...
+
 
 class ProfileStore(ABC):
     @abstractmethod

@@ -99,3 +99,55 @@ def test_tiebreak_is_random(
             seen_clusters.add(result.cluster_id)
     assert 0 in seen_clusters
     assert 1 in seen_clusters
+
+
+def test_confirm_ai_mode_returns_highest_scoring_unconfirmed(
+    chunk_store: SQLiteChunkStore, rating_store: SQLiteRatingStore, session: Session
+):
+    c1 = _chunk("p1", cluster_id=0, position=0)
+    c2 = _chunk("p1", cluster_id=0, position=1)
+    chunk_store.save_many([c1, c2])
+
+    # c1 scored 4.5, c2 scored 2.0 — c1 should come first
+    rating_store.save(Rating(
+        project_id="p1", chunk_id=c1.id, material_item_id="m1",
+        dimension_scores={"Prose": 4.5}, is_ai=True,
+    ))
+    rating_store.save(Rating(
+        project_id="p1", chunk_id=c2.id, material_item_id="m1",
+        dimension_scores={"Prose": 2.0}, is_ai=True,
+    ))
+
+    sel = RatingSelector(chunk_store, rating_store, confirm_ai_mode=True)
+    result = sel.next_chunk("p1")
+    assert result is not None
+    assert result.id == c1.id
+
+
+def test_confirm_ai_mode_returns_none_when_no_unconfirmed(
+    chunk_store: SQLiteChunkStore, rating_store: SQLiteRatingStore, session: Session
+):
+    c = _chunk("p1", cluster_id=0)
+    chunk_store.save_many([c])
+    # Human rating (is_ai=False) — not served in confirm mode
+    rating_store.save(_rating("p1", c.id))
+
+    sel = RatingSelector(chunk_store, rating_store, confirm_ai_mode=True)
+    assert sel.next_chunk("p1") is None
+
+
+def test_diversity_mode_skips_human_rated_chunks(
+    chunk_store: SQLiteChunkStore, rating_store: SQLiteRatingStore, session: Session
+):
+    c1 = _chunk("p1", cluster_id=0, position=0)
+    c2 = _chunk("p1", cluster_id=0, position=1)
+    chunk_store.save_many([c1, c2])
+
+    # c1 has a human rating → should not be served in normal mode
+    rating_store.save(_rating("p1", c1.id))
+
+    sel = RatingSelector(chunk_store, rating_store)
+    for _ in range(10):
+        result = sel.next_chunk("p1")
+        assert result is not None
+        assert result.id == c2.id

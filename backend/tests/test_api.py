@@ -445,3 +445,206 @@ def test_update_plugin_no_config_returns_error_event(client, project_id):
         assert resp.status_code == 200
         body = resp.read().decode()
     assert '"error"' in body
+
+
+# ── AI Rating endpoints ───────────────────────────────────────────────────────
+
+import verdikt.api.routers.ai_rating as _ai_rating_module
+
+
+@pytest.fixture
+def ai_rated_chunk(client, project_id, mem_engine):
+    """Insert a chunk and an AI rating for it."""
+    from datetime import datetime, timezone
+
+    from verdikt.core.models import Chunk, Rating
+    from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteRatingStore
+
+    with Session(mem_engine) as s:
+        chunk = Chunk(
+            project_id=project_id,
+            material_item_id="m_ai",
+            content="AI rated content.",
+            position=0,
+            size=4,
+            cluster_id=0,
+        )
+        SQLiteChunkStore(s).save_many([chunk])
+
+        rating = Rating(
+            project_id=project_id,
+            chunk_id=chunk.id,
+            material_item_id="m_ai",
+            dimension_scores={"Prose": 3.7},
+            is_ai=True,
+            rated_at=datetime.now(timezone.utc),
+        )
+        SQLiteRatingStore(s).save(rating)
+        s.commit()
+
+    return chunk, rating
+
+
+def test_ai_rating_start_202(client, project_id, saved_profile, mem_engine, monkeypatch):
+    """POST /start returns 202 and spawns the background thread."""
+    from unittest.mock import MagicMock, patch
+
+    monkeypatch.setattr(_ai_rating_module, "_stop_flags", {})
+    monkeypatch.setattr(_ai_rating_module, "_status", {})
+
+    class _NopAIRater:
+        def __init__(self, **kw): pass
+        def run(self, *a, **kw): return iter([])
+
+    with patch.object(_ai_rating_module, "_chromadb", MagicMock()), \
+         patch.object(_ai_rating_module, "ChromaVectorStore", MagicMock()), \
+         patch.object(_ai_rating_module, "SentenceTransformerEmbedder", MagicMock()), \
+         patch.object(_ai_rating_module, "LLMJudge", MagicMock()), \
+         patch.object(_ai_rating_module, "AIRater", _NopAIRater), \
+         patch("verdikt.api.deps.get_engine", return_value=mem_engine):
+        resp = client.post(f"/api/projects/{project_id}/ai-rating/start")
+
+    assert resp.status_code == 202
+    assert resp.json()["status"] == "started"
+
+
+def test_ai_rating_start_409_already_running(client, project_id, saved_profile, monkeypatch):
+    """POST /start returns 409 when a job is already running for this project."""
+    monkeypatch.setattr(_ai_rating_module, "_stop_flags", {project_id: []})
+    monkeypatch.setattr(_ai_rating_module, "_status", {})
+
+    resp = client.post(f"/api/projects/{project_id}/ai-rating/start")
+    assert resp.status_code == 409
+
+
+def test_ai_rating_start_503_no_profile(client, project_id, monkeypatch):
+    """POST /start returns 503 when no profile has been crystallised."""
+    monkeypatch.setattr(_ai_rating_module, "_stop_flags", {})
+
+    resp = client.post(f"/api/projects/{project_id}/ai-rating/start")
+    assert resp.status_code == 503
+
+
+def test_ai_rating_stop_signals_flag(client, project_id, monkeypatch):
+    """POST /stop appends to the stop flag and returns stopped."""
+    stop_flag: list = []
+    monkeypatch.setattr(_ai_rating_module, "_stop_flags", {project_id: stop_flag})
+    monkeypatch.setattr(_ai_rating_module, "_status", {project_id: {"stopped_reason": None}})
+
+    resp = client.post(f"/api/projects/{project_id}/ai-rating/stop")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "stopped"
+    assert stop_flag  # flag was signalled
+
+
+def test_ai_rating_status_default(client, project_id, monkeypatch):
+    """GET /status returns default zeros when no job has ever run."""
+    monkeypatch.setattr(_ai_rating_module, "_status", {})
+
+    resp = client.get(f"/api/projects/{project_id}/ai-rating/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["running"] is False
+    assert data["chunks_rated"] == 0
+    assert data["batches_completed"] == 0
+    assert data["last_batch_avg"] is None
+    assert data["stopped_reason"] is None
+
+
+def test_ai_rating_status_profile_stale(client, project_id, saved_profile, mem_engine, monkeypatch):
+    """GET /status reports profile_stale when a newer profile version exists."""
+    from verdikt.core.models import DimensionProfile, PreferenceProfile
+    from verdikt.storage.sqlite import SQLiteProfileStore
+
+    monkeypatch.setattr(_ai_rating_module, "_status", {
+        project_id: {
+            **_ai_rating_module._default_status(),
+            "profile_version": saved_profile.version,
+            "running": False,
+        }
+    })
+
+    with Session(mem_engine) as s:
+        p2 = PreferenceProfile(
+            project_id=project_id,
+            version=saved_profile.version + 1,
+            dimensions=[DimensionProfile(name="Prose", description="d", summary="v2", typical_score=4.0)],
+            overall_summary="Revised.",
+            rating_count=10,
+        )
+        SQLiteProfileStore(s).save(p2)
+        s.commit()
+
+    resp = client.get(f"/api/projects/{project_id}/ai-rating/status")
+    assert resp.status_code == 200
+    assert resp.json()["profile_stale"] is True
+
+
+def test_next_chunk_confirm_ai_mode(client, project_id, ai_rated_chunk):
+    """GET /ratings/next?mode=confirm_ai returns the highest-scored AI chunk with prefilled_scores."""
+    chunk, rating = ai_rated_chunk
+
+    resp = client.get(f"/api/projects/{project_id}/ratings/next?mode=confirm_ai")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["chunk"]["id"] == chunk.id
+    assert data["prefilled_scores"] == rating.dimension_scores
+    assert data["ai_rating_id"] == rating.id
+
+
+def test_next_chunk_confirm_ai_mode_404_when_none(client, project_id):
+    """GET /ratings/next?mode=confirm_ai returns 404 with no_ai_chunks when no AI ratings exist."""
+    resp = client.get(f"/api/projects/{project_id}/ratings/next?mode=confirm_ai")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "no_ai_chunks"
+
+
+def test_rated_chunks_returns_explanations(client, project_id, mem_engine):
+    """GET /ratings/rated-chunks returns explanations field for each entry."""
+    from datetime import datetime, timezone
+
+    from verdikt.core.models import Chunk, Rating
+    from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteRatingStore
+
+    with Session(mem_engine) as s:
+        chunk = Chunk(
+            project_id=project_id,
+            material_item_id="m_expl",
+            content="Some chunk content.",
+            position=0,
+            size=3,
+            cluster_id=0,
+        )
+        SQLiteChunkStore(s).save_many([chunk])
+        rating = Rating(
+            project_id=project_id,
+            chunk_id=chunk.id,
+            material_item_id="m_expl",
+            dimension_scores={"Prose": 4.0},
+            is_ai=True,
+            explanations={"Prose": "Vivid and precise prose."},
+            rated_at=datetime.now(timezone.utc),
+        )
+        SQLiteRatingStore(s).save(rating)
+        s.commit()
+
+    resp = client.get(f"/api/projects/{project_id}/ratings/rated-chunks")
+    assert resp.status_code == 200
+    entries = resp.json()
+    assert len(entries) == 1
+    assert entries[0]["explanations"] == {"Prose": "Vivid and precise prose."}
+    assert entries[0]["avg_score"] == pytest.approx(4.0)
+
+
+def test_update_rating_confirms_ai(client, project_id, ai_rated_chunk):
+    """PUT /ratings/{id} with new scores clears is_ai (confirms the rating as human)."""
+    chunk, rating = ai_rated_chunk
+
+    resp = client.put(
+        f"/api/projects/{project_id}/ratings/{rating.id}",
+        json={"dimension_scores": {"Prose": 4.0}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["dimension_scores"]["Prose"] == 4.0
+    assert data["is_ai"] is False

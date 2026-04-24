@@ -1,7 +1,7 @@
 import type {
-  CrystalliseStatus, IngestResult, MaterialItem, NextChunkResponse, PipelineResult, PipelineStreamEvent,
+  AIRatingStatus, CrystalliseStatus, IngestResult, MaterialItemWithStats, NextChunkResponse, PipelineResult, PipelineStreamEvent,
   PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, RatedChunkEntry, Rating, StorageListing,
-  UpdatePluginEvent, UpdatePluginStatus, UpdateResult, WorkDetail,
+  UpdatePluginEvent, UpdatePluginStatus, WorkDetail,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api'
@@ -29,8 +29,14 @@ export const api = {
     delete: (id: string) => req<void>('DELETE', `/projects/${id}`),
   },
   works: {
-    list: (projectId: string, phase?: string) =>
-      req<MaterialItem[]>('GET', `/projects/${projectId}/works${phase ? `?phase=${phase}` : ''}`),
+    list: (projectId: string, phase?: string, sortBy?: string, sortDir?: 'asc' | 'desc') => {
+      const params = new URLSearchParams()
+      if (phase) params.set('phase', phase)
+      if (sortBy) params.set('sort_by', sortBy)
+      if (sortDir) params.set('sort_dir', sortDir)
+      const qs = params.toString()
+      return req<MaterialItemWithStats[]>('GET', `/projects/${projectId}/works${qs ? `?${qs}` : ''}`)
+    },
     ingest: (projectId: string, storagePaths: string[]) =>
       req<IngestResult>('POST', `/projects/${projectId}/works/ingest`, { storage_paths: storagePaths }),
     detail: (projectId: string, ref: string) =>
@@ -131,7 +137,8 @@ export const api = {
     },
   },
   ratings: {
-    next: (projectId: string) => req<NextChunkResponse>('GET', `/projects/${projectId}/ratings/next`),
+    next: (projectId: string, mode: 'normal' | 'confirm_ai' = 'normal') =>
+      req<NextChunkResponse>('GET', `/projects/${projectId}/ratings/next?mode=${mode}`),
     submit: (projectId: string, body: {
       chunk_id: string
       material_item_id: string
@@ -144,6 +151,14 @@ export const api = {
       req<RatedChunkEntry[]>('GET', `/projects/${projectId}/ratings/rated-chunks${workSeq != null ? `?work_seq=${workSeq}` : ''}`),
     updateRating: (projectId: string, ratingId: string, dimensionScores: Record<string, number>) =>
       req<Rating>('PUT', `/projects/${projectId}/ratings/${ratingId}`, { dimension_scores: dimensionScores }),
+  },
+  aiRating: {
+    start: (projectId: string, opts?: { batch_size?: number; random_fraction?: number }) =>
+      req<{ status: string }>('POST', `/projects/${projectId}/ai-rating/start`, opts ?? {}),
+    stop: (projectId: string) =>
+      req<{ status: string }>('POST', `/projects/${projectId}/ai-rating/stop`, {}),
+    status: (projectId: string) =>
+      req<AIRatingStatus>('GET', `/projects/${projectId}/ai-rating/status`),
   },
   profile: {
     get: (projectId: string) => req<PreferenceProfile>('GET', `/projects/${projectId}/profile`),

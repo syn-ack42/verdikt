@@ -33,6 +33,18 @@ def _migrate(engine: Engine) -> None:
             conn.commit()
             log.info("migration: added plugin_metadata_json column")
 
+        def _rating_cols() -> set[str]:
+            return {row[1] for row in conn.execute(_text("PRAGMA table_info(ratings)"))}
+
+        if "is_ai" not in _rating_cols():
+            conn.execute(_text("ALTER TABLE ratings ADD COLUMN is_ai BOOLEAN NOT NULL DEFAULT 0"))
+            conn.commit()
+            log.info("migration: added is_ai column to ratings")
+        if "explanations" not in _rating_cols():
+            conn.execute(_text("ALTER TABLE ratings ADD COLUMN explanations TEXT"))
+            conn.commit()
+            log.info("migration: added explanations column to ratings")
+
         # Backfill work_id from the old dedicated column into plugin_metadata_json for ao3 rows.
         # The work_id column was removed from the ORM but may still exist in the DB.
         if "work_id" in existing:

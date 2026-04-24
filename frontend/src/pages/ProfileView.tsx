@@ -207,7 +207,7 @@ export default function ProfileView() {
   }
 
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto', padding: 24 }}>
+    <div style={{ maxWidth: 1400, margin: '0 auto', padding: 'clamp(12px, 4vw, 24px)' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
@@ -361,7 +361,7 @@ export default function ProfileView() {
           </div>
 
           <h3 style={{ margin: '0 0 12px' }}>Dimensions</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 16, marginBottom: 32 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(380px, 100%), 1fr))', gap: 16, marginBottom: 32 }}>
             {dims.map((d, i) => (
               <div key={d.name} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>

@@ -1,20 +1,52 @@
 import { useState, useRef, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import StorageManager from '../components/StorageManager'
 import { iconBtn } from '../styles'
 
+function ProjectJobBadges({ projectId }: { projectId: string }) {
+  const { data: aiStatus } = useQuery({
+    queryKey: ['ai-rating-status', projectId],
+    queryFn: () => api.aiRating.status(projectId),
+    refetchInterval: 8000,
+  })
+  const { data: updateStatus } = useQuery({
+    queryKey: ['update-plugin-status', projectId],
+    queryFn: () => api.works.getUpdateStatus(projectId),
+    refetchInterval: 8000,
+  })
+  const { data: crystalliseStatus } = useQuery({
+    queryKey: ['crystallise-status', projectId],
+    queryFn: () => api.profile.crystalliseStatus(projectId),
+    refetchInterval: 8000,
+  })
+
+  const badges: { label: string }[] = []
+  if (aiStatus?.running) badges.push({ label: 'AI Rating' })
+  if (updateStatus?.running) badges.push({ label: 'Updating' })
+  if (crystalliseStatus?.running) badges.push({ label: 'Crystallising' })
+
+  if (badges.length === 0) return null
+
+  return (
+    <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+      {badges.map(b => (
+        <span key={b.label} style={{
+          background: 'rgba(107,125,224,0.12)', color: '#6b7de0',
+          fontSize: 10, padding: '2px 7px', borderRadius: 10, fontWeight: 600, letterSpacing: 0.2,
+        }}>
+          ● {b.label}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export default function ProjectList() {
-  const qc = useQueryClient()
   const { data: projects, isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: api.projects.list,
-  })
-
-  const del = useMutation({
-    mutationFn: (id: string) => api.projects.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
   })
 
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
@@ -35,7 +67,7 @@ export default function ProjectList() {
   if (isLoading) return <p>Loading…</p>
 
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto', padding: 24 }}>
+    <div style={{ maxWidth: 1400, margin: '0 auto', padding: 'clamp(12px, 4vw, 24px)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <h1 style={{ margin: 0 }}>Verdikt</h1>
         <div ref={settingsRef} style={{ position: 'relative' }}>
@@ -74,7 +106,7 @@ export default function ProjectList() {
       {!projects?.length && <p style={{ color: '#888' }}>No projects yet. Create one to get started.</p>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {projects?.map(p => (
-          <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, minWidth: 480 }}>
+          <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0 }}>
               <Link to={`/projects/${p.id}`} style={{ textDecoration: 'none', color: 'inherit', flex: 1 }}>
                 <h3 style={{ margin: '0 0 4px' }}>{p.name}</h3>
@@ -82,6 +114,7 @@ export default function ProjectList() {
                 <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                   {p.domain} · {p.rating_dimensions.length} dimensions · created {p.created_at.slice(0, 10)}
                 </span>
+                <ProjectJobBadges projectId={p.id} />
               </Link>
               <Link to={`/projects/${p.id}`}>
                 <button style={{ ...iconBtn, fontSize: '1.3em', color: 'var(--text-muted, #aaa)' }}>›</button>

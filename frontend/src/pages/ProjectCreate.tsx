@@ -36,7 +36,7 @@ export default function ProjectCreate() {
   })
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto', padding: 24 }}>
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: 'clamp(12px, 4vw, 24px)' }}>
       <h2>New Project</h2>
       <form onSubmit={e => { e.preventDefault(); create.mutate() }}>
         <div style={{ marginBottom: 16 }}>
@@ -65,7 +65,7 @@ export default function ProjectCreate() {
             min={1}
             value={threshold}
             onChange={e => setThreshold(Number(e.target.value))}
-            style={{ width: 100 }}
+            style={{ width: '5ch' }}
           />
         </div>
         <div style={{ marginBottom: 24 }}>

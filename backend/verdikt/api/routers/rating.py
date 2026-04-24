@@ -30,6 +30,7 @@ def _rating_response(r: Rating) -> dict:
         "dimension_scores": r.dimension_scores,
         "skipped": r.skipped,
         "skip_reason": r.skip_reason,
+        "is_ai": r.is_ai,
         "rated_at": r.rated_at.isoformat(),
     }
 
@@ -37,6 +38,7 @@ def _rating_response(r: Rating) -> dict:
 @router.get("/next")
 def next_chunk(
     project_id: str,
+    mode: str = "normal",
     session: Session = Depends(get_session),
 ) -> dict:
     proj = _get_project_or_404(project_id, session)
@@ -44,15 +46,19 @@ def next_chunk(
     rating_store = SQLiteRatingStore(session)
     mat_store = SQLiteMaterialStore(session)
 
-    chunk = RatingSelector(chunk_store, rating_store).next_chunk(proj.id)
+    confirm_ai = mode == "confirm_ai"
+    selector = RatingSelector(chunk_store, rating_store, confirm_ai_mode=confirm_ai)
+    chunk = selector.next_chunk(proj.id)
+
     if chunk is None:
-        raise HTTPException(status_code=404, detail="No unrated chunks available")
+        detail = "no_ai_chunks" if confirm_ai else "No unrated chunks available"
+        raise HTTPException(status_code=404, detail=detail)
 
     material_item = mat_store.get(chunk.material_item_id)
     total_chunks = len(chunk_store.list_by_project(proj.id))
     total_rated = rating_store.count_by_project(proj.id)
 
-    return {
+    response: dict = {
         "chunk": {
             "id": chunk.id,
             "content": chunk.content if isinstance(chunk.content, str) else None,
@@ -69,6 +75,14 @@ def next_chunk(
         "total_rated": total_rated,
         "total_chunks": total_chunks,
     }
+
+    if confirm_ai:
+        ai_ratings = rating_store.list_unconfirmed_ai(proj.id)
+        ai_rating = next((r for r in ai_ratings if r.chunk_id == chunk.id), None)
+        response["prefilled_scores"] = ai_rating.dimension_scores if ai_rating else {}
+        response["ai_rating_id"] = ai_rating.id if ai_rating else None
+
+    return response
 
 
 class RatingSubmit(BaseModel):
@@ -160,6 +174,8 @@ def list_rated_chunks(
             "author": mat.author if mat else None,
             "dimension_scores": r.dimension_scores,
             "avg_score": round(avg_score, 2) if avg_score is not None else None,
+            "is_ai": r.is_ai,
+            "explanations": r.explanations,
             "rated_at": r.rated_at.isoformat(),
         })
 

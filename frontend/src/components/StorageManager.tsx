@@ -85,7 +85,7 @@ export default function StorageManager({ onClose }: Props) {
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div style={{ ...modalChrome, width: 680, maxHeight: '80vh' }}>
+      <div style={{ ...modalChrome, width: 'min(680px, 94vw)', maxHeight: '80vh' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>Storage</h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)' }}>×</button>

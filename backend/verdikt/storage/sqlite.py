@@ -337,7 +337,20 @@ class SQLiteRatingStore(RatingStore):
         self._s.execute(
             update(RatingRow)
             .where(RatingRow.id == rating_id)
-            .values(dimension_scores=json.dumps(dimension_scores), skipped=False, skip_reason=None)
+            .values(dimension_scores=json.dumps(dimension_scores), skipped=False, skip_reason=None, is_ai=False)
+        )
+        self._s.flush()
+
+    def update_ai_scores(self, rating_id: str, dimension_scores: dict) -> None:
+        """Update scores on an existing AI rating (re-scoring with new profile)."""
+        from datetime import datetime, timezone
+        self._s.execute(
+            update(RatingRow)
+            .where(RatingRow.id == rating_id)
+            .values(
+                dimension_scores=json.dumps(dimension_scores),
+                rated_at=datetime.now(timezone.utc),
+            )
         )
         self._s.flush()
 
@@ -346,6 +359,41 @@ class SQLiteRatingStore(RatingStore):
             sql_delete(RatingRow).where(RatingRow.material_item_id == material_item_id)
         )
         self._s.flush()
+
+    def list_unconfirmed_ai(self, project_id: str) -> list[Rating]:
+        rows = self._s.execute(
+            select(RatingRow).where(
+                RatingRow.project_id == project_id,
+                RatingRow.is_ai == True,  # noqa: E712
+                RatingRow.skipped == False,  # noqa: E712
+            )
+        ).scalars().all()
+        # Sort by avg dimension score descending
+        def _avg(r: RatingRow) -> float:
+            scores = json.loads(r.dimension_scores)
+            return sum(scores.values()) / len(scores) if scores else 0.0
+        return [self._from_row(r) for r in sorted(rows, key=_avg, reverse=True)]
+
+    def get_all_rated_chunk_ids(self, project_id: str) -> set[str]:
+        rows = self._s.execute(
+            select(RatingRow.chunk_id).where(RatingRow.project_id == project_id)
+        ).scalars().all()
+        return set(rows)
+
+    def count_by_type(self, project_id: str) -> dict:
+        from sqlalchemy import case
+        rows = self._s.execute(
+            select(RatingRow.is_ai, func.count())
+            .where(RatingRow.project_id == project_id, RatingRow.skipped == False)  # noqa: E712
+            .group_by(RatingRow.is_ai)
+        ).all()
+        result = {"human": 0, "ai": 0}
+        for is_ai, count in rows:
+            if is_ai:
+                result["ai"] = count
+            else:
+                result["human"] = count
+        return result
 
     @staticmethod
     def _to_row(r: Rating) -> RatingRow:
@@ -357,6 +405,8 @@ class SQLiteRatingStore(RatingStore):
             dimension_scores=json.dumps(r.dimension_scores),
             skipped=r.skipped,
             skip_reason=r.skip_reason,
+            is_ai=r.is_ai,
+            explanations=json.dumps(r.explanations) if r.explanations else None,
             rated_at=r.rated_at,
         )
 
@@ -370,6 +420,8 @@ class SQLiteRatingStore(RatingStore):
             dimension_scores=json.loads(r.dimension_scores),
             skipped=r.skipped,
             skip_reason=r.skip_reason,
+            is_ai=r.is_ai,
+            explanations=json.loads(r.explanations) if r.explanations else {},
             rated_at=r.rated_at,
         )
 

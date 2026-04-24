@@ -65,6 +65,8 @@ export interface NextChunkResponse {
   material_item: MaterialItemInfo
   total_rated: number
   total_chunks: number
+  prefilled_scores?: Record<string, number>
+  ai_rating_id?: string | null
 }
 
 export interface Rating {
@@ -75,6 +77,7 @@ export interface Rating {
   dimension_scores: Record<string, number>
   skipped: boolean
   skip_reason: string | null
+  is_ai: boolean
   rated_at: string
 }
 
@@ -166,7 +169,37 @@ export interface RatedChunkEntry {
   author: string | null
   dimension_scores: Record<string, number>
   avg_score: number | null
+  is_ai: boolean
+  explanations: Record<string, string>
   rated_at: string
+}
+
+export interface WorkDimStat {
+  avg: number
+  max: number
+  min: number
+}
+
+export interface WorkStats {
+  total_chunks: number
+  human_rated: number
+  ai_rated: number
+  overall_avg: number | null
+  overall_max: number | null
+  overall_min: number | null
+  dim_stats: Record<string, WorkDimStat>
+}
+
+export type MaterialItemWithStats = MaterialItem & WorkStats
+
+export interface AIRatingStatus {
+  running: boolean
+  profile_version: number | null
+  profile_stale: boolean
+  chunks_rated: number
+  batches_completed: number
+  last_batch_avg: number | null
+  stopped_reason: 'diminishing_returns' | 'user_stopped' | 'complete' | 'error' | null
 }
 
 export interface CrystalliseStatus {

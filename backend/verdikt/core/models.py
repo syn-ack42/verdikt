@@ -122,6 +122,8 @@ class Rating(BaseModel):
     dimension_scores: dict[str, float]  # dimension name → 1.0–5.0
     skipped: bool = False
     skip_reason: Optional[str] = None
+    is_ai: bool = False  # True = LLM-generated; False = human or confirmed
+    explanations: dict[str, str] = Field(default_factory=dict)  # dimension name → one-sentence explanation
     rated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

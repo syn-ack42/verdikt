@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
@@ -6,7 +6,8 @@ import ProjectSettingsDialog from '../components/ProjectSettingsDialog'
 import PluginIngestDialog from '../components/PluginIngestDialog'
 import WorkDetailModal from '../components/WorkDetailModal'
 import RatedChunksModal from '../components/RatedChunksModal'
-import type { PipelineStreamEvent, PluginIngestEvent, UpdatePluginEvent } from '../api/types'
+import { useIsMobile } from '../hooks/useIsMobile'
+import type { AIRatingStatus, MaterialItemWithStats, PipelineStreamEvent, PluginIngestEvent, UpdatePluginEvent } from '../api/types'
 
 type PhaseStatus = 'waiting' | 'running' | 'done' | 'error'
 type PhaseProgress = { phase: string; status: PhaseStatus; items?: number; current?: number; total?: number }
@@ -24,6 +25,14 @@ const PIPELINE_PHASE_DISPLAY: Record<string, string> = {
   chunked: 'chunked',
   embedded: 'embedded',
   clustered: 'processed',
+}
+
+function thermalColor(v: number): string {
+  if (v >= 4.5) return '#f97316'  // orange — hot
+  if (v >= 3.5) return '#fbbf24'  // amber — warm
+  if (v >= 2.5) return '#94a3b8'  // slate — neutral
+  if (v >= 1.5) return '#7dd3fc'  // sky — cool
+  return '#818cf8'                // indigo — cold
 }
 
 function PipelineProgress({ phases, error }: { phases: PhaseProgress[]; error?: string }) {
@@ -85,6 +94,15 @@ export default function ProjectDashboard() {
   const [phaseProgress, setPhaseProgress] = useState<PhaseProgress[]>([])
   const [pipelineError, setPipelineError] = useState<string | null>(null)
 
+  // Works table sort state
+  const [sortBy, setSortBy] = useState<string | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  // AI rating state
+  const [aiRatingStarting, setAiRatingStarting] = useState(false)
+  const [aiRatingStopping, setAiRatingStopping] = useState(false)
+  const [aiRatingError, setAiRatingError] = useState<string | null>(null)
+
   const { data: project, isLoading } = useQuery({
     queryKey: ['projects', projectId],
     queryFn: () => api.projects.get(projectId!),
@@ -95,6 +113,51 @@ export default function ProjectDashboard() {
     queryFn: () => api.works.list(projectId!),
     enabled: !!projectId,
   })
+
+  const sortedWorks = useMemo(() => {
+    const ws: MaterialItemWithStats[] = works ? [...works] : []
+    if (!sortBy) return ws
+    ws.sort((a, b) => {
+      let av: number | string | null = null
+      let bv: number | string | null = null
+      if (sortBy === 'name') { av = (a.work_title ?? '').toLowerCase(); bv = (b.work_title ?? '').toLowerCase() }
+      else if (sortBy === 'ingested_at') { av = a.ingested_at; bv = b.ingested_at }
+      else if (sortBy === 'pipeline_phase') { av = a.pipeline_phase; bv = b.pipeline_phase }
+      else if (sortBy === 'human_rated') { av = a.human_rated ?? 0; bv = b.human_rated ?? 0 }
+      else if (sortBy === 'ai_rated') { av = a.ai_rated ?? 0; bv = b.ai_rated ?? 0 }
+      else if (sortBy.startsWith('overall:')) {
+        const stat = sortBy.slice(8)
+        av = (a as any)[`overall_${stat}`] ?? null
+        bv = (b as any)[`overall_${stat}`] ?? null
+      } else if (sortBy.startsWith('dim:')) {
+        const [, dimName, stat] = sortBy.split(':')
+        av = a.dim_stats?.[dimName]?.[stat as 'avg' | 'max' | 'min'] ?? null
+        bv = b.dim_stats?.[dimName]?.[stat as 'avg' | 'max' | 'min'] ?? null
+      }
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return ws
+  }, [works, sortBy, sortDir])
+
+  const { data: aiRatingStatus, refetch: refetchAiStatus } = useQuery({
+    queryKey: ['ai-rating-status', projectId],
+    queryFn: () => api.aiRating.status(projectId!),
+    refetchInterval: (query) => {
+      const d = query.state.data as AIRatingStatus | undefined
+      return d?.running ? 3000 : false
+    },
+    enabled: !!projectId,
+  })
+
+  useEffect(() => {
+    if (aiRatingStopping && aiRatingStatus && !aiRatingStatus.running) {
+      setAiRatingStopping(false)
+    }
+  }, [aiRatingStopping, aiRatingStatus])
 
   const { data: ratings } = useQuery({
     queryKey: ['ratings', projectId],
@@ -243,18 +306,25 @@ export default function ProjectDashboard() {
     }
   }
 
-  if (isLoading || !project) return <p>Loading…</p>
+  const isMobile = useIsMobile()
 
-  // Rated chunk count per material_item_id derived from ratings list
-  const ratedPerWork = new Map<string, number>()
-  for (const r of ratings ?? []) {
-    if (!r.skipped) ratedPerWork.set(r.material_item_id, (ratedPerWork.get(r.material_item_id) ?? 0) + 1)
-  }
+  if (isLoading || !project) return <p>Loading…</p>
 
   const pipelineDone = phaseProgress.length > 0 && !pipelineRunning && !pipelineError
 
+  const handleSort = (col: string | null) => {
+    if (sortBy === col) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); return }
+    setSortBy(col)
+    setSortDir(col === null ? 'asc' : 'desc')
+  }
+
+  const sortIndicator = (col: string | null) =>
+    sortBy === col ? (sortDir === 'asc' ? ' ▴' : ' ▾') : ''
+
+  const thSort: React.CSSProperties = { padding: '6px 8px', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', verticalAlign: 'bottom' }
+
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: 24 }}>
+    <div style={{ maxWidth: 900, margin: '0 auto', padding: 'clamp(12px, 4vw, 24px)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
           <Link to="/">← Projects</Link>
@@ -313,6 +383,53 @@ export default function ProjectDashboard() {
             Profile
           </button>
         </Link>
+
+        <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>
+
+        {/* AI Rating controls */}
+        {aiRatingStatus?.running || aiRatingStopping ? (
+          <button
+            onClick={async () => {
+              setAiRatingStopping(true)
+              try {
+                await api.aiRating.stop(projectId!)
+                refetchAiStatus()
+              } catch {
+                setAiRatingStopping(false)
+              }
+            }}
+            disabled={aiRatingStopping}
+            style={{ padding: '8px 18px', background: 'none', border: '1px solid #f59e0b', color: '#b45309', borderRadius: 6, cursor: aiRatingStopping ? 'default' : 'pointer', fontSize: 14 }}
+          >
+            {aiRatingStopping ? 'Stopping…' : 'Stop AI Rating'}
+          </button>
+        ) : (
+          <button
+            onClick={async () => {
+              setAiRatingStarting(true)
+              setAiRatingError(null)
+              try {
+                await api.aiRating.start(projectId!)
+              } catch (e: any) {
+                const msg = e?.message ?? String(e)
+                if (msg.includes('No crystallised profile')) {
+                  setAiRatingError('Crystallise a profile first before starting AI rating.')
+                } else if (e?.status === 409) {
+                  setAiRatingError('AI rating is already running.')
+                } else {
+                  setAiRatingError(msg)
+                }
+              } finally {
+                setAiRatingStarting(false)
+              }
+            }}
+            disabled={aiRatingStarting || !ratings}
+            title={!ratings ? 'Load profile first' : 'Start AI background rating'}
+            style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}
+          >
+            {aiRatingStarting ? 'Starting…' : 'AI Rating'}
+          </button>
+        )}
 
         {/* Ingest progress */}
         {(ingestRunning || ingestCounts || ingestError) && (
@@ -387,9 +504,79 @@ export default function ProjectDashboard() {
             {updateError && <p style={{ margin: '4px 0 0', color: '#c00' }}>{updateError}</p>}
           </div>
         )}
+
+        {/* AI rating status */}
+        {aiRatingStatus && (aiRatingStatus.running || aiRatingStatus.stopped_reason || aiRatingStatus.chunks_rated > 0) && (
+          <div style={{ width: '100%', marginTop: 8, fontSize: 13 }}>
+            {aiRatingStatus.running && (
+              <p style={{ margin: 0, color: '#6b7de0' }}>
+                AI Rating · {aiRatingStatus.chunks_rated} chunks scored · batch {aiRatingStatus.batches_completed}
+                {aiRatingStatus.last_batch_avg != null && ` · avg ${aiRatingStatus.last_batch_avg.toFixed(2)}`}
+              </p>
+            )}
+            {!aiRatingStatus.running && aiRatingStatus.stopped_reason === 'diminishing_returns' && (
+              <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+                AI Rating done — {aiRatingStatus.chunks_rated} chunks scored · interesting chunks exhausted
+              </p>
+            )}
+            {!aiRatingStatus.running && aiRatingStatus.stopped_reason === 'complete' && (
+              <p style={{ margin: 0, color: '#390' }}>
+                AI Rating complete — {aiRatingStatus.chunks_rated} chunks scored
+              </p>
+            )}
+            {!aiRatingStatus.running && aiRatingStatus.stopped_reason === 'user_stopped' && (
+              <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+                AI Rating stopped · {aiRatingStatus.chunks_rated} chunks scored
+              </p>
+            )}
+            {aiRatingStatus.profile_stale && (
+              <p style={{ margin: '2px 0 0', color: '#b45309', fontSize: 12 }}>
+                Profile updated — AI scores may be stale. Restart AI Rating to refresh.
+              </p>
+            )}
+          </div>
+        )}
+        {aiRatingError && (
+          <p style={{ margin: '8px 0 0', fontSize: 13, color: '#c00', width: '100%' }}>{aiRatingError}</p>
+        )}
       </div>
 
-      <h3 style={{ margin: '0 0 8px' }}>Works</h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <h3 style={{ margin: 0 }}>Works</h3>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sort</span>
+          <select
+            value={sortBy ?? ''}
+            onChange={e => { setSortBy(e.target.value || null); if (!e.target.value) setSortDir('asc') }}
+            style={{ fontSize: 12, padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg, #1a1a1a)', color: 'var(--text)', cursor: 'pointer' }}
+          >
+            <option value="">Work #</option>
+            <option value="name">Work name</option>
+            <option value="ingested_at">Ingestion date</option>
+            <option value="pipeline_phase">Status</option>
+            <option value="human_rated">Human rated</option>
+            <option value="ai_rated">AI rated</option>
+            <optgroup label="Overall">
+              <option value="overall:avg">Overall avg</option>
+              <option value="overall:max">Overall max</option>
+              <option value="overall:min">Overall min</option>
+            </optgroup>
+            {project.rating_dimensions.map(d => (
+              <optgroup key={d.name} label={d.name}>
+                <option value={`dim:${d.name}:avg`}>{d.name} avg</option>
+                <option value={`dim:${d.name}:max`}>{d.name} max</option>
+                <option value={`dim:${d.name}:min`}>{d.name} min</option>
+              </optgroup>
+            ))}
+          </select>
+          <button
+            onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+            style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: 'var(--text)', cursor: 'pointer' }}
+          >
+            {sortDir === 'asc' ? '▴ Asc' : '▾ Desc'}
+          </button>
+        </div>
+      </div>
 
       {phaseProgress.length > 0 && (
         <PipelineProgress
@@ -398,75 +585,192 @@ export default function ProjectDashboard() {
         />
       )}
       {pipelineDone && (
-        <p style={{ color: '#390', fontSize: 13, margin: '4px 0 8px' }}>
+        <p style={{ color: '#390', fontSize: 13, margin: '4px 0 6px' }}>
           Processing complete — {phaseProgress.find(p => p.phase === 'cluster')?.items ?? 0} items
         </p>
       )}
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 12 }}>
-        <thead>
-          <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left' }}>
-            <th style={{ padding: '4px 8px' }}>#</th>
-            <th style={{ padding: '4px 8px' }}>File</th>
-            <th style={{ padding: '4px 8px' }}>Phase</th>
-            <th style={{ padding: '4px 8px' }}>Ingested</th>
-            <th style={{ padding: '4px 8px', textAlign: 'right' }}>Rated</th>
-            <th style={{ padding: '4px 8px' }}></th>
-            <th style={{ padding: '4px 8px' }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {works?.map(w => (
-            <tr key={w.id} style={{ borderBottom: '1px solid var(--border)' }}>
-              <td style={{ padding: '4px 8px', color: 'var(--text-muted)' }}>#{w.project_seq}</td>
-              <td style={{ padding: '4px 8px' }}>
-                {w.work_title ?? w.source_path?.split('/').pop() ?? w.id}
-              </td>
-              <td style={{ padding: '4px 8px' }}>
-                <span style={{
-                  background: w.pipeline_phase === 'clustered' ? 'var(--badge-green-bg)' : 'var(--badge-yellow-bg)',
-                  color: w.pipeline_phase === 'clustered' ? 'var(--badge-green-text)' : 'var(--badge-yellow-text)',
-                  padding: '2px 6px', borderRadius: 4, fontSize: 11,
-                }}>
-                  {PIPELINE_PHASE_DISPLAY[w.pipeline_phase] ?? w.pipeline_phase}
-                </span>
-              </td>
-              <td style={{ padding: '4px 8px', color: 'var(--text-muted)' }}>{w.ingested_at.slice(0, 10)}</td>
-              <td style={{ padding: '4px 8px', textAlign: 'right' }}>
-                {(() => {
-                  const count = ratedPerWork.get(w.id) ?? 0
-                  return count > 0 ? (
-                    <button
-                      onClick={() => setRatedChunksFilter({ workSeq: w.project_seq ?? undefined, title: w.work_title ?? undefined })}
-                      style={{ color: '#6b7de0', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+      {isMobile ? (
+        /* ── Mobile: card list ─────────────────────────────────────── */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+          {sortedWorks.map(w => {
+            const hasRatings = w.overall_avg != null
+            const openChunks = () => setRatedChunksFilter({ workSeq: w.project_seq ?? undefined, title: w.work_title ?? undefined })
+            const openDetail = () => setDetailWorkRef(w.project_seq ?? w.id)
+            const ratingParts = [
+              (w.human_rated ?? 0) > 0 ? `Human ${w.human_rated}` : null,
+              (w.ai_rated ?? 0) > 0 ? `AI ${w.ai_rated}` : null,
+            ].filter(Boolean)
+            return (
+              <div
+                key={w.id}
+                onClick={openDetail}
+                style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--hover, rgba(128,128,128,0.06))')}
+                onMouseLeave={e => (e.currentTarget.style.background = '')}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>#{w.project_seq}</span>
+                    <span
+                      title={w.work_title ?? w.source_path?.split('/').pop() ?? w.id}
+                      style={{ fontWeight: 500, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                     >
-                      {count}
+                      {w.work_title ?? w.source_path?.split('/').pop() ?? w.id}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{
+                      background: w.pipeline_phase === 'clustered' ? 'var(--badge-green-bg)' : 'var(--badge-yellow-bg)',
+                      color: w.pipeline_phase === 'clustered' ? 'var(--badge-green-text)' : 'var(--badge-yellow-text)',
+                      padding: '1px 5px', borderRadius: 3,
+                    }}>
+                      {PIPELINE_PHASE_DISPLAY[w.pipeline_phase] ?? w.pipeline_phase}
+                    </span>
+                    {ratingParts.length > 0 && <span>{ratingParts.join(' · ')}</span>}
+                  </div>
+                  {hasRatings && (
+                    <button
+                      onClick={e => { e.stopPropagation(); openChunks() }}
+                      style={{ marginTop: 8, padding: '6px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: '#6b7de0', fontSize: 12, cursor: 'pointer' }}
+                    >
+                      Ratings · avg <span style={{ color: thermalColor(w.overall_avg!), fontWeight: 600 }}>{w.overall_avg!.toFixed(1)}</span>
                     </button>
-                  ) : (
-                    <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
+                  )}
+                </div>
+                <span style={{ color: 'var(--text-muted)', fontSize: 18, flexShrink: 0 }}>›</span>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        /* ── Desktop: dimensional table ────────────────────────────── */
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 4, tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: 36 }} />
+              <col />
+              {project.rating_dimensions.map(d => <col key={d.name} style={{ width: 52 }} />)}
+              <col style={{ width: 60 }} />
+            </colgroup>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', height: 100 }}>
+                <th onClick={() => handleSort(null)} style={{ ...thSort, paddingLeft: 4 }}>
+                  #{sortIndicator(null)}
+                </th>
+                <th onClick={() => handleSort('name')} style={thSort}>
+                  Work{sortIndicator('name')}
+                </th>
+                {project.rating_dimensions.map(d => {
+                  const dimActive = sortBy?.startsWith(`dim:${d.name}:`) ?? false
+                  return (
+                    <th
+                      key={d.name}
+                      onClick={() => handleSort(`dim:${d.name}:avg`)}
+                      style={{ padding: '0 0 12px 10px', verticalAlign: 'bottom', overflow: 'visible', cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      <div style={{
+                        display: 'inline-block',
+                        transform: 'rotate(-45deg)',
+                        transformOrigin: '0 100%',
+                        whiteSpace: 'nowrap',
+                        fontSize: 12,
+                        fontWeight: 500,
+                        lineHeight: 1,
+                        color: dimActive ? 'var(--text)' : 'var(--text-muted)',
+                      }}>
+                        {d.name}{dimActive ? (sortDir === 'asc' ? ' ▴' : ' ▾') : ''}
+                      </div>
+                    </th>
                   )
-                })()}
-              </td>
-              <td style={{ padding: '4px 8px' }}>
-                <button
-                  onClick={() => setDetailWorkRef(w.project_seq ?? w.id)}
-                  style={{ color: '#6b7de0', fontSize: 11, background: 'none', border: 'none', cursor: 'pointer' }}
-                >
-                  Details
-                </button>
-              </td>
-              <td style={{ padding: '4px 8px' }}>
-                <button
-                  onClick={() => confirm('Remove this work? Associated ratings will also be deleted.') && removeWork.mutate(String(w.project_seq))}
-                  style={{ color: '#c00', fontSize: 11, background: 'none', border: 'none', cursor: 'pointer' }}
-                >
-                  Remove
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                })}
+                <th onClick={() => handleSort('overall:avg')} style={{ ...thSort, textAlign: 'right' }}>
+                  Avg{sortIndicator('overall:avg')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedWorks.map(w => {
+                const hasRatings = w.overall_avg != null
+                const openChunks = () => setRatedChunksFilter({ workSeq: w.project_seq ?? undefined, title: w.work_title ?? undefined })
+                const openDetail = () => setDetailWorkRef(w.project_seq ?? w.id)
+                const ratingParts = [
+                  (w.human_rated ?? 0) > 0 ? `Human ${w.human_rated}` : null,
+                  (w.ai_rated ?? 0) > 0 ? `AI ${w.ai_rated}` : null,
+                ].filter(Boolean)
+                return (
+                  <tr key={w.id} style={{ borderBottom: '1px solid var(--border)', verticalAlign: 'top' }}>
+                    <td
+                      onClick={openDetail}
+                      style={{ padding: '8px 4px', color: 'var(--text-muted)', fontSize: 12, whiteSpace: 'nowrap', cursor: 'pointer' }}
+                    >
+                      #{w.project_seq}
+                    </td>
+                    <td
+                      onClick={openDetail}
+                      style={{ padding: '8px 10px 8px 8px', overflow: 'hidden', cursor: 'pointer' }}
+                    >
+                      <div
+                        title={w.work_title ?? w.source_path?.split('/').pop() ?? w.id}
+                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500, fontSize: 13 }}
+                      >
+                        {w.work_title ?? w.source_path?.split('/').pop() ?? w.id}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{
+                          background: w.pipeline_phase === 'clustered' ? 'var(--badge-green-bg)' : 'var(--badge-yellow-bg)',
+                          color: w.pipeline_phase === 'clustered' ? 'var(--badge-green-text)' : 'var(--badge-yellow-text)',
+                          padding: '1px 5px', borderRadius: 3,
+                        }}>
+                          {PIPELINE_PHASE_DISPLAY[w.pipeline_phase] ?? w.pipeline_phase}
+                        </span>
+                        {ratingParts.length > 0 && <span>Ratings: {ratingParts.join(', ')}</span>}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        {w.ingested_at.slice(0, 10)}
+                      </div>
+                    </td>
+                    {project.rating_dimensions.map(d => {
+                      const ds = w.dim_stats?.[d.name]
+                      return (
+                        <td
+                          key={d.name}
+                          onClick={hasRatings ? openChunks : undefined}
+                          style={{ padding: '8px 4px', textAlign: 'right', whiteSpace: 'nowrap', cursor: hasRatings ? 'pointer' : 'default' }}
+                        >
+                          {ds ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end' }}>
+                              <span style={{ color: thermalColor(ds.max), fontSize: 12 }}>{ds.max.toFixed(1)}</span>
+                              <span style={{ color: thermalColor(ds.avg), fontSize: 12 }}>{ds.avg.toFixed(1)}</span>
+                              <span style={{ color: thermalColor(ds.min), fontSize: 12 }}>{ds.min.toFixed(1)}</span>
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
+                          )}
+                        </td>
+                      )
+                    })}
+                    <td
+                      onClick={hasRatings ? openChunks : undefined}
+                      style={{ padding: '8px 8px', textAlign: 'right', whiteSpace: 'nowrap', cursor: hasRatings ? 'pointer' : 'default' }}
+                    >
+                      {hasRatings ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end' }}>
+                          <span style={{ color: thermalColor(w.overall_max!), fontSize: 11 }}>{w.overall_max!.toFixed(1)}</span>
+                          <span style={{ color: thermalColor(w.overall_avg!), fontSize: 16, fontWeight: 700, lineHeight: 1 }}>{w.overall_avg!.toFixed(1)}</span>
+                          <span style={{ color: thermalColor(w.overall_min!), fontSize: 11 }}>{w.overall_min!.toFixed(1)}</span>
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {showSettings && project && (
         <ProjectSettingsDialog
@@ -493,6 +797,7 @@ export default function ProjectDashboard() {
           projectId={projectId!}
           workRef={detailWorkRef}
           onClose={() => setDetailWorkRef(null)}
+          onRemove={ref => { removeWork.mutate(String(ref)); setDetailWorkRef(null) }}
         />
       )}
 

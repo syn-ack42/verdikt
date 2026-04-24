@@ -5,9 +5,10 @@ interface Props {
   projectId: string
   workRef: string | number
   onClose: () => void
+  onRemove?: (workRef: string | number) => void
 }
 
-export default function WorkDetailModal({ projectId, workRef, onClose }: Props) {
+export default function WorkDetailModal({ projectId, workRef, onClose, onRemove }: Props) {
   const { data: work, isLoading, error } = useQuery({
     queryKey: ['work-detail', projectId, workRef],
     queryFn: () => api.works.detail(projectId, String(workRef)),
@@ -20,7 +21,7 @@ export default function WorkDetailModal({ projectId, workRef, onClose }: Props) 
     >
       <div style={{
         background: 'var(--modal-bg)', color: 'var(--text)',
-        borderRadius: 10, width: 780, maxHeight: '90vh',
+        borderRadius: 10, width: 'min(780px, 94vw)', maxHeight: '90vh',
         display: 'flex', flexDirection: 'column',
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)', overflow: 'hidden',
         border: '1px solid var(--border)',
@@ -37,12 +38,13 @@ export default function WorkDetailModal({ projectId, workRef, onClose }: Props) 
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, padding: 'clamp(12px, 4vw, 20px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {isLoading && <p style={{ color: 'var(--text-muted)' }}>Loading…</p>}
           {error && <p style={{ color: '#c00' }}>Failed to load work details.</p>}
 
           {work && (
             <>
+              <div style={{ overflowX: 'auto' }}>
               <table style={{ fontSize: 13, borderCollapse: 'collapse', width: '100%' }}>
                 <tbody>
                   <MetaRow label="Source">{work.source_plugin}</MetaRow>
@@ -63,10 +65,10 @@ export default function WorkDetailModal({ projectId, workRef, onClose }: Props) 
                   )}
 
                   {/* AO3-specific */}
-                  {work.source_plugin === 'ao3' && work.plugin_metadata.work_id && (
+                  {work.source_plugin === 'ao3' && work.plugin_metadata.work_id != null && (
                     <MetaRow label="Work ID">{String(work.plugin_metadata.work_id)}</MetaRow>
                   )}
-                  {work.source_plugin === 'ao3' && work.plugin_metadata.source_updated_at && (
+                  {work.source_plugin === 'ao3' && work.plugin_metadata.source_updated_at != null && (
                     <MetaRow label="Last updated">{String(work.plugin_metadata.source_updated_at).slice(0, 10)}</MetaRow>
                   )}
                   {work.source_plugin === 'ao3' && work.url && (
@@ -103,6 +105,7 @@ export default function WorkDetailModal({ projectId, workRef, onClose }: Props) 
                   }
                 </tbody>
               </table>
+              </div>
 
               {/* Full content */}
               <div>
@@ -112,8 +115,9 @@ export default function WorkDetailModal({ projectId, workRef, onClose }: Props) 
                 {work.content ? (
                   <div style={{
                     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
-                    padding: '12px 16px', maxHeight: 480, overflowY: 'auto',
+                    padding: '12px 16px', maxHeight: 'clamp(180px, 35vh, 400px)', overflowY: 'auto',
                     fontSize: 14, lineHeight: 1.75, whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word', overflowWrap: 'anywhere',
                     fontFamily: 'Georgia, serif',
                   }}>
                     {work.content}
@@ -125,6 +129,22 @@ export default function WorkDetailModal({ projectId, workRef, onClose }: Props) 
             </>
           )}
         </div>
+
+        {/* Footer */}
+        {onRemove && (
+          <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => {
+                if (confirm('Remove this work? Associated chunks and ratings will also be deleted.')) {
+                  onRemove(workRef)
+                }
+              }}
+              style={{ background: 'none', border: '1px solid #c00', color: '#c00', borderRadius: 4, padding: '5px 14px', fontSize: 13, cursor: 'pointer' }}
+            >
+              Remove work
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

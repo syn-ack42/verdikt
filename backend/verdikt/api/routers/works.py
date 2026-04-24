@@ -102,12 +102,89 @@ def _get_project_or_404(project_id: str, session: Session):
 def list_works(
     project_id: str,
     phase: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str = "asc",
     session: Session = Depends(get_session),
 ) -> list[dict]:
+    import json as _json
+    from verdikt.storage.orm import ChunkRow, RatingRow as _RatingRow
+
     proj = _get_project_or_404(project_id, session)
     phase_filter = PipelinePhase(phase) if phase else None
     items = SQLiteMaterialStore(session).list_by_project(proj.id, phase=phase_filter)
-    return [_work_response(i) for i in items]
+
+    # Build stats per work from DB
+    chunk_store = SQLiteChunkStore(session)
+    all_chunks = chunk_store.list_by_project(proj.id)
+    chunks_by_material: dict[str, list] = {}
+    for c in all_chunks:
+        chunks_by_material.setdefault(c.material_item_id, []).append(c)
+
+    from verdikt.storage.sqlite import SQLiteRatingStore
+    all_ratings = SQLiteRatingStore(session).list_by_project(proj.id)
+    # Index ratings by chunk_id
+    ratings_by_chunk: dict[str, list] = {}
+    for r in all_ratings:
+        if not r.skipped:
+            ratings_by_chunk.setdefault(r.chunk_id, []).append(r)
+
+    def _work_stats(item) -> dict:
+        chunk_ids = {c.id for c in chunks_by_material.get(item.id, [])}
+        total_chunks = len(chunk_ids)
+        item_ratings = [r for cid in chunk_ids for r in ratings_by_chunk.get(cid, [])]
+        human_rated = sum(1 for r in item_ratings if not r.is_ai)
+        ai_rated = sum(1 for r in item_ratings if r.is_ai)
+        all_scores = [
+            sum(r.dimension_scores.values()) / len(r.dimension_scores)
+            for r in item_ratings if r.dimension_scores
+        ]
+        overall_avg = round(sum(all_scores) / len(all_scores), 3) if all_scores else None
+        overall_max = round(max(all_scores), 3) if all_scores else None
+        overall_min = round(min(all_scores), 3) if all_scores else None
+
+        # Per-dimension stats
+        dim_data: dict[str, list[float]] = {}
+        for r in item_ratings:
+            for dim, score in r.dimension_scores.items():
+                dim_data.setdefault(dim, []).append(score)
+        dim_stats = {
+            dim: {
+                "avg": round(sum(vals) / len(vals), 3),
+                "max": round(max(vals), 3),
+                "min": round(min(vals), 3),
+            }
+            for dim, vals in dim_data.items()
+        }
+
+        return {
+            "total_chunks": total_chunks,
+            "human_rated": human_rated,
+            "ai_rated": ai_rated,
+            "overall_avg": overall_avg,
+            "overall_max": overall_max,
+            "overall_min": overall_min,
+            "dim_stats": dim_stats,
+        }
+
+    result = [{**_work_response(i), **_work_stats(i)} for i in items]
+
+    # Sorting
+    if sort_by:
+        reverse = sort_dir.lower() == "desc"
+        if sort_by in ("total_chunks", "human_rated", "ai_rated"):
+            result.sort(key=lambda w: w.get(sort_by) or 0, reverse=reverse)
+        elif sort_by in ("overall_avg", "overall_max", "overall_min"):
+            result.sort(key=lambda w: w.get(sort_by) or 0.0, reverse=reverse)
+        elif sort_by == "name":
+            result.sort(key=lambda w: (w.get("work_title") or "").lower(), reverse=reverse)
+        else:
+            # Try dimension stat
+            result.sort(
+                key=lambda w: (w.get("dim_stats") or {}).get(sort_by, {}).get("avg") or 0.0,
+                reverse=reverse,
+            )
+
+    return result
 
 
 class IngestRequest(BaseModel):

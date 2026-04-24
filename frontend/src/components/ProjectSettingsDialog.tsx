@@ -79,7 +79,7 @@ export default function ProjectSettingsDialog({ project, ratings, onClose }: Pro
     >
       <div style={{
         background: 'var(--modal-bg)', color: 'var(--text)',
-        borderRadius: 10, width: 680, maxHeight: '85vh',
+        borderRadius: 10, width: 'min(680px, 94vw)', maxHeight: '85vh',
         display: 'flex', flexDirection: 'column',
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
         border: '1px solid var(--border)',

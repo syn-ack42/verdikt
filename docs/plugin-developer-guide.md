@@ -238,7 +238,28 @@ The `config_schema()` classmethod returns a [JSON Schema](https://json-schema.or
 | `{"type": "string", "format": "password"}` | Password input (masked) |
 | `{"type": "string", "format": "uri"}` | URL input |
 | `{"type": "integer"}` or `{"type": "number"}` | Number input (respects `minimum`/`maximum`) |
+| `{"type": "array", "items": {"type": "string"}}` | Dynamic list of text inputs |
 | `{"type": "array", "items": {"type": "string", "format": "uri"}}` | Dynamic list of URL inputs |
+| `{"type": "array", "items": {"type": "object", "properties": {...}}}` | Dynamic list of inline rows — each row renders one input per property (URL properties stretch, number properties are compact). When adding a new row, non-URL fields default to the previous row's values. |
+
+Each property inside `items.properties` supports the same field-level keys as top-level properties: `type`, `format`, `title`, `minimum`, `maximum`, `default`.
+
+**Example** — a list of search targets each with their own result cap (as used by the built-in AO3 plugin):
+
+```python
+"search_urls": {
+    "type": "array",
+    "title": "Search URLs",
+    "description": "One AO3 search URL per row; max_works applies to that row only.",
+    "items": {
+        "type": "object",
+        "properties": {
+            "url":       {"type": "string", "format": "uri", "title": "Search URL"},
+            "max_works": {"type": "integer", "title": "Max works", "default": 20, "minimum": 1, "maximum": 500},
+        },
+    },
+}
+```
 
 Mark required fields with the top-level `"required"` array. Required fields that are empty will be highlighted in the UI on submit.
 

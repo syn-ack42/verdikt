@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
-import type { PluginInfo, PluginConfigMap } from '../api/types'
+import type { PluginInfo } from '../api/types'
 import PluginConfigEditor from './PluginConfigEditor'
 import StoragePicker, { type Selection } from './StoragePicker'
 
@@ -92,7 +92,7 @@ export default function PluginIngestDialog({ projectId, onClose, onIngest }: Pro
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div style={{
-        background: 'var(--bg, #fff)', color: 'var(--text, #1a1a1a)', borderRadius: 10, width: 580, maxHeight: '88vh',
+        background: 'var(--bg, #fff)', color: 'var(--text, #1a1a1a)', borderRadius: 10, width: 'min(580px, 94vw)', maxHeight: '88vh',
         display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.2)', overflow: 'hidden',
       }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border, #e0e0e0)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
