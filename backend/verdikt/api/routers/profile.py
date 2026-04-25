@@ -7,7 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_config, get_session
+from typing import Annotated
+
+from verdikt.api.deps import get_config, get_current_user, get_session
+from verdikt.core.user_models import AuthenticatedUser
 from verdikt.core.models import DimensionProfile, PreferenceProfile
 from verdikt.inference.crystalliser import ProfileCrystalliser
 from verdikt.storage.sqlite import (
@@ -28,6 +31,9 @@ def _get_project_or_404(project_id: str, session: Session):
 
 
 def _profile_response(p: PreferenceProfile) -> dict:
+    profile_confidence = (
+        round(p.score_sum / p.confirmed_count, 4) if p.confirmed_count > 0 else None
+    )
     return {
         "id": p.id,
         "project_id": p.project_id,
@@ -35,6 +41,9 @@ def _profile_response(p: PreferenceProfile) -> dict:
         "dimensions": [d.model_dump() for d in p.dimensions],
         "overall_summary": p.overall_summary,
         "rating_count": p.rating_count,
+        "confirmed_count": p.confirmed_count,
+        "score_sum": p.score_sum,
+        "profile_confidence": profile_confidence,
         "created_at": p.created_at.isoformat(),
     }
 
@@ -61,7 +70,10 @@ def list_profile_versions(
 
 
 @router.get("/crystallise/status")
-def crystallise_status(project_id: str) -> dict:
+def crystallise_status(
+    project_id: str,
+    _: Annotated[AuthenticatedUser, Depends(get_current_user)],
+) -> dict:
     return {"running": project_id in _crystallise_running}
 
 

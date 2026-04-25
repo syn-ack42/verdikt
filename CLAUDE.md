@@ -6,11 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Verdikt is a local-first, open-source **preference learning platform**. Users rate content samples across configurable dimensions; the system builds a preference model and recommends new material with per-dimension explanations. The full specification is in `verdikt_brief.md`.
 
-## Planned tech stack
+## Tech stack
 
-- **Backend**: Python, FastAPI, SQLAlchemy + SQLite, Prefect (pipeline orchestration)
-- **Frontend**: React
+- **Backend**: Python, FastAPI, SQLAlchemy + SQLite (SQLCipher for per-user encryption), Prefect (pipeline orchestration)
+- **Frontend**: React + TypeScript, Vite, TanStack Query
 - **ML**: Ollama (local LLM), sentence-transformers (embeddings), ChromaDB (vector store)
+- **Auth**: HttpOnly JWT cookie (`SameSite=Lax`), Argon2id password hashing
 - **Plugin system**: Python packages registered via `entry_points`
 
 ## Architecture
@@ -22,6 +23,14 @@ Five layers with strict separation of concerns:
 3. **Storage layer** — SQLite via SQLAlchemy for structured data; ChromaDB (one collection per project) for vectors; raw files on disk. Exposed through interfaces so the pipeline layer is decoupled from implementation.
 4. **Inference layer** — Ollama for LLM tasks (profile crystallisation, LLM judging, explanations); sentence-transformers for embeddings. Abstracted so swapping providers is a config change.
 5. **UI layer** — React + FastAPI. Three surfaces: project dashboard, rating interface, recommendation browser.
+
+## Auth and per-user isolation
+
+- **Global auth DB**: `~/.verdikt/auth.db` — plain SQLite, `users` table only (id, email, argon2 hash, salt, is_admin, is_blocked)
+- **Per-user data**: `~/.verdikt/users/<user_id>/` containing `verdikt.db` (SQLCipher-encrypted), `chroma/`, and `files/`
+- **JWT**: HttpOnly cookie `verdikt_token`; payload contains `sub=user_id` and `key=base64(derived_key)`; the derived key is Argon2id(password, salt) and never written to disk; the per-user DB is unreadable without it
+- **`get_current_user()`** in `backend/verdikt/api/deps.py` — validates cookie, returns `User`; every route depends on this
+- **First registered user** is auto-promoted to admin
 
 ## The MaterialItem contract
 
@@ -35,9 +44,18 @@ Fields:
 
 The plugin fills provenance and content. The pipeline fills everything else.
 
+## Profile confidence
+
+Confidence is prediction accuracy, not a rating count. After a profile exists:
+- When a user enters the rating interface for an unrated chunk, `POST /ai-rating/preview` fires in the background (AbortController cancels it if the user submits first)
+- When the user submits, the AI score is compared: `agreement = avg(1 - |ai - user| / 4)` per dimension
+- `confirmed_count` and `score_sum` are accumulated on the `PreferenceProfile` row; `profile_confidence = score_sum / confirmed_count`
+- Confidence resets to 0 on each new profile version (new crystallisation creates a new row)
+- Below `min_profile_confidence` (default 0.9) after ≥5 confirmations, the dashboard shows an amber "re-crystallise" badge
+
 ## Key design constraints
 
-**Privacy is non-negotiable.** Preference data never leaves the machine by default. Profile encryption must be supported. This is the ethical basis for a potential monetisation model — violating it destroys the product.
+**Privacy is non-negotiable.** Preference data never leaves the machine by default. Per-user SQLCipher encryption is required. This is the ethical basis for a potential monetisation model — violating it destroys the product.
 
 **Domain abstraction from day one.** The chunker, embedder, and rating UI display are domain-specific components behind interfaces. Everything from clustering onward is domain-agnostic (operates on embedding vectors and rating scalars). Do not hardcode text-only assumptions even though the initial implementation is text-first.
 
@@ -48,8 +66,10 @@ The plugin fills provenance and content. The pipeline fills everything else.
 ## Rating loop specifics
 
 - Early sessions use diversity sampling (cluster-based) to maximise corpus coverage.
-- Later sessions use uncertainty sampling (active learning) to target maximally informative chunks.
-- A session of 20–30 ratings must feel fast: keyboard shortcuts, instant progression, no spinners between ratings. The rating interface is the most-used screen in the application.
+- Later sessions use uncertainty sampling (active learning) to target maximally informative chunks (switches after `crystallisation_threshold` ratings).
+- Background AI preview fires on chunk load (normal mode, post-profile); result shown as flash bar after submit.
+- Two rating modes: `normal` (rate new chunks) and `confirm_ai` (review AI-scored chunks).
+- A session of 20–30 ratings must feel fast: keyboard shortcuts, instant progression, no spinners between ratings.
 
 ## Recommendation engine
 
@@ -57,11 +77,11 @@ Two-stage: embedding similarity pre-filter (cheap) → LLM judge scoring survivi
 
 ## Build order (milestones)
 
-1. `MaterialItem` dataclass + SQLite schema + `FileDropPlugin` + chunk/embed/cluster pipeline (no UI)
-2. Rating UI + storage + basic profile crystallisation via Ollama
-3. `AO3Plugin` + plugin registry (`entry_points`) + auto-generated config forms
-4. Embedding pre-filter + LLM judge + recommendation browser + feedback loop
-5. Profile encryption + project export/import + confidence indicators + active learning + large corpus performance
+1. ✅ `MaterialItem` dataclass + SQLite schema + `FileDropPlugin` + chunk/embed/cluster pipeline (no UI)
+2. ✅ Rating UI + storage + basic profile crystallisation via Ollama
+3. ✅ `AO3Plugin` + plugin registry (`entry_points`) + auto-generated config forms
+4. ✅ Embedding pre-filter + LLM judge + recommendation browser + feedback loop
+5. ✅ Auth (JWT + Argon2id) + per-user SQLCipher encryption + project export/import + AI accuracy confidence + background AI preview + active learning + admin UI
 6. Image domain support (CLIP) — validates domain abstraction
 
 ## Branch conventions

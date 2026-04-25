@@ -50,6 +50,7 @@ class SQLiteProjectStore(ProjectStore):
             chunk_min_size=p.chunk_min_size,
             chunk_max_size=p.chunk_max_size,
             crystallisation_threshold=p.crystallisation_threshold,
+            min_profile_confidence=p.min_profile_confidence,
             created_at=p.created_at,
         )
 
@@ -64,6 +65,7 @@ class SQLiteProjectStore(ProjectStore):
             chunk_min_size=r.chunk_min_size,
             chunk_max_size=r.chunk_max_size,
             crystallisation_threshold=r.crystallisation_threshold,
+            min_profile_confidence=getattr(r, 'min_profile_confidence', 0.9) or 0.9,
             created_at=r.created_at,
         )
 
@@ -472,6 +474,20 @@ class SQLiteProfileStore(ProfileStore):
         self._s.flush()
         return profile
 
+    def increment_confidence(self, project_id: str, agreement_score: float) -> None:
+        """Accumulate one AI-confirmation agreement score onto the latest profile version."""
+        row = self._s.execute(
+            select(PreferenceProfileRow)
+            .where(PreferenceProfileRow.project_id == project_id)
+            .order_by(PreferenceProfileRow.version.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if row is None:
+            return
+        row.confirmed_count = (row.confirmed_count or 0) + 1
+        row.score_sum = (row.score_sum or 0.0) + agreement_score
+        self._s.flush()
+
     @staticmethod
     def _to_row(p: PreferenceProfile) -> PreferenceProfileRow:
         return PreferenceProfileRow(
@@ -481,6 +497,8 @@ class SQLiteProfileStore(ProfileStore):
             dimensions_json=json.dumps([d.model_dump() for d in p.dimensions]),
             overall_summary=p.overall_summary,
             rating_count=p.rating_count,
+            confirmed_count=p.confirmed_count,
+            score_sum=p.score_sum,
             created_at=p.created_at,
         )
 
@@ -493,6 +511,8 @@ class SQLiteProfileStore(ProfileStore):
             dimensions=[DimensionProfile(**d) for d in json.loads(r.dimensions_json)],
             overall_summary=r.overall_summary,
             rating_count=r.rating_count,
+            confirmed_count=getattr(r, 'confirmed_count', 0) or 0,
+            score_sum=getattr(r, 'score_sum', 0.0) or 0.0,
             created_at=r.created_at,
         )
 

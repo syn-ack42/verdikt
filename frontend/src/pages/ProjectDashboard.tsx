@@ -94,9 +94,11 @@ export default function ProjectDashboard() {
   const [phaseProgress, setPhaseProgress] = useState<PhaseProgress[]>([])
   const [pipelineError, setPipelineError] = useState<string | null>(null)
 
-  // Works table sort state
+  // Works table sort + pagination state
   const [sortBy, setSortBy] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [worksPage, setWorksPage] = useState(0)
+  const WORKS_PAGE_SIZE = 25
 
   // AI rating state
   const [aiRatingStarting, setAiRatingStarting] = useState(false)
@@ -142,6 +144,11 @@ export default function ProjectDashboard() {
     })
     return ws
   }, [works, sortBy, sortDir])
+
+  const pagedWorks = useMemo(() => {
+    const start = worksPage * WORKS_PAGE_SIZE
+    return sortedWorks.slice(start, start + WORKS_PAGE_SIZE)
+  }, [sortedWorks, worksPage, WORKS_PAGE_SIZE])
 
   const { data: aiRatingStatus, refetch: refetchAiStatus } = useQuery({
     queryKey: ['ai-rating-status', projectId],
@@ -331,11 +338,19 @@ export default function ProjectDashboard() {
           <h2 style={{ margin: '8px 0 4px' }}>{project.name}</h2>
           {project.description && <p style={{ margin: 0, color: 'var(--text-muted)' }}>{project.description}</p>}
         </div>
-        <button
-          onClick={() => setShowSettings(true)}
-          title="Project settings"
-          style={{ width: '2.4em', height: '2.4em', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2em' }}
-        >⚙</button>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <a
+            href={api.projects.exportUrl(project.id)}
+            download
+            title="Export project"
+            style={{ width: '2.4em', height: '2.4em', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1em', border: '1px solid var(--border)', borderRadius: 6, textDecoration: 'none', color: 'inherit', background: 'none' }}
+          >↓</a>
+          <button
+            onClick={() => setShowSettings(true)}
+            title="Project settings"
+            style={{ width: '2.4em', height: '2.4em', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2em' }}
+          >⚙</button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 24, marginBottom: 24 }}>
@@ -343,17 +358,44 @@ export default function ProjectDashboard() {
           <div style={{ fontSize: 28, fontWeight: 700 }}>{works?.length ?? 0}</div>
           <div style={{ color: 'var(--text-muted)' }}>Works</div>
         </div>
-        <div
-          onClick={() => setRatedChunksFilter({})}
-          style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, flex: 1, cursor: 'pointer' }}
-          onMouseEnter={e => (e.currentTarget.style.background = 'var(--hover, rgba(128,128,128,0.06))')}
-          onMouseLeave={e => (e.currentTarget.style.background = '')}
-        >
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{ratings?.filter(r => !r.skipped).length ?? 0}</div>
-          <div style={{ color: 'var(--text-muted)' }}>
-            Ratings <span style={{ fontSize: 11 }}>(min. {project.crystallisation_threshold})</span>
-          </div>
-        </div>
+        {(() => {
+          const nonSkipped = ratings?.filter(r => !r.skipped) ?? []
+          const humanCount = nonSkipped.filter(r => !r.is_ai).length
+          const aiCount = nonSkipped.filter(r => r.is_ai).length
+          const hasConfidence = (project.profile_confirmed_count ?? 0) > 0 && project.profile_confidence != null
+          const pct = hasConfidence ? Math.round((project.profile_confidence as number) * 100) : null
+          const minConf = project.min_profile_confidence ?? 0.9
+          const hasEnough = (project.profile_confirmed_count ?? 0) >= project.crystallisation_threshold
+          return (
+            <div
+              onClick={() => setRatedChunksFilter({})}
+              style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, flex: 1, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--hover, rgba(128,128,128,0.06))')}
+              onMouseLeave={e => (e.currentTarget.style.background = '')}
+            >
+              <div>
+                <div style={{ fontSize: 28, fontWeight: 700 }}>{nonSkipped.length}</div>
+                <div style={{ color: 'var(--text-muted)' }}>Ratings</div>
+              </div>
+              <div style={{ textAlign: 'right', fontSize: 12, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                <span>{humanCount} human</span>
+                <span>{aiCount} AI</span>
+                {pct !== null && (
+                  <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                    <span style={{ padding: '2px 7px', borderRadius: 10, background: 'var(--surface, rgba(128,128,128,0.08))', fontWeight: 500 }}>
+                      {pct}% accuracy
+                    </span>
+                    {hasEnough && (project.profile_confidence as number) < minConf && (
+                      <span style={{ padding: '2px 7px', borderRadius: 10, background: 'rgba(245,158,11,0.12)', color: '#b45309', fontWeight: 600 }}>
+                        re-crystallize
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -378,11 +420,22 @@ export default function ProjectDashboard() {
           </button>
         </Link>
         <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>
-        <Link to={`/projects/${projectId}/profile`}>
-          <button style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>
-            Profile
-          </button>
-        </Link>
+        <div style={{ position: 'relative' }}>
+          <Link to={`/projects/${projectId}/profile`}>
+            <button style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>
+              Profile
+            </button>
+          </Link>
+          {(() => {
+            const humanCount = ratings?.filter(r => !r.skipped && !r.is_ai).length ?? 0
+            const need = project.crystallisation_threshold - humanCount
+            return need > 0 ? (
+              <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                {need} more to crystallise
+              </span>
+            ) : null
+          })()}
+        </div>
 
         <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>
 
@@ -548,7 +601,7 @@ export default function ProjectDashboard() {
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sort</span>
           <select
             value={sortBy ?? ''}
-            onChange={e => { setSortBy(e.target.value || null); if (!e.target.value) setSortDir('asc') }}
+            onChange={e => { setSortBy(e.target.value || null); if (!e.target.value) setSortDir('asc'); setWorksPage(0) }}
             style={{ fontSize: 12, padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg, #1a1a1a)', color: 'var(--text)', cursor: 'pointer' }}
           >
             <option value="">Work #</option>
@@ -594,7 +647,7 @@ export default function ProjectDashboard() {
       {isMobile ? (
         /* ── Mobile: card list ─────────────────────────────────────── */
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-          {sortedWorks.map(w => {
+          {pagedWorks.map(w => {
             const hasRatings = w.overall_avg != null
             const openChunks = () => setRatedChunksFilter({ workSeq: w.project_seq ?? undefined, title: w.work_title ?? undefined })
             const openDetail = () => setDetailWorkRef(w.project_seq ?? w.id)
@@ -691,7 +744,7 @@ export default function ProjectDashboard() {
               </tr>
             </thead>
             <tbody>
-              {sortedWorks.map(w => {
+              {pagedWorks.map(w => {
                 const hasRatings = w.overall_avg != null
                 const openChunks = () => setRatedChunksFilter({ workSeq: w.project_seq ?? undefined, title: w.work_title ?? undefined })
                 const openDetail = () => setDetailWorkRef(w.project_seq ?? w.id)
@@ -770,6 +823,24 @@ export default function ProjectDashboard() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {sortedWorks.length > WORKS_PAGE_SIZE && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, fontSize: 13, color: 'var(--text-muted)' }}>
+          <button
+            onClick={() => setWorksPage(p => Math.max(0, p - 1))}
+            disabled={worksPage === 0}
+            style={{ padding: '4px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: worksPage === 0 ? 'var(--text-muted)' : 'var(--text)', cursor: worksPage === 0 ? 'default' : 'pointer' }}
+          >← Prev</button>
+          <span>
+            {worksPage * WORKS_PAGE_SIZE + 1}–{Math.min((worksPage + 1) * WORKS_PAGE_SIZE, sortedWorks.length)} of {sortedWorks.length}
+          </span>
+          <button
+            onClick={() => setWorksPage(p => p + 1)}
+            disabled={(worksPage + 1) * WORKS_PAGE_SIZE >= sortedWorks.length}
+            style={{ padding: '4px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: (worksPage + 1) * WORKS_PAGE_SIZE >= sortedWorks.length ? 'var(--text-muted)' : 'var(--text)', cursor: (worksPage + 1) * WORKS_PAGE_SIZE >= sortedWorks.length ? 'default' : 'pointer' }}
+          >Next →</button>
         </div>
       )}
 

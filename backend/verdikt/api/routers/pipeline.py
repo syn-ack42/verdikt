@@ -8,7 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_config, get_session
+from verdikt.api.deps import get_config, get_current_user, get_session
+from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.embedder import SentenceTransformerEmbedder
 from verdikt.pipeline.chunker import TextChunker
 from verdikt.pipeline.flows import run_pipeline_flow
@@ -29,12 +30,13 @@ def _get_project_or_404(project_id: str, session: Session):
 @router.post("/run")
 def run_pipeline(
     project_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict:
     proj = _get_project_or_404(project_id, session)
     config = get_config()
 
-    chroma = _chromadb.PersistentClient(path=str(config.chroma_path))
+    chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
     runner = PipelineRunner(
         material_store=SQLiteMaterialStore(session),
         chunk_store=SQLiteChunkStore(session),
@@ -69,11 +71,19 @@ def _make_runner(proj, session, config) -> PipelineRunner:
 @router.post("/run/stream")
 def run_pipeline_stream(
     project_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> StreamingResponse:
     proj = _get_project_or_404(project_id, session)
     config = get_config()
-    runner = _make_runner(proj, session, config)
+    chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
+    runner = PipelineRunner(
+        material_store=SQLiteMaterialStore(session),
+        chunk_store=SQLiteChunkStore(session),
+        vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
+        embedder=SentenceTransformerEmbedder(config.inference.embedding_model),
+        chunker=TextChunker(min_words=proj.chunk_min_size, max_words=proj.chunk_max_size),
+    )
 
     def event_stream() -> Generator[str, None, None]:
         total = 0

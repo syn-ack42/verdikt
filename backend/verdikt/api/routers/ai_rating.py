@@ -9,11 +9,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_config, get_session
+from verdikt.api.deps import get_config, get_current_user, get_session
+from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.ai_rater import AIRater
 from verdikt.inference.embedder import SentenceTransformerEmbedder
 from verdikt.inference.judge import LLMJudge
 from verdikt.storage.chroma import ChromaVectorStore
+from verdikt.core.models import Rating
 from verdikt.storage.sqlite import (
     SQLiteChunkStore, SQLiteMaterialStore, SQLiteProfileStore,
     SQLiteProjectStore, SQLiteRatingStore,
@@ -66,6 +68,7 @@ class StartRequest(BaseModel):
 @router.post("/start", status_code=202)
 def start_ai_rating(
     project_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
     body: StartRequest = StartRequest(),
     session: Session = Depends(get_session),
 ) -> dict:
@@ -79,15 +82,15 @@ def start_ai_rating(
         raise HTTPException(status_code=503, detail="No crystallised profile found. Crystallise first.")
 
     config = get_config()
-    chroma = _chromadb.PersistentClient(path=str(config.chroma_path))
+    chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
     vector_store = ChromaVectorStore(chroma, f"project_{project_id}")
     embedder = SentenceTransformerEmbedder(config.inference.embedding_model)
     judge = LLMJudge(config.inference.ollama_base_url, config.inference.ollama_model)
 
-    # Take copies for the thread (session is not thread-safe)
+    # Take copies for the thread (session is not thread-safe; import lazily for testability)
     from sqlalchemy.orm import Session as _Session
-    from verdikt.api.deps import get_engine
-    engine = get_engine()
+    from verdikt.api.deps import get_user_engine
+    engine = get_user_engine(user)
 
     stop_flag: list = []
     _stop_flags[project_id] = stop_flag
@@ -161,13 +164,69 @@ def start_ai_rating(
 
 
 @router.post("/stop")
-def stop_ai_rating(project_id: str) -> dict:
+def stop_ai_rating(
+    project_id: str,
+    _: AuthenticatedUser = Depends(get_current_user),
+) -> dict:
     flag = _stop_flags.get(project_id)
     if flag is not None:
         flag.append(True)
     if project_id in _status:
         _status[project_id]["stopped_reason"] = "user_stopped"
     return {"status": "stopped"}
+
+
+class AiPreviewRequest(BaseModel):
+    chunk_id: str
+    material_item_id: str
+
+
+@router.post("/preview", status_code=201)
+def ai_preview_rating(
+    project_id: str,
+    body: AiPreviewRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Rate a single chunk synchronously against the current profile (for background eager preview)."""
+    proj = _get_project_or_404(project_id, session)
+
+    rating_store = SQLiteRatingStore(session)
+    if body.chunk_id in rating_store.get_all_rated_chunk_ids(project_id):
+        raise HTTPException(status_code=409, detail="already_rated")
+
+    profile = SQLiteProfileStore(session).get_latest(project_id)
+    if profile is None:
+        raise HTTPException(status_code=503, detail="No profile found")
+
+    chunk = SQLiteChunkStore(session).get(body.chunk_id)
+    if chunk is None or not isinstance(chunk.content, str):
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    config = get_config()
+    judge = LLMJudge(config.inference.ollama_base_url, config.inference.ollama_model)
+
+    try:
+        scores, _, explanations = judge.score_chunk(chunk.content, profile, proj)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"AI rating failed: {exc}")
+
+    rating = Rating(
+        project_id=project_id,
+        chunk_id=body.chunk_id,
+        material_item_id=body.material_item_id,
+        dimension_scores=scores,
+        is_ai=True,
+        explanations=explanations,
+    )
+    rating_store.save(rating)
+    session.commit()
+
+    return {
+        "ai_rating_id": rating.id,
+        "dimension_scores": scores,
+        "explanations": explanations,
+    }
 
 
 @router.get("/status")

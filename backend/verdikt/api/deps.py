@@ -6,16 +6,22 @@ from functools import lru_cache
 from typing import Generator
 
 import chromadb
+from fastapi import Depends, HTTPException, Request
+from jose import JWTError, jwt
 from sqlalchemy import create_engine, text as _text
-from fastapi import Depends
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from verdikt.core.config import AppConfig
+from verdikt.core.user_models import AuthenticatedUser
+from verdikt.storage.auth_orm import AuthBase, UserRow
 from verdikt.storage.files import LocalStorageBackend, StorageBackend
 from verdikt.storage.orm import Base
 
 log = logging.getLogger(__name__)
+
+# Per-user engine cache: user_id → Engine
+_user_engines: dict[str, Engine] = {}
 
 
 @lru_cache
@@ -23,8 +29,72 @@ def get_config() -> AppConfig:
     return AppConfig()
 
 
-def _migrate(engine: Engine) -> None:
-    """Apply additive schema migrations that create_all can't handle (new columns on existing tables)."""
+# ── Auth DB (plain SQLite, users table only) ────────────────────────────────
+
+@lru_cache
+def get_auth_engine() -> Engine:
+    config = get_config()
+    config.ensure_dirs()
+    engine = create_engine(
+        f"sqlite:///{config.auth_db_path}",
+        connect_args={"check_same_thread": False},
+    )
+    AuthBase.metadata.create_all(engine)
+    return engine
+
+
+def get_auth_session() -> Generator[Session, None, None]:
+    with Session(get_auth_engine()) as session:
+        yield session
+
+
+# ── Per-user encrypted DB ───────────────────────────────────────────────────
+
+def _make_user_engine(db_path: str, db_key: str) -> Engine:
+    """Create a SQLCipher-encrypted SQLite engine for a user.
+
+    Uses creator= so SQLAlchemy's sqlite dialect handles the connection without
+    attempting its own PRAGMA key call. Falls back to plain SQLite when sqlcipher3
+    is not installed (dev/no-encryption mode).
+    """
+    try:
+        from sqlcipher3 import dbapi2 as sqlcipher  # type: ignore
+
+        def _creator():
+            conn = sqlcipher.connect(db_path)
+            conn.execute(f"PRAGMA key=\"{db_key}\"")
+            return conn
+
+        # Use plain sqlite:// dialect so SQLAlchemy doesn't inject its own PRAGMA key.
+        # The creator= function overrides the connection path entirely.
+        engine = create_engine(
+            "sqlite:///:memory:",
+            creator=_creator,
+            connect_args={"check_same_thread": False},
+        )
+    except ImportError:
+        log.warning("sqlcipher3 not installed — using plain SQLite (no encryption)")
+        engine = create_engine(
+            f"sqlite:///{db_path}",
+            connect_args={"check_same_thread": False},
+        )
+    return engine
+
+
+def get_user_engine(user: AuthenticatedUser) -> Engine:
+    if user.id not in _user_engines:
+        config = get_config()
+        config.ensure_user_dirs(user.id)
+        db_path = str(config.user_db_path(user.id))
+        engine = _make_user_engine(db_path, user.db_key)
+        Base.metadata.create_all(engine)
+        _migrate_user_db(engine)
+        _user_engines[user.id] = engine
+    return _user_engines[user.id]
+
+
+def _migrate_user_db(engine: Engine) -> None:
+    """Apply additive schema migrations to a per-user DB."""
     with engine.connect() as conn:
         existing = {row[1] for row in conn.execute(_text("PRAGMA table_info(material_items)"))}
 
@@ -45,8 +115,26 @@ def _migrate(engine: Engine) -> None:
             conn.commit()
             log.info("migration: added explanations column to ratings")
 
-        # Backfill work_id from the old dedicated column into plugin_metadata_json for ao3 rows.
-        # The work_id column was removed from the ORM but may still exist in the DB.
+        def _project_cols() -> set[str]:
+            return {row[1] for row in conn.execute(_text("PRAGMA table_info(projects)"))}
+
+        if "min_profile_confidence" not in _project_cols():
+            conn.execute(_text("ALTER TABLE projects ADD COLUMN min_profile_confidence REAL NOT NULL DEFAULT 0.9"))
+            conn.commit()
+            log.info("migration: added min_profile_confidence to projects")
+
+        def _profile_cols() -> set[str]:
+            return {row[1] for row in conn.execute(_text("PRAGMA table_info(preference_profiles)"))}
+
+        if "confirmed_count" not in _profile_cols():
+            conn.execute(_text("ALTER TABLE preference_profiles ADD COLUMN confirmed_count INTEGER NOT NULL DEFAULT 0"))
+            conn.commit()
+            log.info("migration: added confirmed_count to preference_profiles")
+        if "score_sum" not in _profile_cols():
+            conn.execute(_text("ALTER TABLE preference_profiles ADD COLUMN score_sum REAL NOT NULL DEFAULT 0.0"))
+            conn.commit()
+            log.info("migration: added score_sum to preference_profiles")
+
         if "work_id" in existing:
             rows = conn.execute(_text(
                 "SELECT id, work_id, plugin_metadata_json FROM material_items "
@@ -61,26 +149,55 @@ def _migrate(engine: Engine) -> None:
                 log.info("migration: backfilled work_id into plugin_metadata_json for %d rows", len(rows))
 
 
-@lru_cache
-def get_engine() -> Engine:
+# ── Auth dependency ─────────────────────────────────────────────────────────
+
+def get_current_user(request: Request) -> AuthenticatedUser:
     config = get_config()
-    config.ensure_dirs()
-    engine = create_engine(f"sqlite:///{config.db_path}", connect_args={"check_same_thread": False})
-    Base.metadata.create_all(engine)
-    _migrate(engine)
-    return engine
+    token = request.cookies.get("verdikt_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
+        user_id: str = payload["sub"]
+        db_key: str = payload["key"]
+        is_admin: bool = payload.get("admin", False)
+        email: str = payload.get("email", "")
+    except (JWTError, KeyError):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    with Session(get_auth_engine()) as s:
+        row = s.get(UserRow, user_id)
+        if row is None or row.is_blocked:
+            raise HTTPException(status_code=403, detail="Account blocked")
+
+    return AuthenticatedUser(id=user_id, email=email, is_admin=is_admin, db_key=db_key)
 
 
-def get_session(engine: Engine = Depends(get_engine)) -> Generator[Session, None, None]:
+def require_admin(user: AuthenticatedUser = Depends(get_current_user)) -> AuthenticatedUser:
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin required")
+    return user
+
+
+# ── Session / storage dependencies (user-scoped) ───────────────────────────
+
+def get_session(
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> Generator[Session, None, None]:
+    engine = get_user_engine(user)
     with Session(engine) as session:
         yield session
 
 
-def get_chroma_client() -> chromadb.ClientAPI:
+def get_chroma_client(
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> chromadb.ClientAPI:
     config = get_config()
-    return chromadb.PersistentClient(path=str(config.chroma_path))
+    return chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
 
 
-def get_storage() -> StorageBackend:
+def get_storage(
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> StorageBackend:
     config = get_config()
-    return LocalStorageBackend(config.user_files_path)
+    return LocalStorageBackend(config.user_files_path(user.id))

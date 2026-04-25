@@ -8,8 +8,15 @@ from verdikt.api.deps import get_session
 from verdikt.core.models import Rating
 from verdikt.pipeline.selector import RatingSelector
 from verdikt.storage.sqlite import (
-    SQLiteChunkStore, SQLiteMaterialStore, SQLiteProjectStore, SQLiteRatingStore,
+    SQLiteChunkStore, SQLiteMaterialStore, SQLiteProfileStore, SQLiteProjectStore, SQLiteRatingStore,
 )
+
+
+def _compute_agreement(ai_scores: dict[str, float], user_scores: dict[str, float]) -> float:
+    dims = set(ai_scores) & set(user_scores)
+    if not dims:
+        return 1.0
+    return sum(1.0 - abs(ai_scores[d] - user_scores[d]) / 4.0 for d in dims) / len(dims)
 
 router = APIRouter(prefix="/api/projects/{project_id}/ratings", tags=["ratings"])
 
@@ -47,7 +54,7 @@ def next_chunk(
     mat_store = SQLiteMaterialStore(session)
 
     confirm_ai = mode == "confirm_ai"
-    selector = RatingSelector(chunk_store, rating_store, confirm_ai_mode=confirm_ai)
+    selector = RatingSelector(chunk_store, rating_store, confirm_ai_mode=confirm_ai, project=proj)
     chunk = selector.next_chunk(proj.id)
 
     if chunk is None:
@@ -57,7 +64,9 @@ def next_chunk(
     material_item = mat_store.get(chunk.material_item_id)
     skipped = rating_store.count_skipped(proj.id)
     total_chunks = len(chunk_store.list_by_project(proj.id)) - skipped
-    total_rated = rating_store.count_by_project(proj.id) - skipped
+    rating_count = rating_store.count_by_project(proj.id)
+    total_rated = rating_count - skipped
+    confidence = min(1.0, rating_count / proj.crystallisation_threshold) if proj.crystallisation_threshold > 0 else 1.0
 
     response: dict = {
         "chunk": {
@@ -75,6 +84,7 @@ def next_chunk(
         },
         "total_rated": total_rated,
         "total_chunks": total_chunks,
+        "confidence": round(confidence, 3),
     }
 
     if confirm_ai:
@@ -93,6 +103,7 @@ class RatingSubmit(BaseModel):
     dimension_scores: dict[str, float] = {}
     skipped: bool = False
     skip_reason: str | None = None
+    ai_rating_id: str | None = None  # set when confirming a background AI preview
 
 
 @router.post("", status_code=201)
@@ -102,6 +113,20 @@ def submit_rating(
     session: Session = Depends(get_session),
 ) -> dict:
     _get_project_or_404(project_id, session)
+    rating_store = SQLiteRatingStore(session)
+
+    if body.ai_rating_id and not body.skipped:
+        # Confirm a background AI preview: update the AI rating to human-confirmed
+        ai_rating = rating_store.get(body.ai_rating_id)
+        if ai_rating is None or ai_rating.project_id != project_id:
+            raise HTTPException(status_code=404, detail="AI rating not found")
+        ai_scores = ai_rating.dimension_scores
+        rating_store.update_scores(body.ai_rating_id, body.dimension_scores)
+        agreement = _compute_agreement(ai_scores, body.dimension_scores)
+        SQLiteProfileStore(session).increment_confidence(project_id, agreement)
+        session.commit()
+        return _rating_response(rating_store.get(body.ai_rating_id))
+
     rating = Rating(
         project_id=project_id,
         chunk_id=body.chunk_id,
@@ -110,7 +135,7 @@ def submit_rating(
         skipped=body.skipped,
         skip_reason=body.skip_reason,
     )
-    SQLiteRatingStore(session).save(rating)
+    rating_store.save(rating)
     session.commit()
     return _rating_response(rating)
 
@@ -201,7 +226,12 @@ def update_rating(
     rating = rating_store.get(rating_id)
     if rating is None or rating.project_id != project_id:
         raise HTTPException(status_code=404, detail="Rating not found")
+    # Capture AI scores before confirming, for confidence tracking
+    ai_scores = rating.dimension_scores if rating.is_ai else None
     rating_store.update_scores(rating_id, body.dimension_scores)
+    if ai_scores:
+        agreement = _compute_agreement(ai_scores, body.dimension_scores)
+        SQLiteProfileStore(session).increment_confidence(project_id, agreement)
     session.commit()
     updated = rating_store.get(rating_id)
     return _rating_response(updated)

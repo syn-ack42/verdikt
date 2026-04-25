@@ -30,6 +30,8 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
   const [activeIdx, setActiveIdx] = useState(0)
   const [sortBy, setSortBy] = useState<string>('chunk_position')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [page, setPage] = useState(0)
+  const PAGE_SIZE = 50
 
   const { data: entries, isLoading } = useQuery({
     queryKey: ['rated-chunks', projectId, filterWorkSeq],
@@ -70,6 +72,8 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
     return 0
   }) : []
 
+  const pagedEntries = sortedEntries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
   const title = filterWorkTitle
     ? `Ratings — ${filterWorkTitle}`
     : 'Ratings'
@@ -97,7 +101,9 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
             )}
             <h3 style={{ margin: 0, fontSize: 16 }}>{editing ? 'Edit Rating' : title}</h3>
             {!editing && entries && (
-              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{entries.length} rated</span>
+              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                {entries.length} rated{sortedEntries.length > PAGE_SIZE && ` · page ${page + 1} of ${Math.ceil(sortedEntries.length / PAGE_SIZE)}`}
+              </span>
             )}
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)' }}>×</button>
@@ -186,7 +192,7 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
               <span style={{ color: 'var(--text-muted)' }}>Sort</span>
               <select
                 value={sortBy}
-                onChange={e => { setSortBy(e.target.value); setSortDir('asc') }}
+                onChange={e => { setSortBy(e.target.value); setSortDir('asc'); setPage(0) }}
                 style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', cursor: 'pointer' }}
               >
                 <option value="chunk_position">Chunk</option>
@@ -210,7 +216,7 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
           )}
           {!editing && entries && entries.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {sortedEntries.map(entry => {
+              {pagedEntries.map(entry => {
                 const hasExpl = entry.explanations && Object.keys(entry.explanations).length > 0
                 const explExpanded = expandedExpl === entry.rating_id
                 // Combine all explanations into one summary line
@@ -287,6 +293,21 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
                   </div>
                 )
               })}
+            </div>
+          )}
+          {!editing && sortedEntries.length > PAGE_SIZE && (
+            <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }}>
+              <button
+                onClick={() => setPage(p => Math.max(0, p - 1))}
+                disabled={page === 0}
+                style={{ padding: '4px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: page === 0 ? 'var(--text-muted)' : 'var(--text)', cursor: page === 0 ? 'default' : 'pointer' }}
+              >← Prev</button>
+              <span>{page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sortedEntries.length)} of {sortedEntries.length}</span>
+              <button
+                onClick={() => setPage(p => p + 1)}
+                disabled={(page + 1) * PAGE_SIZE >= sortedEntries.length}
+                style={{ padding: '4px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: (page + 1) * PAGE_SIZE >= sortedEntries.length ? 'var(--text-muted)' : 'var(--text)', cursor: (page + 1) * PAGE_SIZE >= sortedEntries.length ? 'default' : 'pointer' }}
+              >Next →</button>
             </div>
           )}
         </div>

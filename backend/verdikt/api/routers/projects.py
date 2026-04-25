@@ -4,9 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_session
+from typing import Annotated
+
+from verdikt.api.deps import get_current_user, get_session
+from verdikt.core.user_models import AuthenticatedUser
 from verdikt.core.models import Domain, Project, RatingDimension
-from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteMaterialStore, SQLiteProjectStore
+from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteMaterialStore, SQLiteProfileStore, SQLiteProjectStore, SQLiteRatingStore
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -19,6 +22,7 @@ class ProjectCreate(BaseModel):
     chunk_min_size: int = 600
     chunk_max_size: int = 800
     crystallisation_threshold: int = 50
+    min_profile_confidence: float = 0.9
 
 
 class ProjectUpdate(BaseModel):
@@ -28,6 +32,7 @@ class ProjectUpdate(BaseModel):
     chunk_min_size: int | None = None
     chunk_max_size: int | None = None
     crystallisation_threshold: int | None = None
+    min_profile_confidence: float | None = None
     dimension_renames: dict[str, str] | None = None  # old_name -> new_name
 
 
@@ -41,6 +46,7 @@ def _project_response(p: Project) -> dict:
         "chunk_min_size": p.chunk_min_size,
         "chunk_max_size": p.chunk_max_size,
         "crystallisation_threshold": p.crystallisation_threshold,
+        "min_profile_confidence": p.min_profile_confidence,
         "created_at": p.created_at.isoformat(),
     }
 
@@ -64,6 +70,7 @@ def create_project(
         chunk_min_size=body.chunk_min_size,
         chunk_max_size=body.chunk_max_size,
         crystallisation_threshold=body.crystallisation_threshold,
+        min_profile_confidence=body.min_profile_confidence,
     )
     SQLiteProjectStore(session).create(proj)
     session.commit()
@@ -75,7 +82,20 @@ def get_project(project_id: str, session: Session = Depends(get_session)) -> dic
     proj = SQLiteProjectStore(session).get(project_id)
     if proj is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    return _project_response(proj)
+    rating_count = SQLiteRatingStore(session).count_by_project(project_id)
+    confidence = min(1.0, rating_count / proj.crystallisation_threshold) if proj.crystallisation_threshold > 0 else 1.0
+    profile = SQLiteProfileStore(session).get_latest(project_id)
+    profile_confirmed_count = profile.confirmed_count if profile else 0
+    profile_confidence = (
+        round(profile.score_sum / profile.confirmed_count, 4)
+        if profile and profile.confirmed_count > 0 else None
+    )
+    return {
+        **_project_response(proj),
+        "confidence": round(confidence, 3),
+        "profile_confirmed_count": profile_confirmed_count,
+        "profile_confidence": profile_confidence,
+    }
 
 
 @router.put("/{project_id}")
@@ -106,6 +126,8 @@ def update_project(
         values["chunk_max_size"] = body.chunk_max_size
     if body.crystallisation_threshold is not None:
         values["crystallisation_threshold"] = body.crystallisation_threshold
+    if body.min_profile_confidence is not None:
+        values["min_profile_confidence"] = body.min_profile_confidence
 
     if values:
         session.execute(sql_update(ProjectRow).where(ProjectRow.id == project_id).values(**values))
@@ -127,7 +149,11 @@ def update_project(
 
 
 @router.delete("/{project_id}", status_code=204)
-def delete_project(project_id: str, session: Session = Depends(get_session)) -> None:
+def delete_project(
+    project_id: str,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Session = Depends(get_session),
+) -> None:
     import chromadb as _chromadb
     from verdikt.api.deps import get_config
     from verdikt.storage.chroma import ChromaVectorStore
@@ -141,7 +167,7 @@ def delete_project(project_id: str, session: Session = Depends(get_session)) -> 
     mat_store = SQLiteMaterialStore(session)
     chunk_store = SQLiteChunkStore(session)
     items = mat_store.list_by_project(proj.id)
-    chroma = _chromadb.PersistentClient(path=str(config.chroma_path))
+    chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
     vector_store = ChromaVectorStore(chroma, f"project_{proj.id}")
 
     for item in items:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, LargeBinary, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -21,6 +21,7 @@ class ProjectRow(Base):
     chunk_min_size: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_max_size: Mapped[int] = mapped_column(Integer, nullable=False)
     crystallisation_threshold: Mapped[int] = mapped_column(Integer, nullable=False)
+    min_profile_confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.9)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -85,6 +86,8 @@ class PreferenceProfileRow(Base):
     dimensions_json: Mapped[str] = mapped_column(Text, nullable=False)  # JSON list[DimensionProfile]
     overall_summary: Mapped[str] = mapped_column(Text, nullable=False)
     rating_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    confirmed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    score_sum: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

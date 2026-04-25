@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from verdikt.api.app import create_app
-from verdikt.api.deps import get_engine, get_session
+from verdikt.api.deps import get_current_user, get_session, get_storage
 from verdikt.core.models import Chunk, Domain, MaterialItem, Project, RatingDimension
+from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.base import EmbedderBase
 from verdikt.storage.base import VectorStore
 from verdikt.storage.orm import Base
@@ -64,19 +65,22 @@ def mem_engine():
     return engine
 
 
+_MOCK_USER = AuthenticatedUser(id="test-user-id", email="test@test.com", is_admin=True, db_key="testkey")
+
+
 @pytest.fixture
 def client(mem_engine):
     app = create_app()
-
-    def override_engine():
-        return mem_engine
 
     def override_session():
         with Session(mem_engine) as s:
             yield s
 
-    app.dependency_overrides[get_engine] = override_engine
+    def override_user():
+        return _MOCK_USER
+
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_current_user] = override_user
     return TestClient(app)
 
 
@@ -398,23 +402,22 @@ def test_save_plugin_config_unknown_plugin(client, project_id):
 
 
 def test_ingest_plugin_storage(mem_engine, tmp_path):
-    from verdikt.api.deps import get_engine, get_session, get_storage
     from verdikt.storage.files import LocalStorageBackend
     app = create_app()
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
     (storage_root / "sample.txt").write_text("Hello world content for testing plugin ingest.")
 
-    def override_engine():
-        return mem_engine
     def override_session():
         with Session(mem_engine) as s:
             yield s
+    def override_user():
+        return _MOCK_USER
     def override_storage():
         return LocalStorageBackend(storage_root)
 
-    app.dependency_overrides[get_engine] = override_engine
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_current_user] = override_user
     app.dependency_overrides[get_storage] = override_storage
     client = TestClient(app)
 
@@ -501,7 +504,7 @@ def test_ai_rating_start_202(client, project_id, saved_profile, mem_engine, monk
          patch.object(_ai_rating_module, "SentenceTransformerEmbedder", MagicMock()), \
          patch.object(_ai_rating_module, "LLMJudge", MagicMock()), \
          patch.object(_ai_rating_module, "AIRater", _NopAIRater), \
-         patch("verdikt.api.deps.get_engine", return_value=mem_engine):
+         patch("verdikt.api.deps.get_user_engine", return_value=mem_engine):
         resp = client.post(f"/api/projects/{project_id}/ai-rating/start")
 
     assert resp.status_code == 202

@@ -1,3 +1,11 @@
+export interface User {
+  id: string
+  email: string
+  is_admin: boolean
+  created_at?: string
+  is_blocked?: boolean
+}
+
 export interface RatingDimension {
   name: string
   description: string
@@ -13,7 +21,11 @@ export interface Project {
   chunk_min_size: number
   chunk_max_size: number
   crystallisation_threshold: number
+  min_profile_confidence: number
   created_at: string
+  confidence?: number
+  profile_confirmed_count?: number
+  profile_confidence?: number | null
 }
 
 export interface MaterialItem {
@@ -115,6 +127,9 @@ export interface PreferenceProfile {
   dimensions: DimensionProfile[]
   overall_summary: string
   rating_count: number
+  confirmed_count: number
+  score_sum: number
+  profile_confidence: number | null
   created_at: string
 }
 

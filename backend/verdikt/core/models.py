@@ -89,6 +89,7 @@ class Project(BaseModel):
     chunk_min_size: int = 600   # domain-native units: words for text, seconds for audio, etc.
     chunk_max_size: int = 800
     crystallisation_threshold: int = 50
+    min_profile_confidence: float = 0.9
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -141,6 +142,8 @@ class PreferenceProfile(BaseModel):
     dimensions: list[DimensionProfile]
     overall_summary: str
     rating_count: int     # number of ratings this profile was derived from
+    confirmed_count: int = 0   # AI confirmations accumulated for this version
+    score_sum: float = 0.0     # sum of per-confirmation agreement scores (0–1 each)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

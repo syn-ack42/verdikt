@@ -59,7 +59,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_config, get_session, get_storage
+from verdikt.api.deps import get_config, get_current_user, get_session, get_storage
+from verdikt.core.user_models import AuthenticatedUser
 from verdikt.core.models import Domain, MaterialItem, PipelinePhase, PluginConfig
 from verdikt.plugins.filedrop import FileDropPlugin, _EXT_TO_CONTENT_TYPE
 from verdikt.plugins.storage import StoragePlugin
@@ -421,7 +422,10 @@ def ingest_from_plugin_stream(
 
 
 @router.get("/update-plugin/status")
-def update_plugin_status(project_id: str) -> dict:
+def update_plugin_status(
+    project_id: str,
+    _user: AuthenticatedUser = Depends(get_current_user),
+) -> dict:
     state = _running_updates.get(project_id)
     if state:
         return {"running": True, **state}
@@ -589,6 +593,7 @@ def get_work_detail(
 def delete_work(
     project_id: str,
     work_ref: str,
+    user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> None:
     proj = _get_project_or_404(project_id, session)
@@ -603,7 +608,7 @@ def delete_work(
         raise HTTPException(status_code=404, detail="Work not found")
 
     config = get_config()
-    chroma = _chromadb.PersistentClient(path=str(config.chroma_path))
+    chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
     vector_store = ChromaVectorStore(chroma, f"project_{proj.id}")
     chunks = chunk_store.list_by_material(item.id)
     vector_store.delete_items([c.id for c in chunks])

@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import { api } from '../api/client'
+import type { User } from '../api/types'
 import StorageManager from '../components/StorageManager'
 import { iconBtn } from '../styles'
 
@@ -44,14 +45,43 @@ function ProjectJobBadges({ projectId }: { projectId: string }) {
 }
 
 export default function ProjectList() {
+  const { user } = useOutletContext<{ user: User }>()
+  const navigate = useNavigate()
+  const qc = useQueryClient()
   const { data: projects, isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: api.projects.list,
   })
 
+  const handleLogout = async () => {
+    await api.auth.logout()
+    qc.clear()
+    navigate('/login')
+  }
+
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
   const [showStorageManager, setShowStorageManager] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importSuccess, setImportSuccess] = useState<string | null>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
+  const importRef = useRef<HTMLInputElement>(null)
+
+  const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setImportError(null)
+    setImportSuccess(null)
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      const result = await api.projects.importProject(data)
+      setImportSuccess(`Imported "${data.project?.name ?? 'project'}" — ${result.materials_imported} works, ${result.ratings_imported} ratings.`)
+      qc.invalidateQueries({ queryKey: ['projects'] })
+    } catch (err: any) {
+      setImportError(err?.message ?? 'Import failed')
+    }
+  }, [qc])
 
   useEffect(() => {
     if (!showSettingsMenu) return
@@ -85,22 +115,44 @@ export default function ProjectList() {
             }}>
               <button
                 onClick={() => { setShowSettingsMenu(false); setShowStorageManager(true) }}
-                style={{
-                  width: '100%', padding: '10px 16px', textAlign: 'left',
-                  background: 'none', border: 'none', cursor: 'pointer', fontSize: 14,
-                }}
+                style={{ width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface, rgba(255,255,255,0.06))')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'none')}
               >
                 Manage Files
+              </button>
+              {user?.is_admin && (
+                <button
+                  onClick={() => { setShowSettingsMenu(false); navigate('/admin/users') }}
+                  style={{ width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface, rgba(255,255,255,0.06))')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                >
+                  Admin: Users
+                </button>
+              )}
+              <button
+                onClick={() => { setShowSettingsMenu(false); handleLogout() }}
+                style={{ width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, borderTop: '1px solid var(--border)', color: 'var(--text-muted)' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface, rgba(255,255,255,0.06))')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+              >
+                Sign out ({user?.email})
               </button>
             </div>
           )}
         </div>
       </div>
 
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 24, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <Link to="/projects/new"><button>New Project</button></Link>
+        <button
+          onClick={() => importRef.current?.click()}
+          style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14 }}
+        >Import…</button>
+        <input ref={importRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
+        {importSuccess && <span style={{ fontSize: 13, color: '#2e7d32' }}>{importSuccess}</span>}
+        {importError && <span style={{ fontSize: 13, color: '#c00' }}>{importError}</span>}
       </div>
 
       {!projects?.length && <p style={{ color: '#888' }}>No projects yet. Create one to get started.</p>}

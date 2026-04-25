@@ -219,7 +219,11 @@ export default function ProfileView() {
           <h2 style={{ margin: '8px 0 0' }}>Preference Profile</h2>
           {profile && (
             <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>v{profile.version} · {profile.rating_count} ratings · saved {profile.created_at.slice(0, 10)}</span>
+              <span>
+                v{profile.version} · {profile.rating_count} ratings · saved {profile.created_at.slice(0, 10)}
+                {profile.confirmed_count > 0 && profile.profile_confidence !== null &&
+                  ` · ${Math.round((profile.profile_confidence ?? 0) * 100)}% AI accuracy (${profile.confirmed_count} confirmations)`}
+              </span>
               {versions && versions.length > 1 && (
                 <button
                   onClick={() => setShowHistory(v => !v)}
@@ -246,6 +250,8 @@ export default function ProfileView() {
                     <strong>v{v.version}</strong>
                     <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
                       {v.created_at.slice(0, 10)} · {v.rating_count} ratings
+                      {v.confirmed_count > 0 && v.profile_confidence !== null &&
+                        ` · ${Math.round((v.profile_confidence ?? 0) * 100)}% AI accuracy`}
                     </span>
                     {v.id === profile?.id && (
                       <span style={{ marginLeft: 8, color: '#6b7de0' }}>current</span>

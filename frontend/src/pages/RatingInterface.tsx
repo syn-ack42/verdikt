@@ -17,6 +17,19 @@ export default function RatingInterface() {
   const chunkBoxRef = useRef<HTMLDivElement>(null)
   const [explExpanded, setExplExpanded] = useState(false)
 
+  // Background AI preview state (normal mode only)
+  const abortRef = useRef<AbortController | null>(null)
+  const [aiPreview, setAiPreview] = useState<{
+    ai_rating_id: string
+    dimension_scores: Record<string, number>
+    explanations: Record<string, string>
+  } | null>(null)
+  const [aiFlash, setAiFlash] = useState<{
+    aiScores: Record<string, number>
+    userScores: Record<string, number>
+    explanations: Record<string, string>
+  } | null>(null)
+
   const nextKey = ['ratings', projectId, 'next', mode] as const
 
   const { data, isLoading, error } = useQuery({
@@ -42,6 +55,13 @@ export default function RatingInterface() {
 
   const submit = useMutation({
     mutationFn: (opts: { skipped?: boolean; reason?: string }) => {
+      // Cancel background AI preview and capture result before clearing
+      abortRef.current?.abort()
+      abortRef.current = null
+      const capturedAi = aiPreview
+      const capturedUserScores = { ...scores }
+      setAiPreview(null)
+
       if (mode === 'confirm_ai' && data?.ai_rating_id && !opts.skipped) {
         // Restore original float for any dim the user didn't change
         const orig = aiOriginalScores.current
@@ -52,12 +72,20 @@ export default function RatingInterface() {
         )
         return api.ratings.updateRating(projectId!, data.ai_rating_id, finalScores)
       }
+
+      // Show flash if we have a background AI result
+      if (capturedAi && !opts.skipped) {
+        setAiFlash({ aiScores: capturedAi.dimension_scores, userScores: capturedUserScores, explanations: capturedAi.explanations })
+        setTimeout(() => setAiFlash(null), 5000)
+      }
+
       return api.ratings.submit(projectId!, {
         chunk_id: data!.chunk.id,
         material_item_id: data!.material_item.id!,
         dimension_scores: opts.skipped ? {} : scores,
         skipped: opts.skipped ?? false,
         skip_reason: opts.reason,
+        ai_rating_id: (!opts.skipped && capturedAi) ? capturedAi.ai_rating_id : undefined,
       })
     },
     onMutate: prefetchNext,
@@ -67,6 +95,20 @@ export default function RatingInterface() {
       qc.invalidateQueries({ queryKey: nextKey })
     },
   })
+
+  // Background AI preview when a new chunk loads in normal mode
+  useEffect(() => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setAiPreview(null)
+    if (mode !== 'normal' || !data || !projectId || !data.material_item.id) return
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    api.ratings.aiPreview(projectId, data.chunk.id, data.material_item.id, ctrl.signal)
+      .then(result => { if (!ctrl.signal.aborted) setAiPreview(result) })
+      .catch(() => {})
+    return () => { ctrl.abort() }
+  }, [data?.chunk.id, mode, projectId])
 
   // Pre-fill scores from AI rating when in confirm mode
   useEffect(() => {
@@ -258,7 +300,41 @@ export default function RatingInterface() {
         <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>
           Tab/→ next dim · 1–5 score · Enter submit
         </span>
+        {mode === 'normal' && aiPreview && !submit.isPending && (
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>● AI ready</span>
+        )}
       </div>
+
+      {aiFlash && (
+        <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 6, background: 'rgba(107,125,224,0.07)', border: '1px solid rgba(107,125,224,0.18)', fontSize: 12 }}>
+          <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>AI would have rated:</span>
+          {dims.map(d => {
+            const ai = aiFlash.aiScores[d.name]
+            const user = aiFlash.userScores[d.name]
+            const diff = ai !== undefined && user !== undefined ? user - ai : null
+            return (
+              <span key={d.name} style={{ marginRight: 10 }}>
+                {d.name}: <strong>{ai?.toFixed(1) ?? '—'}</strong>
+                {diff !== null && (
+                  <span style={{ marginLeft: 2, color: Math.abs(diff) <= 0.5 ? '#2e7d32' : '#b45309' }}>
+                    ({diff > 0 ? '+' : ''}{diff.toFixed(1)})
+                  </span>
+                )}
+              </span>
+            )
+          })}
+          {(() => {
+            const dims2 = Object.keys(aiFlash.aiScores)
+            const agreements = dims2
+              .filter(d => aiFlash.userScores[d] !== undefined)
+              .map(d => 1 - Math.abs((aiFlash.aiScores[d] ?? 0) - (aiFlash.userScores[d] ?? 0)) / 4)
+            const avg = agreements.length > 0 ? agreements.reduce((a, b) => a + b, 0) / agreements.length : null
+            return avg !== null ? (
+              <span style={{ marginLeft: 4, color: 'var(--text-muted)' }}>· {Math.round(avg * 100)}% match</span>
+            ) : null
+          })()}
+        </div>
+      )}
     </div>
   )
 }

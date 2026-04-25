@@ -16,7 +16,7 @@ Verdikt fixes this by being personal, private, and multi-dimensional. Your prefe
 
 ## Design principles
 
-**Privacy first.** Preference data never leaves the user's machine unless they explicitly choose otherwise. No cloud sync by default. The preference profile can be encrypted at rest. This is not negotiable — it's central to the value proposition and the ethical basis for a potential monetisation model.
+**Privacy first.** Preference data never leaves the user's machine unless they explicitly choose otherwise. No cloud sync by default. Each user's database is encrypted at rest with a key derived from their password (SQLCipher + Argon2id) — unreadable without login. This is not negotiable — it's central to the value proposition and the ethical basis for a potential monetisation model.
 
 **Pluggable everything.** Content sources are plugins. Embedding models are plugins. The rating dimensions are configured per project. The domain (text today, images and audio tomorrow) is an abstraction, not a hardcoded assumption. New sources and new media types should drop in without touching core code.
 
@@ -101,8 +101,8 @@ AO3Plugin implemented. Plugin registry and entry_points system. Config schema �
 **Milestone 4 — Recommendations**
 Embedding pre-filter. LLM judge with profile. Recommendation browser UI. Feedback loop (rating a recommendation reinforces the model).
 
-**Milestone 5 — Production hardening**
-Profile encryption. Project export/import. Confidence indicators. Active learning for chunk selection. Performance with large corpora (10k+ items).
+**Milestone 5 — Production hardening** *(complete)*
+User authentication (email/password, HttpOnly JWT cookie). Per-user data isolation with SQLCipher-encrypted databases. Project export/import. AI-accuracy-based confidence indicators. Background AI preview in rating interface. Active learning for chunk selection. Admin user management UI.
 
 **Milestone 6 — Domain extensibility**
 Image domain support (CLIP embeddings, image display in rating UI). Validates that the domain abstraction actually works.

@@ -4,11 +4,12 @@ A local-first, open-source preference learning platform. Rate content samples ac
 
 ## How it works
 
-1. **Ingest** — upload files or drop them directly into the storage directory; select what to ingest via the browser
-2. **Pipeline** — Verdikt chunks, embeds, and clusters your content automatically
-3. **Rate** — score representative chunks on dimensions you define (prose quality, atmosphere, pacing, etc.) using keyboard shortcuts for speed
-4. **Crystallise** — once you have enough ratings, a local LLM synthesises a structured preference profile
-5. **Recommend** — new material is scored against your profile with a per-dimension breakdown *(coming in Milestone 4)*
+1. **Register & log in** — create an account; all your data is isolated and encrypted per user
+2. **Ingest** — upload files via the UI or drop them into your storage directory; select what to ingest
+3. **Pipeline** — Verdikt chunks, embeds, and clusters your content automatically
+4. **Rate** — score representative chunks on dimensions you define (prose quality, atmosphere, pacing, etc.) using keyboard shortcuts for speed
+5. **Crystallise** — once you have enough ratings, a local LLM synthesises a structured preference profile
+6. **Confirm AI ratings** — after a profile exists, AI rates new chunks in the background; review and confirm them to rapidly build confidence
 
 ## Requirements
 
@@ -38,15 +39,17 @@ verdikt serve --reload
 cd frontend && npm install && npm run dev
 ```
 
-Open `http://localhost:5173`.
+Open `http://localhost:5173`. You will be redirected to the registration page on first use.
 
-### Typical workflow
+### First run
 
-1. Create a project — give it a name and configure rating dimensions (or keep the defaults)
-2. Click **Browse & Ingest Files** to upload files and select what to ingest
-3. Click **Run Pipeline** on the dashboard — watch chunk / embed / cluster progress live
-4. Click **Rate Chunks** and score passages with the keyboard
-5. Once the dashboard shows enough ratings, open **Profile** and click **Crystallise**
+1. Register an account at `/register`
+2. Create a project — give it a name and configure rating dimensions (or keep the defaults)
+3. Click **Browse & Ingest Files** to upload files and select what to ingest
+4. Click **Run Pipeline** on the dashboard — watch chunk / embed / cluster progress live
+5. Click **Rate Chunks** and score passages with the keyboard
+6. Once the dashboard shows enough ratings, open **Profile** and click **Crystallise**
+7. Start AI Rating from the dashboard to score remaining chunks automatically; then use **Confirm AI ratings** mode to review them and build profile confidence
 
 ### Rating keyboard shortcuts
 
@@ -58,16 +61,32 @@ Open `http://localhost:5173`.
 | `Enter` | Submit (all dimensions must be scored) |
 | `s` | Skip this chunk |
 
+## Profile confidence
+
+After a preference profile exists, Verdikt scores new chunks in the background while you rate. When you submit your own score, a flash bar shows what the AI would have rated and how closely the scores matched. This match rate accumulates as **AI accuracy** — a percentage shown on the dashboard.
+
+- **≥ 90%** — profile is predictive; AI and human ratings agree closely
+- **< 90% (after 5+ confirmations)** — an amber badge prompts re-crystallisation with more data
+
+Accuracy resets with each new profile version so you can track improvement over time.
+
+## Export and import
+
+Projects can be exported and imported as JSON from the project list:
+
+- **Export** — downloads a `verdikt-export-<project>.json` file containing the project, all materials, ratings, profiles, and plugin configs (binary content excluded)
+- **Import** — creates a new project from an export file; materials are marked `ingested` and need the pipeline re-run to regenerate chunks and embeddings
+
 ## File storage
 
-Files for ingest are managed in `~/.verdikt/user_files/`. Two ways to add files:
+Files for ingest are managed per-user at `~/.verdikt/users/<user_id>/files/`. Two ways to add files:
 
 - **Upload via the UI** — click "Browse & Ingest Files" on any project dashboard, then "Upload files"
-- **Drop files directly** — copy files into `~/.verdikt/user_files/` (or a subdirectory); they appear in the browser immediately
+- **Drop files directly** — copy files into `~/.verdikt/users/<user_id>/files/` (or a subdirectory); they appear in the browser immediately
 
 **Supported formats:** `.txt`, `.md`, `.html`, `.epub`, `.pdf`, `.rtf`
 
-The storage root is configurable via `VERDIKT_DATA_DIR` (defaults to `~/.verdikt`). The abstraction is designed to support remote backends such as S3 in a future release.
+The storage root is configurable via `VERDIKT_DATA_DIR` (defaults to `~/.verdikt`).
 
 ## Project settings
 
@@ -77,6 +96,7 @@ Each project has independently configurable:
 - **Rating dimensions** — name, description, and weight; dimensions with existing ratings show a warning if you change their meaning
 - **Crystallisation threshold** — minimum non-skipped ratings required before crystallisation
 - **Chunk size** — min/max word count per chunk (affects pipeline output)
+- **Min profile confidence** — accuracy threshold (default 90%) below which the dashboard prompts re-crystallisation
 
 When a dimension is renamed, all existing ratings are migrated to the new name automatically.
 
@@ -87,11 +107,20 @@ All configuration is via environment variables (prefix `VERDIKT_`):
 | Variable | Default | Description |
 |---|---|---|
 | `VERDIKT_DATA_DIR` | `~/.verdikt` | Root data directory |
+| `VERDIKT_JWT_SECRET` | *(auto-generated)* | Secret for JWT signing; persisted to `~/.verdikt/jwt_secret` if not set |
 | `VERDIKT_ROOT_PATH` | *(empty)* | ASGI subpath prefix (e.g. `/verdikt`) |
 | `VERDIKT_CORS_ORIGINS` | `http://localhost:5173` | Allowed CORS origins |
 | `VERDIKT_INFERENCE__OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API URL |
-| `VERDIKT_INFERENCE__OLLAMA_MODEL` | `llama3.1:8b` | Model used for crystallisation |
+| `VERDIKT_INFERENCE__OLLAMA_MODEL` | `llama3.1:8b` | Model used for crystallisation and AI rating |
 | `VERDIKT_INFERENCE__EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Sentence-transformers model |
+
+## Admin
+
+The first registered user is automatically an admin. Admins can manage users at `/admin/users`:
+
+- View all accounts with registration date and status
+- Block / unblock users
+- Delete users (removes their account and all data)
 
 ## CLI reference
 
@@ -136,6 +165,16 @@ verdikt remove "dark-fantasy" 3
 verdikt remove "dark-fantasy" /abs/path/to/book.epub
 ```
 
+## Migrating existing data
+
+If you have data from a pre-auth version of Verdikt, run the migration script to move it under a user account:
+
+```bash
+python3 backend/scripts/migrate_to_user.py --email you@example.com
+```
+
+This creates the user account (prompting for a password), copies the existing database, files, and vectors into the per-user directory, encrypts the database, and creates a timestamped backup of the original.
+
 ## Running tests
 
 ```bash
@@ -146,22 +185,23 @@ pytest -m "not infra" -q
 
 # Full suite (requires Ollama + sentence-transformers model download)
 pytest -q
-
-# Ollama crystallisation integration test only
-pytest -m infra tests/test_crystalliser_infra.py -v
 ```
 
 ## Data directory layout
 
 ```
 ~/.verdikt/
-  verdikt.db        SQLite database (projects, works, chunks, ratings, profiles)
-  chroma/           ChromaDB vector store (one collection per project)
-  projects/         Per-project data
-  user_files/       Upload root for the web UI file browser
+  auth.db                   Global users table (unencrypted)
+  jwt_secret                Auto-generated JWT signing key
+  users/
+    <user_id>/
+      verdikt.db            Per-user SQLite database (SQLCipher encrypted)
+      chroma/               Per-user ChromaDB vector store
+      files/                Per-user upload root
+  backups/                  Pre-migration backups (if migration script was run)
 ```
 
-To start fresh:
+To start fresh for a specific user, delete `~/.verdikt/users/<user_id>/`. To wipe everything:
 
 ```bash
 rm -rf ~/.verdikt
@@ -174,6 +214,7 @@ The directory and schema are recreated automatically on next use.
 ```
 backend/          Python package — pipeline, storage, plugins, inference, API, CLI
 frontend/         React + TypeScript web UI
+docs/             Developer guides
 ```
 
 ## License
