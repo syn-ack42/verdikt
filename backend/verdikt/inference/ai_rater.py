@@ -86,9 +86,6 @@ class AIRater:
         # Phase 2: score new unrated chunks in batches
         rated_ids = self._ratings.get_all_rated_chunk_ids(project_id)
 
-        # Get similarity-ordered candidates from vector store
-        raw_emb = self._embedder.embed([profile.overall_summary])[0]
-        embedding = raw_emb.tolist() if hasattr(raw_emb, "tolist") else list(raw_emb)
         all_chunks = self._chunks.list_by_project(project_id)
         unrated_chunks = [c for c in all_chunks if c.id not in rated_ids]
 
@@ -96,13 +93,16 @@ class AIRater:
             yield {"type": "complete", "total_rated": len(rated_ids)}
             return
 
-        # Query vector store for similarity ordering (up to all unrated)
+        # Get similarity-ordered candidates from vector store.
+        # Skip for image projects: CLIPEmbedder only accepts bytes, not text summaries.
         n_query = min(len(unrated_chunks), 500)
         try:
+            raw_emb = self._embedder.embed([profile.overall_summary])[0]
+            embedding = raw_emb.tolist() if hasattr(raw_emb, "tolist") else list(raw_emb)
             similar_results = self._vs.query(embedding, n_results=n_query)
             similar_ids = [r["id"] for r in similar_results if r["id"] not in rated_ids]
-        except Exception:
-            log.warning("ai_rater: vector store query failed, using random order")
+        except (TypeError, Exception):
+            log.warning("ai_rater: vector store query failed or embedder incompatible with text, using random order")
             similar_ids = []
 
         similar_set = set(similar_ids)
