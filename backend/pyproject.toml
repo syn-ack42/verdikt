@@ -25,6 +25,7 @@ dependencies = [
     "markdown>=3.6",
     "click>=8.1",
     "ollama>=0.2",
+    "Pillow>=10.0",
     "numpy>=1.26",
     "scikit-learn>=1.4",
     "prefect>=3.0",

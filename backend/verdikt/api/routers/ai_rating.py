@@ -201,7 +201,7 @@ def ai_preview_rating(
         raise HTTPException(status_code=503, detail="No profile found")
 
     chunk = SQLiteChunkStore(session).get(body.chunk_id)
-    if chunk is None or not isinstance(chunk.content, str):
+    if chunk is None:
         raise HTTPException(status_code=404, detail="Chunk not found")
 
     config = get_config()

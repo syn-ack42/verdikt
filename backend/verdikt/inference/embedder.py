@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
@@ -12,11 +14,23 @@ class SentenceTransformerEmbedder(EmbedderBase):
         self._model_name = model_name
 
     def embed(self, inputs: list[str | bytes]) -> np.ndarray:
-        texts = [
-            inp.decode("utf-8") if isinstance(inp, bytes) else inp
-            for inp in inputs
-        ]
-        return self._model.encode(texts, convert_to_numpy=True).astype(np.float32)
+        from PIL import Image
+
+        encoded: list = []
+        for inp in inputs:
+            if isinstance(inp, bytes):
+                # Image bytes — CLIP models expect PIL Images
+                try:
+                    encoded.append(Image.open(io.BytesIO(inp)).convert("RGB"))
+                except Exception as exc:
+                    raise ValueError(
+                        f"Failed to decode image bytes for embedding: {exc}. "
+                        "Ensure the project domain is set correctly."
+                    ) from exc
+            else:
+                encoded.append(inp)
+
+        return self._model.encode(encoded, convert_to_numpy=True).astype(np.float32)
 
     @property
     def dimension(self) -> int:

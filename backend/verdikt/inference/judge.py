@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
 
@@ -26,14 +27,14 @@ class LLMJudge:
 
     def score_chunk(
         self,
-        chunk_content: str,
+        chunk_content: str | bytes,
         profile: PreferenceProfile,
         project: Project,
     ) -> tuple[dict[str, float], float, dict[str, str]]:
         """Score a chunk against a preference profile.
 
+        chunk_content may be a text string or raw image bytes.
         Returns (dimension_scores, weighted_overall_score, explanations).
-        On any parse failure, falls back to typical_score for that dimension.
         """
         weights = {d.name: d.weight for d in project.rating_dimensions}
         typical = {d.name: d.typical_score for d in profile.dimensions}
@@ -44,32 +45,39 @@ class LLMJudge:
         )
         dim_keys = ", ".join(f'"{d.name}"' for d in profile.dimensions)
 
+        is_image = isinstance(chunk_content, bytes)
+        content_label = "image" if is_image else "passage"
+
         prompt = (
-            f"You are evaluating a passage for a reader with specific preferences.\n\n"
-            f"Reader profile:\n{profile.overall_summary}\n\n"
+            f"You are evaluating an {content_label} for a person with specific preferences.\n\n"
+            f"Preferences:\n{profile.overall_summary}\n\n"
             f"Dimension preferences:\n{dim_lines}\n\n"
-            f"Passage to evaluate:\n{_truncate(chunk_content)}\n\n"
             f"For each dimension, respond with a JSON object only (no prose, no markdown):\n"
             f"{{{dim_keys}: {{\"score\": <int 1-5>, \"explanation\": \"<one sentence>\"}}, ...}}"
         )
+        if not is_image:
+            prompt = (
+                f"You are evaluating a {content_label} for a person with specific preferences.\n\n"
+                f"Preferences:\n{profile.overall_summary}\n\n"
+                f"Dimension preferences:\n{dim_lines}\n\n"
+                f"{content_label.capitalize()} to evaluate:\n{_truncate(chunk_content)}\n\n"
+                f"For each dimension, respond with a JSON object only (no prose, no markdown):\n"
+                f"{{{dim_keys}: {{\"score\": <int 1-5>, \"explanation\": \"<one sentence>\"}}, ...}}"
+            )
 
-        raw = self._call_ollama(prompt)
+        image_b64 = base64.b64encode(chunk_content).decode() if is_image else None
+        raw = self._call_ollama(prompt, image_b64)
         scores, explanations = self._parse_response(raw, typical)
         overall = self._weighted_average(scores, weights)
         return scores, overall, explanations
 
     @staticmethod
     def _extract_json(raw: str) -> dict | None:
-        """Try several strategies to extract a JSON object from LLM output."""
         text = raw.strip()
-
-        # Direct parse
         try:
             return json.loads(text)
         except (json.JSONDecodeError, ValueError):
             pass
-
-        # Strip markdown fences: ```json ... ``` or ``` ... ```
         import re
         fenced = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
         if fenced:
@@ -77,8 +85,6 @@ class LLMJudge:
                 return json.loads(fenced.group(1))
             except (json.JSONDecodeError, ValueError):
                 pass
-
-        # Find the first { ... } block in the text
         start = text.find('{')
         end = text.rfind('}')
         if start != -1 and end > start:
@@ -86,16 +92,45 @@ class LLMJudge:
                 return json.loads(text[start:end + 1])
             except (json.JSONDecodeError, ValueError):
                 pass
-
         return None
 
-    def _call_ollama(self, prompt: str) -> str:
-        resp = httpx.post(
-            f"{self._base_url}/api/generate",
-            json={"model": self._model, "prompt": prompt, "stream": False, "format": "json"},
-            timeout=120.0,
-        )
-        resp.raise_for_status()
+    def _call_ollama(self, prompt: str, image_b64: str | None = None) -> str:
+        payload: dict = {
+            "model": self._model,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+        }
+        if image_b64 is not None:
+            payload["images"] = [image_b64]
+
+        try:
+            resp = httpx.post(
+                f"{self._base_url}/api/generate",
+                json=payload,
+                timeout=120.0,
+            )
+            resp.raise_for_status()
+        except httpx.ConnectError as exc:
+            raise RuntimeError(
+                f"Cannot reach Ollama at {self._base_url}. "
+                "Check that Ollama is running and VERDIKT_INFERENCE__OLLAMA_BASE_URL is correct."
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            body = exc.response.text[:300]
+            if status == 404:
+                raise RuntimeError(
+                    f"Model '{self._model}' not found in Ollama. "
+                    f"Run 'ollama pull {self._model}' or choose a different model in the project settings."
+                ) from exc
+            if image_b64 and ("vision" in body.lower() or "multimodal" in body.lower() or "image" in body.lower()):
+                raise RuntimeError(
+                    f"Model '{self._model}' does not support image input. "
+                    "Use a vision-capable model such as llava or llama3.2-vision for image projects."
+                ) from exc
+            raise RuntimeError(f"Ollama returned {status}: {body}") from exc
+
         return resp.json().get("response", "")
 
     def _parse_response(self, raw: str, typical: dict[str, float]) -> tuple[dict[str, float], dict[str, str]]:

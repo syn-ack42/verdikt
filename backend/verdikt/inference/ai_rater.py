@@ -74,7 +74,7 @@ class AIRater:
                 yield {"type": "stopped", "reason": "user_stopped", "total_rated": i}
                 return
             chunk = self._chunks.get(existing_rating.chunk_id)
-            if chunk is None or not isinstance(chunk.content, str):
+            if chunk is None:
                 continue
             try:
                 scores, _, _expl = self._judge.score_chunk(chunk.content, profile, project)
@@ -90,7 +90,7 @@ class AIRater:
         raw_emb = self._embedder.embed([profile.overall_summary])[0]
         embedding = raw_emb.tolist() if hasattr(raw_emb, "tolist") else list(raw_emb)
         all_chunks = self._chunks.list_by_project(project_id)
-        unrated_chunks = [c for c in all_chunks if c.id not in rated_ids and isinstance(c.content, str)]
+        unrated_chunks = [c for c in all_chunks if c.id not in rated_ids]
 
         if not unrated_chunks:
             yield {"type": "complete", "total_rated": len(rated_ids)}

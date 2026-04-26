@@ -126,8 +126,9 @@ def sync_models(
         name = model.model or model.name
         details = model.details
 
-        # Fetch extra info (context_length lives in modelinfo)
+        # Fetch extra info (context_length, capabilities live in modelinfo / show response)
         context_length: int | None = None
+        has_vision = False
         try:
             info = client.show(name)
             ml = getattr(info, "modelinfo", None) or {}
@@ -135,19 +136,42 @@ def sync_models(
                 if "context_length" in key and isinstance(val, int):
                     context_length = val
                     break
+            # Newer Ollama versions expose a capabilities list
+            caps = getattr(info, "capabilities", None) or []
+            if "vision" in caps:
+                has_vision = True
         except Exception:
             pass
+
+        # Detect vision capability from model families (available in list() details)
+        families: list[str] = []
+        if details:
+            families = [f.lower() for f in (getattr(details, "families", None) or [])]
+        if "clip" in families:
+            has_vision = True
+
+        # Auto-classify type and domain for new models
+        name_lower = name.lower()
+        if "embed" in name_lower:
+            auto_type = "embedding"
+            auto_domain = "text"   # all current Ollama embedding models are text-only
+        elif has_vision:
+            auto_type = "llm"
+            auto_domain = "any"    # vision LLMs handle both text and image input
+        else:
+            auto_type = "llm"
+            auto_domain = "text"   # text-only LLMs shouldn't appear in image project pickers
 
         existing = session.get(ModelCatalogRow, name)
         if existing is None:
             session.add(ModelCatalogRow(
                 id=name,
                 source="ollama",
-                type="llm",          # admin should correct to "embedding" where appropriate
-                domain="any",
+                type=auto_type,
+                domain=auto_domain,
                 enabled=False,
                 display_name=name,
-                description="",
+                description="[vision]" if has_vision else "",
                 parameter_size=getattr(details, "parameter_size", None) if details else None,
                 context_length=context_length,
                 size_bytes=model.size,
@@ -155,7 +179,7 @@ def sync_models(
                 synced_at=now,
             ))
         else:
-            # Update metadata but preserve admin edits to enabled/type/domain/description
+            # Update metadata; preserve admin edits to enabled/type/domain/description
             existing.parameter_size = getattr(details, "parameter_size", None) if details else None
             existing.context_length = context_length
             existing.size_bytes = model.size

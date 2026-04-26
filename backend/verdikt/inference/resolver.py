@@ -1,21 +1,36 @@
 from __future__ import annotations
 
 from verdikt.core.config import AppConfig
-from verdikt.core.models import Project
+from verdikt.core.models import Domain, Project
 from verdikt.inference.base import EmbedderBase
 
 
 def resolve_embedder(project: Project, config: AppConfig) -> EmbedderBase:
     """Return the right embedder for a project, falling back to global config.
 
-    Heuristic: Ollama model names always contain ":" (the tag separator, e.g. "nomic-embed-text:latest").
-    Sentence-transformer model names never do (e.g. "all-MiniLM-L6-v2").
+    Routing rules:
+    - Image domain always uses a local CLIP model via SentenceTransformerEmbedder
+      (no Ollama image embedding models exist as of now).
+    - For text/audio: Ollama model names contain ":" (e.g. "nomic-embed-text:latest");
+      sentence-transformer names never do (e.g. "all-MiniLM-L6-v2").
     """
+    from verdikt.inference.embedder import SentenceTransformerEmbedder
+
+    if project.domain == Domain.IMAGE:
+        explicit = project.embedding_model
+        if explicit and ":" in explicit:
+            raise ValueError(
+                f"Embedding model '{explicit}' looks like an Ollama model, but Ollama does not "
+                "provide image embedding models. Use a CLIP model via sentence-transformers "
+                f"(e.g. '{config.inference.clip_model}'). Leave the field blank to use the server default."
+            )
+        model_name = explicit or config.inference.clip_model
+        return SentenceTransformerEmbedder(model_name)
+
     model_name = project.embedding_model or config.inference.embedding_model
     if ":" in model_name:
         from verdikt.inference.ollama_embedder import OllamaEmbedder
         return OllamaEmbedder(model_name, config.inference.ollama_base_url)
-    from verdikt.inference.embedder import SentenceTransformerEmbedder
     return SentenceTransformerEmbedder(model_name)
 
 
