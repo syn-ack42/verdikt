@@ -43,9 +43,14 @@ class ProfileCrystalliser:
                 if score is None:
                     continue
                 chunk = chunks_by_id.get(r.chunk_id)
-                if chunk is None or not isinstance(chunk.content, str):
+                if chunk is None:
                     continue
-                scored.append((score, chunk.content))
+                if isinstance(chunk.content, str):
+                    label = chunk.content
+                else:
+                    # Image chunk — use position as identifier; no text to show
+                    label = f"[image #{chunk.position + 1}]"
+                scored.append((score, label))
 
             if not scored:
                 dimensions.append(DimensionProfile(
@@ -68,11 +73,14 @@ class ProfileCrystalliser:
             for score, content in bottom:
                 examples_text += f"  [score {score:.1f}] {_truncate(content, _MAX_WORDS_PER_EXAMPLE)}\n\n"
 
+            domain_hint = "content" if any(
+                label.startswith("[image") for _, label in scored
+            ) else "text"
             prompt = (
-                f"You are analysing a user's reading preferences for the dimension '{dim.name}': {dim.description}.\n\n"
+                f"You are analysing a user's preferences for the dimension '{dim.name}': {dim.description}.\n\n"
                 f"{examples_text}"
-                f"Based on these examples, write a concise preference summary (2-4 sentences) describing what this user "
-                f"likes and dislikes about '{dim.name}'. Be specific and concrete. "
+                f"Based on these ratings, write a concise preference summary (2-4 sentences) describing what this user "
+                f"likes and dislikes about '{dim.name}' in {domain_hint}. Be specific and concrete. "
                 f'Respond with a JSON object: {{"summary": "<your summary here>"}}'
             )
 
