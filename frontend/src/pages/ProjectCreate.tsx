@@ -7,10 +7,9 @@ import type { ModelCatalogEntry, RatingDimension } from '../api/types'
 
 type Domain = 'text' | 'image' | 'audio'
 
-const DOMAIN_OPTIONS: { value: Domain; label: string; description: string; disabled?: boolean }[] = [
+const DOMAIN_OPTIONS: { value: Domain; label: string; description: string }[] = [
   { value: 'text', label: 'Text', description: 'Prose, articles, stories, documents' },
   { value: 'image', label: 'Image', description: 'Photos, illustrations, artwork' },
-  { value: 'audio', label: 'Audio', description: 'Not yet supported', disabled: true },
 ]
 
 const DEFAULT_DIMS: Record<Domain, RatingDimension[]> = {
@@ -28,13 +27,7 @@ const DEFAULT_DIMS: Record<Domain, RatingDimension[]> = {
     { name: 'Subject', description: 'Clarity and interest of the subject matter', weight: 1.0 },
     { name: 'Originality', description: 'Freshness and distinctiveness of the image', weight: 1.0 },
   ],
-  audio: [
-    { name: 'Production', description: 'Mix quality, clarity and dynamics', weight: 1.0 },
-    { name: 'Composition', description: 'Structure, melody and harmonic interest', weight: 1.0 },
-    { name: 'Performance', description: 'Expressiveness and technical execution', weight: 1.0 },
-    { name: 'Atmosphere', description: 'Mood, texture and emotional resonance', weight: 1.0 },
-    { name: 'Originality', description: 'Freshness and distinctiveness of the sound', weight: 1.0 },
-  ],
+  audio: [], // not surfaced in UI
 }
 
 function modelOption(m: ModelCatalogEntry): string {
@@ -121,16 +114,14 @@ export default function ProjectCreate() {
                 key={opt.value}
                 type="button"
                 title={opt.description}
-                disabled={opt.disabled}
-                onClick={() => !opt.disabled && handleDomainChange(opt.value)}
+                onClick={() => handleDomainChange(opt.value)}
                 style={{
                   flex: 1, padding: '8px 12px', borderRadius: 6, fontSize: 14,
-                  cursor: opt.disabled ? 'not-allowed' : 'pointer',
+                  cursor: 'pointer',
                   border: domain === opt.value ? '2px solid #6b7de0' : '1px solid var(--border)',
                   background: domain === opt.value ? 'rgba(107,125,224,0.12)' : 'none',
-                  color: opt.disabled ? 'var(--text-muted)' : domain === opt.value ? '#6b7de0' : 'var(--text)',
+                  color: domain === opt.value ? '#6b7de0' : 'var(--text)',
                   fontWeight: domain === opt.value ? 600 : 400,
-                  opacity: opt.disabled ? 0.5 : 1,
                 }}
               >
                 {opt.label}
