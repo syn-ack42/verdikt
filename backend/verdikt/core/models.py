@@ -115,7 +115,7 @@ class InferenceConfig(BaseModel):
     ollama_model: str = "llama3.1:8b"
     ollama_base_url: str = "http://localhost:11434"
     embedding_model: str = "all-MiniLM-L6-v2"    # default text embedder (sentence-transformers)
-    clip_model: str = "clip-ViT-B-32"             # default image embedder (sentence-transformers CLIP)
+    clip_model: str = "openai/clip-vit-base-patch32"  # default image embedder (CLIP via transformers)
 
 
 class Rating(BaseModel):

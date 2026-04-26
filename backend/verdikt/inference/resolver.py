@@ -14,18 +14,18 @@ def resolve_embedder(project: Project, config: AppConfig) -> EmbedderBase:
     - For text/audio: Ollama model names contain ":" (e.g. "nomic-embed-text:latest");
       sentence-transformer names never do (e.g. "all-MiniLM-L6-v2").
     """
-    from verdikt.inference.embedder import SentenceTransformerEmbedder
-
     if project.domain == Domain.IMAGE:
         explicit = project.embedding_model
         if explicit and ":" in explicit:
             raise ValueError(
                 f"Embedding model '{explicit}' looks like an Ollama model, but Ollama does not "
-                "provide image embedding models. Use a CLIP model via sentence-transformers "
-                f"(e.g. '{config.inference.clip_model}'). Leave the field blank to use the server default."
+                "provide image embedding models. Use a CLIP model such as "
+                f"'{config.inference.clip_model}'. Leave the field blank to use the server default."
             )
-        model_name = explicit or config.inference.clip_model
-        return SentenceTransformerEmbedder(model_name)
+        from verdikt.inference.clip_embedder import CLIPEmbedder
+        return CLIPEmbedder(explicit or config.inference.clip_model)
+
+    from verdikt.inference.embedder import SentenceTransformerEmbedder
 
     model_name = project.embedding_model or config.inference.embedding_model
     if ":" in model_name:
