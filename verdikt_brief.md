@@ -102,7 +102,7 @@ AO3Plugin implemented. Plugin registry and entry_points system. Config schema �
 Embedding pre-filter. LLM judge with profile. Recommendation browser UI. Feedback loop (rating a recommendation reinforces the model).
 
 **Milestone 5 — Production hardening** *(complete)*
-User authentication (email/password, HttpOnly JWT cookie). Per-user data isolation with SQLCipher-encrypted databases. AES-256-GCM file encryption at rest (opaque UUID blobs, metadata in encrypted DB). Project export/import. AI-accuracy-based confidence indicators. Background AI preview in rating interface. Active learning for chunk selection. Admin user management UI.
+User authentication (email/password, HttpOnly JWT cookie). Per-user data isolation with SQLCipher-encrypted databases. AES-256-GCM file encryption at rest (opaque UUID blobs, metadata in encrypted DB). Project export/import. AI-accuracy-based confidence indicators. Background AI preview in rating interface. Active learning for chunk selection. Admin user management UI. Docker deployment (multi-stage image, docker-compose, static frontend served by uvicorn).
 
 **Milestone 6 — Domain extensibility**
 Image domain support (CLIP embeddings, image display in rating UI). Validates that the domain abstraction actually works.

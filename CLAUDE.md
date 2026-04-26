@@ -77,6 +77,21 @@ Confidence is prediction accuracy, not a rating count. After a profile exists:
 
 Two-stage: embedding similarity pre-filter (cheap) → LLM judge scoring surviving candidates per dimension against the preference profile (returns structured scores + natural language explanation). Output is always a ranked list with per-dimension breakdown, not bare scores.
 
+## Docker deployment
+
+The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.yml` at the repo root.
+
+**Build stages:**
+1. `node:20-alpine` — builds `frontend/` into `frontend/dist/`
+2. `python:3.12-slim` + build deps — compiles `sqlcipher3` (needs `libsqlcipher-dev`) and all Python wheels; installs CPU-only PyTorch first to avoid the 2 GB CUDA download
+3. Slim runtime — copies `/venv` from stage 2 and `frontend/dist` from stage 1; only `libsqlcipher0` needed at runtime
+
+**Frontend serving:** `VERDIKT_FRONTEND_DIR` tells `app.py` where the built frontend lives. When set and the directory exists, it mounts `StaticFiles(html=True)` as a catch-all after all API routes, serving the SPA. The Dockerfile sets this to `/app/frontend/dist`.
+
+**Data volume:** `/var/lib/verdikt` — holds auth.db, jwt_secret, logs, per-user databases, and the HuggingFace model cache (`HF_HOME=/var/lib/verdikt/.cache/huggingface`).
+
+**Ollama:** expected on the host; `docker-compose.yml` sets `host.docker.internal:11434` with `extra_hosts: host.docker.internal:host-gateway` for Linux compatibility.
+
 ## Build order (milestones)
 
 1. ✅ `MaterialItem` dataclass + SQLite schema + `FileDropPlugin` + chunk/embed/cluster pipeline (no UI)
