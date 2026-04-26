@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from verdikt.api.deps import get_config, get_current_user, get_session
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.ai_rater import AIRater
-from verdikt.inference.embedder import SentenceTransformerEmbedder
 from verdikt.inference.judge import LLMJudge
+from verdikt.inference.resolver import resolve_embedder, resolve_llm_model
 from verdikt.storage.chroma import ChromaVectorStore
 from verdikt.core.models import Rating
 from verdikt.storage.sqlite import (
@@ -84,8 +84,9 @@ def start_ai_rating(
     config = get_config()
     chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
     vector_store = ChromaVectorStore(chroma, f"project_{project_id}")
-    embedder = SentenceTransformerEmbedder(config.inference.embedding_model)
-    judge = LLMJudge(config.inference.ollama_base_url, config.inference.ollama_model)
+    embedder = resolve_embedder(proj, config)
+    ollama_base_url, llm_model = resolve_llm_model(proj, config)
+    judge = LLMJudge(ollama_base_url, llm_model)
 
     # Take copies for the thread (session is not thread-safe; import lazily for testability)
     from sqlalchemy.orm import Session as _Session
@@ -204,7 +205,8 @@ def ai_preview_rating(
         raise HTTPException(status_code=404, detail="Chunk not found")
 
     config = get_config()
-    judge = LLMJudge(config.inference.ollama_base_url, config.inference.ollama_model)
+    ollama_base_url, llm_model = resolve_llm_model(proj, config)
+    judge = LLMJudge(ollama_base_url, llm_model)
 
     try:
         scores, _, explanations = judge.score_chunk(chunk.content, profile, proj)

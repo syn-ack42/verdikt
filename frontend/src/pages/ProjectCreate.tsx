@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import DimensionEditor from '../components/DimensionEditor'
-import type { RatingDimension } from '../api/types'
+import type { ModelCatalogEntry, RatingDimension } from '../api/types'
 
 const DEFAULT_DIMS: RatingDimension[] = [
   { name: 'Prose Quality', description: 'Clarity, style and craft of the writing', weight: 1.0 },
@@ -13,6 +13,13 @@ const DEFAULT_DIMS: RatingDimension[] = [
   { name: 'Originality', description: 'Freshness of ideas and subversion of expectations', weight: 1.0 },
 ]
 
+function modelOption(m: ModelCatalogEntry): string {
+  const parts: string[] = []
+  if (m.parameter_size) parts.push(m.parameter_size)
+  if (m.context_length) parts.push(`${(m.context_length / 1000).toFixed(0)}k ctx`)
+  return parts.length ? `${m.display_name} (${parts.join(', ')})` : m.display_name
+}
+
 export default function ProjectCreate() {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -20,6 +27,17 @@ export default function ProjectCreate() {
   const [description, setDescription] = useState('')
   const [threshold, setThreshold] = useState(50)
   const [dims, setDims] = useState<RatingDimension[]>(DEFAULT_DIMS)
+  const [llmModel, setLlmModel] = useState<string>('')
+  const [embModel, setEmbModel] = useState<string>('')
+
+  const { data: llmModels } = useQuery({
+    queryKey: ['models', 'llm'],
+    queryFn: () => api.models.list('llm'),
+  })
+  const { data: embModels } = useQuery({
+    queryKey: ['models', 'embedding', 'text'],
+    queryFn: () => api.models.list('embedding', 'text'),
+  })
 
   const create = useMutation({
     mutationFn: () => api.projects.create({
@@ -28,6 +46,8 @@ export default function ProjectCreate() {
       domain: 'text',
       rating_dimensions: dims,
       crystallisation_threshold: threshold,
+      llm_model: llmModel || undefined,
+      embedding_model: embModel || undefined,
     }),
     onSuccess: (p) => {
       qc.invalidateQueries({ queryKey: ['projects'] })
@@ -68,6 +88,28 @@ export default function ProjectCreate() {
             style={{ width: '5ch' }}
           />
         </div>
+        {llmModels && llmModels.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', marginBottom: 4 }}>Language model <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 12 }}>(optional — uses server default if not set)</span></label>
+            <select value={llmModel} onChange={e => setLlmModel(e.target.value)} style={{ width: '100%' }}>
+              <option value="">Server default</option>
+              {llmModels.map(m => (
+                <option key={m.id} value={m.id} title={m.description}>{modelOption(m)}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {embModels && embModels.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', marginBottom: 4 }}>Embedding model <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 12 }}>(cannot be changed after embedding)</span></label>
+            <select value={embModel} onChange={e => setEmbModel(e.target.value)} style={{ width: '100%' }}>
+              <option value="">Server default</option>
+              {embModels.map(m => (
+                <option key={m.id} value={m.id} title={m.description}>{modelOption(m)}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div style={{ marginBottom: 24 }}>
           <label style={{ display: 'block', marginBottom: 8 }}>Rating Dimensions</label>
           <DimensionEditor dimensions={dims} onChange={setDims} />

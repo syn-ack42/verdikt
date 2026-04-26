@@ -22,6 +22,8 @@ class ProjectRow(Base):
     chunk_max_size: Mapped[int] = mapped_column(Integer, nullable=False)
     crystallisation_threshold: Mapped[int] = mapped_column(Integer, nullable=False)
     min_profile_confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.9)
+    llm_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

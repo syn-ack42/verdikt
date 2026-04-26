@@ -144,6 +144,14 @@ def _migrate_user_db(engine: Engine) -> None:
             conn.execute(_text("ALTER TABLE projects ADD COLUMN min_profile_confidence REAL NOT NULL DEFAULT 0.9"))
             conn.commit()
             log.info("migration: added min_profile_confidence to projects")
+        if "llm_model" not in _project_cols():
+            conn.execute(_text("ALTER TABLE projects ADD COLUMN llm_model TEXT"))
+            conn.commit()
+            log.info("migration: added llm_model to projects")
+        if "embedding_model" not in _project_cols():
+            conn.execute(_text("ALTER TABLE projects ADD COLUMN embedding_model TEXT"))
+            conn.commit()
+            log.info("migration: added embedding_model to projects")
 
         def _profile_cols() -> set[str]:
             return {row[1] for row in conn.execute(_text("PRAGMA table_info(preference_profiles)"))}

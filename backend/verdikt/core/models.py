@@ -90,6 +90,8 @@ class Project(BaseModel):
     chunk_max_size: int = 800
     crystallisation_threshold: int = 50
     min_profile_confidence: float = 0.9
+    llm_model: Optional[str] = None        # overrides global config.inference.ollama_model when set
+    embedding_model: Optional[str] = None  # overrides global config.inference.embedding_model when set
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

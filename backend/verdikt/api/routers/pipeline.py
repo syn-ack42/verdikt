@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from verdikt.api.deps import get_config, get_current_user, get_session
 from verdikt.core.user_models import AuthenticatedUser
-from verdikt.inference.embedder import SentenceTransformerEmbedder
+from verdikt.inference.resolver import resolve_embedder
 from verdikt.pipeline.chunker import TextChunker
 from verdikt.pipeline.flows import run_pipeline_flow
 from verdikt.pipeline.runner import PipelineRunner
@@ -41,7 +41,7 @@ def run_pipeline(
         material_store=SQLiteMaterialStore(session),
         chunk_store=SQLiteChunkStore(session),
         vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
-        embedder=SentenceTransformerEmbedder(config.inference.embedding_model),
+        embedder=resolve_embedder(proj, config),
         chunker=TextChunker(min_words=proj.chunk_min_size, max_words=proj.chunk_max_size),
     )
     result = run_pipeline_flow(project_id=proj.id, runner=runner)
@@ -81,7 +81,7 @@ def run_pipeline_stream(
         material_store=SQLiteMaterialStore(session),
         chunk_store=SQLiteChunkStore(session),
         vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
-        embedder=SentenceTransformerEmbedder(config.inference.embedding_model),
+        embedder=resolve_embedder(proj, config),
         chunker=TextChunker(min_words=proj.chunk_min_size, max_words=proj.chunk_max_size),
     )
 

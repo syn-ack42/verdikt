@@ -506,7 +506,7 @@ def test_ai_rating_start_202(client, project_id, saved_profile, mem_engine, monk
 
     with patch.object(_ai_rating_module, "_chromadb", MagicMock()), \
          patch.object(_ai_rating_module, "ChromaVectorStore", MagicMock()), \
-         patch.object(_ai_rating_module, "SentenceTransformerEmbedder", MagicMock()), \
+         patch("verdikt.inference.resolver.resolve_embedder", return_value=MagicMock()), \
          patch.object(_ai_rating_module, "LLMJudge", MagicMock()), \
          patch.object(_ai_rating_module, "AIRater", _NopAIRater), \
          patch("verdikt.api.deps.get_user_engine", return_value=mem_engine):

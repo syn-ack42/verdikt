@@ -1,5 +1,5 @@
 import type {
-  AIRatingStatus, CrystalliseStatus, IngestResult, MaterialItemWithStats, NextChunkResponse, PipelineResult, PipelineStreamEvent,
+  AIRatingStatus, CrystalliseStatus, IngestResult, MaterialItemWithStats, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
   PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, RatedChunkEntry, Rating, StorageListing,
   UpdatePluginEvent, UpdatePluginStatus, User, WorkDetail,
 } from './types'
@@ -71,6 +71,19 @@ export const api = {
     blockUser: (id: string) => req<User>('POST', `/admin/users/${id}/block`),
     unblockUser: (id: string) => req<User>('POST', `/admin/users/${id}/unblock`),
     deleteUser: (id: string) => req<{ ok: boolean }>('DELETE', `/admin/users/${id}`),
+    syncModels: () => req<ModelCatalogEntry[]>('POST', '/admin/models/sync'),
+    listModels: () => req<ModelCatalogEntry[]>('GET', '/admin/models'),
+    updateModel: (id: string, body: Partial<ModelCatalogEntry>) =>
+      req<ModelCatalogEntry>('PATCH', `/admin/models/${encodeURIComponent(id)}`, body),
+  },
+  models: {
+    list: (type?: string, domain?: string) => {
+      const p = new URLSearchParams()
+      if (type) p.set('type', type)
+      if (domain) p.set('domain', domain)
+      const qs = p.toString()
+      return req<ModelCatalogEntry[]>('GET', `/models${qs ? `?${qs}` : ''}`)
+    },
   },
   projects: {
     list: () => req<Project[]>('GET', '/projects'),

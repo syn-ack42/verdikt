@@ -39,12 +39,18 @@ export default function AdminUsers() {
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: 'clamp(12px, 4vw, 24px)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7de0', padding: 0 }}>
           ← Projects
         </button>
-        <h2 style={{ margin: 0 }}>Users</h2>
+        <h2 style={{ margin: 0, flex: 1 }}>Users</h2>
         {users && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{users.length} total</span>}
+        <button
+          onClick={() => navigate('/admin/models')}
+          style={{ padding: '6px 14px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+        >
+          Models
+        </button>
       </div>
 
       {isLoading && <p style={{ color: 'var(--text-muted)' }}>Loading…</p>}

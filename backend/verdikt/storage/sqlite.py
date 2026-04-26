@@ -51,6 +51,8 @@ class SQLiteProjectStore(ProjectStore):
             chunk_max_size=p.chunk_max_size,
             crystallisation_threshold=p.crystallisation_threshold,
             min_profile_confidence=p.min_profile_confidence,
+            llm_model=p.llm_model,
+            embedding_model=p.embedding_model,
             created_at=p.created_at,
         )
 
@@ -66,6 +68,8 @@ class SQLiteProjectStore(ProjectStore):
             chunk_max_size=r.chunk_max_size,
             crystallisation_threshold=r.crystallisation_threshold,
             min_profile_confidence=getattr(r, 'min_profile_confidence', 0.9) or 0.9,
+            llm_model=getattr(r, 'llm_model', None),
+            embedding_model=getattr(r, 'embedding_model', None),
             created_at=r.created_at,
         )
 

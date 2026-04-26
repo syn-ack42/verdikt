@@ -7,6 +7,7 @@ import ProfileView from './pages/ProfileView'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import AdminUsers from './pages/AdminUsers'
+import AdminModels from './pages/AdminModels'
 import ProtectedRoute from './components/ProtectedRoute'
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/projects/:projectId/rate" element={<RatingInterface />} />
         <Route path="/projects/:projectId/profile" element={<ProfileView />} />
         <Route path="/admin/users" element={<AdminUsers />} />
+        <Route path="/admin/models" element={<AdminModels />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

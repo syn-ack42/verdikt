@@ -23,6 +23,8 @@ class ProjectCreate(BaseModel):
     chunk_max_size: int = 800
     crystallisation_threshold: int = 50
     min_profile_confidence: float = 0.9
+    llm_model: str | None = None
+    embedding_model: str | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -33,6 +35,8 @@ class ProjectUpdate(BaseModel):
     chunk_max_size: int | None = None
     crystallisation_threshold: int | None = None
     min_profile_confidence: float | None = None
+    llm_model: str | None = None
+    embedding_model: str | None = None
     dimension_renames: dict[str, str] | None = None  # old_name -> new_name
 
 
@@ -47,6 +51,8 @@ def _project_response(p: Project) -> dict:
         "chunk_max_size": p.chunk_max_size,
         "crystallisation_threshold": p.crystallisation_threshold,
         "min_profile_confidence": p.min_profile_confidence,
+        "llm_model": p.llm_model,
+        "embedding_model": p.embedding_model,
         "created_at": p.created_at.isoformat(),
     }
 
@@ -71,6 +77,8 @@ def create_project(
         chunk_max_size=body.chunk_max_size,
         crystallisation_threshold=body.crystallisation_threshold,
         min_profile_confidence=body.min_profile_confidence,
+        llm_model=body.llm_model,
+        embedding_model=body.embedding_model,
     )
     SQLiteProjectStore(session).create(proj)
     session.commit()
@@ -128,6 +136,28 @@ def update_project(
         values["crystallisation_threshold"] = body.crystallisation_threshold
     if body.min_profile_confidence is not None:
         values["min_profile_confidence"] = body.min_profile_confidence
+    if body.llm_model is not None:
+        values["llm_model"] = body.llm_model
+    if body.embedding_model is not None:
+        # Reject change if material has already been embedded — vectors would be incompatible
+        from verdikt.core.models import PipelinePhase
+        from verdikt.storage.orm import MaterialItemRow
+        from sqlalchemy import select as _select
+        embedded = session.execute(
+            _select(MaterialItemRow.id).where(
+                MaterialItemRow.project_id == project_id,
+                MaterialItemRow.pipeline_phase.notin_([
+                    PipelinePhase.INGESTED.value,
+                    PipelinePhase.CHUNKED.value,
+                ]),
+            ).limit(1)
+        ).scalar_one_or_none()
+        if embedded is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Embedding model cannot be changed after material has been embedded. Re-ingest to start fresh.",
+            )
+        values["embedding_model"] = body.embedding_model
 
     if values:
         session.execute(sql_update(ProjectRow).where(ProjectRow.id == project_id).values(**values))

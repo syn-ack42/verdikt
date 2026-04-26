@@ -13,6 +13,7 @@ from verdikt.api.deps import get_config, get_current_user, get_session
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.core.models import DimensionProfile, PreferenceProfile
 from verdikt.inference.crystalliser import ProfileCrystalliser
+from verdikt.inference.resolver import resolve_llm_model
 from verdikt.storage.sqlite import (
     SQLiteChunkStore, SQLiteProfileStore, SQLiteProjectStore, SQLiteRatingStore,
 )
@@ -104,9 +105,10 @@ def crystallise_profile(
     current_version = current.version if current else 0
 
     config = get_config()
+    ollama_base_url, llm_model = resolve_llm_model(proj, config)
     crystalliser = ProfileCrystalliser(
-        ollama_base_url=config.inference.ollama_base_url,
-        model=config.inference.ollama_model,
+        ollama_base_url=ollama_base_url,
+        model=llm_model,
     )
     _crystallise_running.add(project_id)
     try:

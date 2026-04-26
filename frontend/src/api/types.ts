@@ -22,10 +22,27 @@ export interface Project {
   chunk_max_size: number
   crystallisation_threshold: number
   min_profile_confidence: number
+  llm_model: string | null
+  embedding_model: string | null
   created_at: string
   confidence?: number
   profile_confirmed_count?: number
   profile_confidence?: number | null
+}
+
+export interface ModelCatalogEntry {
+  id: string
+  source?: string
+  type: 'llm' | 'embedding'
+  domain: string
+  enabled?: boolean
+  display_name: string
+  description: string
+  parameter_size: string | null
+  context_length: number | null
+  size_bytes?: number | null
+  quantization: string | null
+  synced_at?: string | null
 }
 
 export interface MaterialItem {
