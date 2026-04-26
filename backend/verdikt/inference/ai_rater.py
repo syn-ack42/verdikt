@@ -6,7 +6,7 @@ from collections import deque
 from collections.abc import Iterator
 from datetime import datetime, timezone
 
-from verdikt.core.models import PreferenceProfile, Project, Rating
+from verdikt.core.models import Domain, PreferenceProfile, Project, Rating
 from verdikt.inference.base import EmbedderBase
 from verdikt.inference.judge import LLMJudge
 from verdikt.storage.base import ChunkStore, MaterialStore, RatingStore, VectorStore
@@ -94,16 +94,21 @@ class AIRater:
             return
 
         # Get similarity-ordered candidates from vector store.
-        # Skip for image projects: CLIPEmbedder only accepts bytes, not text summaries.
+        # Image projects use CLIP (bytes-only), so text-embedding the profile summary is
+        # not possible; fall back to random ordering silently.
         n_query = min(len(unrated_chunks), 500)
-        try:
-            raw_emb = self._embedder.embed([profile.overall_summary])[0]
-            embedding = raw_emb.tolist() if hasattr(raw_emb, "tolist") else list(raw_emb)
-            similar_results = self._vs.query(embedding, n_results=n_query)
-            similar_ids = [r["id"] for r in similar_results if r["id"] not in rated_ids]
-        except (TypeError, Exception):
-            log.warning("ai_rater: vector store query failed or embedder incompatible with text, using random order")
-            similar_ids = []
+        is_image = getattr(project.domain, "value", project.domain) == Domain.IMAGE.value
+        similar_ids: list[str] = []
+        if not is_image:
+            try:
+                raw_emb = self._embedder.embed([profile.overall_summary])[0]
+                embedding = raw_emb.tolist() if hasattr(raw_emb, "tolist") else list(raw_emb)
+                similar_results = self._vs.query(embedding, n_results=n_query)
+                similar_ids = [r["id"] for r in similar_results if r["id"] not in rated_ids]
+            except Exception:
+                log.warning("ai_rater: vector store query failed, using random order")
+        else:
+            log.debug("ai_rater: image project — skipping text similarity, using random order")
 
         similar_set = set(similar_ids)
         unrated_by_id = {c.id: c for c in unrated_chunks}
