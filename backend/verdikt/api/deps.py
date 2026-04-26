@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 _user_engines: dict[str, Engine] = {}
 
 # Track which users have had their files migrated this process lifetime
-_files_migrated: set[str] = {}
+_files_migrated: set[str] = set()
 
 
 def _derive_file_key(db_key: str) -> bytes:
@@ -82,7 +82,9 @@ def _make_user_engine(db_path: str, db_key: str) -> Engine:
         from sqlcipher3 import dbapi2 as sqlcipher  # type: ignore
 
         def _creator():
-            conn = sqlcipher.connect(db_path)
+            # check_same_thread must be passed directly — connect_args is ignored
+            # when creator= is used, and sqlcipher3 enforces thread affinity at C level.
+            conn = sqlcipher.connect(db_path, check_same_thread=False)
             conn.execute(f"PRAGMA key=\"{db_key}\"")
             return conn
 
@@ -91,7 +93,6 @@ def _make_user_engine(db_path: str, db_key: str) -> Engine:
         engine = create_engine(
             "sqlite:///:memory:",
             creator=_creator,
-            connect_args={"check_same_thread": False},
         )
     except ImportError:
         log.warning("sqlcipher3 not installed — using plain SQLite (no encryption)")
