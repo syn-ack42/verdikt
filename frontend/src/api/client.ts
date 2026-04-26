@@ -128,7 +128,7 @@ export const api = {
       streamFetch(`/projects/${projectId}/works/update-plugin/stream`, { method: 'POST' }, onEvent as (e: unknown) => void),
   },
   plugins: {
-    list: () => req<PluginInfo[]>('GET', '/plugins'),
+    list: (domain?: string) => req<PluginInfo[]>('GET', `/plugins${domain ? `?domain=${domain}` : ''}`),
   },
   pipeline: {
     run: (projectId: string) => req<PipelineResult>('POST', `/projects/${projectId}/pipeline/run`),

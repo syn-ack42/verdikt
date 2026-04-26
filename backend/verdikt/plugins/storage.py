@@ -9,6 +9,7 @@ Runtime-only keys injected by the router (not stored in DB):
     _storage_root    — absolute path to the files directory (for source_path construction)
     _storage_backend — EncryptedStorageBackend instance; when present, all file access
                        goes through it rather than the real filesystem
+    _domain          — project domain ("text" | "image"); controls which file types are accepted
 """
 from __future__ import annotations
 
@@ -24,16 +25,33 @@ from verdikt.plugins.filedrop import FileDropPlugin as _Extractor, _EXT_TO_CONTE
 
 log = logging.getLogger(__name__)
 
+_IMAGE_EXT_TO_CONTENT_TYPE: dict[str, ContentType] = {
+    ".jpg": ContentType.JPEG,
+    ".jpeg": ContentType.JPEG,
+    ".png": ContentType.PNG,
+    ".webp": ContentType.JPEG,   # closest available; webp is treated as image/jpeg for now
+    ".gif": ContentType.PNG,
+    ".bmp": ContentType.PNG,
+    ".tiff": ContentType.PNG,
+    ".tif": ContentType.PNG,
+}
+
 
 class StoragePlugin(PluginBase):
     plugin_name = "storage"
-    SUPPORTED_EXTENSIONS = set(_EXT_TO_CONTENT_TYPE)
+    supported_domains = frozenset({Domain.TEXT, Domain.IMAGE})
 
     def __init__(self, config: dict) -> None:
         self._config = config
         root = config.get("_storage_root", "")
         self._storage_root = Path(root) if root else Path()
         self._backend = config.get("_storage_backend")  # EncryptedStorageBackend | None
+        domain_str = config.get("_domain", "text")
+        self._domain = Domain(domain_str) if domain_str in Domain._value2member_map_ else Domain.TEXT
+        if self._domain == Domain.IMAGE:
+            self.SUPPORTED_EXTENSIONS = set(_IMAGE_EXT_TO_CONTENT_TYPE)
+        else:
+            self.SUPPORTED_EXTENSIONS = set(_EXT_TO_CONTENT_TYPE)
 
     @classmethod
     def config_schema(cls) -> dict:
@@ -124,19 +142,8 @@ class StoragePlugin(PluginBase):
 
     def _make_item(self, file_path: Path, project_id: str, virtual_path: str | None = None) -> MaterialItem | None:
         ext = file_path.suffix.lower()
-        extractor = _Extractor({"path": str(file_path.parent)})
-        try:
-            text = extractor._extract_text(file_path)
-        except Exception as exc:
-            log.warning("storage: skipping %s — %s", file_path.name, exc)
-            return None
-        if not text or not text.strip():
-            return None
-        raw = text.encode("utf-8") if isinstance(text, str) else text
 
         if virtual_path is not None:
-            # Backend mode: construct the same absolute-path format as filesystem mode
-            # for backward-compatible source_path values.
             source_path = str((self._storage_root / virtual_path.lstrip("/")).resolve()) \
                 if self._storage_root != Path() else virtual_path
             work_title = Path(virtual_path).stem
@@ -146,11 +153,41 @@ class StoragePlugin(PluginBase):
             work_title = file_path.stem
             work_id = self._rel(file_path)
 
+        if self._domain == Domain.IMAGE:
+            try:
+                raw = file_path.read_bytes()
+            except Exception as exc:
+                log.warning("storage: skipping %s — %s", file_path.name, exc)
+                return None
+            content_type = _IMAGE_EXT_TO_CONTENT_TYPE.get(ext, ContentType.JPEG)
+            return MaterialItem(
+                project_id=project_id,
+                source_plugin=self.plugin_name,
+                source_path=source_path,
+                content_hash=hashlib.sha256(raw).hexdigest(),
+                url=file_path.as_uri(),
+                work_title=work_title,
+                content=raw,
+                domain=Domain.IMAGE,
+                content_type=content_type,
+                plugin_metadata={"work_id": work_id},
+            )
+
+        # Text domain
+        extractor = _Extractor({"path": str(file_path.parent)})
+        try:
+            text = extractor._extract_text(file_path)
+        except Exception as exc:
+            log.warning("storage: skipping %s — %s", file_path.name, exc)
+            return None
+        if not text or not text.strip():
+            return None
+        raw_bytes = text.encode("utf-8") if isinstance(text, str) else text
         return MaterialItem(
             project_id=project_id,
             source_plugin=self.plugin_name,
             source_path=source_path,
-            content_hash=hashlib.sha256(raw).hexdigest(),
+            content_hash=hashlib.sha256(raw_bytes).hexdigest(),
             url=file_path.as_uri(),
             work_title=work_title,
             content=text,

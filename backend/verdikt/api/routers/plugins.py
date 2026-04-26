@@ -12,10 +12,21 @@ router = APIRouter(prefix="/api/plugins", tags=["plugins"])
 
 
 @router.get("")
-def list_plugins(_: Annotated[AuthenticatedUser, Depends(get_current_user)]) -> list[dict]:
+def list_plugins(
+    _: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    domain: str | None = None,
+) -> list[dict]:
+    from verdikt.core.models import Domain
     plugins = load_plugins()
     result = []
     for name, cls in plugins.items():
+        if domain is not None:
+            try:
+                d = Domain(domain)
+            except ValueError:
+                d = None
+            if d is not None and d not in cls.supported_domains:
+                continue
         schema = cls.config_schema()
         result.append({
             "name": name,

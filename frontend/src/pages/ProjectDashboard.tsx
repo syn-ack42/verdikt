@@ -855,6 +855,7 @@ export default function ProjectDashboard() {
       {showPluginIngest && (
         <PluginIngestDialog
           projectId={projectId!}
+          domain={project.domain}
           onClose={() => { setShowPluginIngest(false); refetchUpdateStatus() }}
           onIngest={(pluginName, config) => {
             setShowPluginIngest(false)

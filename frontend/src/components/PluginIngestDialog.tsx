@@ -7,6 +7,7 @@ import StoragePicker, { type Selection } from './StoragePicker'
 
 interface Props {
   projectId: string
+  domain: string
   onClose: () => void
   onIngest: (pluginName: string, config: Record<string, unknown>) => void
 }
@@ -31,14 +32,14 @@ function validateRequired(schema: Record<string, unknown>, values: Record<string
   return errors
 }
 
-export default function PluginIngestDialog({ projectId, onClose, onIngest }: Props) {
+export default function PluginIngestDialog({ projectId, domain, onClose, onIngest }: Props) {
   const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null)
   const [configValues, setConfigValues] = useState<Record<string, unknown>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const { data: plugins, isLoading: pluginsLoading } = useQuery({
-    queryKey: ['plugins'],
-    queryFn: () => api.plugins.list(),
+    queryKey: ['plugins', domain],
+    queryFn: () => api.plugins.list(domain),
   })
 
   const { data: savedConfigs } = useQuery({

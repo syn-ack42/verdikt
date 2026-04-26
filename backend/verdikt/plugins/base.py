@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from datetime import datetime
+from typing import ClassVar
 
-from verdikt.core.models import MaterialItem
+from verdikt.core.models import Domain, MaterialItem
 
 
 class PluginBase(ABC):
@@ -17,6 +18,7 @@ class PluginBase(ABC):
     """
 
     plugin_name: str  # must be declared by each subclass
+    supported_domains: ClassVar[frozenset[Domain]] = frozenset(Domain)  # all domains by default
 
     @classmethod
     @abstractmethod

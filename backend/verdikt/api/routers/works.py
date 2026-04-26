@@ -33,13 +33,14 @@ def _get_cached_plugin(cls, plugin_name: str, config: dict) -> object:
     return _plugin_instance_cache[key]
 
 
-def _enrich_config(plugin_name: str, config: dict, backend: StorageBackend) -> dict:
+def _enrich_config(plugin_name: str, config: dict, backend: StorageBackend, domain: str = "text") -> dict:
     """Inject runtime-only values into plugin config (not stored in DB)."""
     if plugin_name == "storage":
         return {
             **config,
             "_storage_root": str(backend.resolve("/")),
             "_storage_backend": backend,
+            "_domain": domain,
         }
     return config
 
@@ -312,12 +313,13 @@ def _run_plugin_ingest(
     config: dict,
     store: SQLiteMaterialStore,
     backend: StorageBackend | None = None,
+    domain: str = "text",
 ) -> tuple[int, int, int]:
     try:
         cls = get_plugin(plugin_name)
     except KeyError:
         raise HTTPException(status_code=422, detail=f"Unknown plugin: {plugin_name!r}")
-    full_config = _enrich_config(plugin_name, config, backend) if backend else config
+    full_config = _enrich_config(plugin_name, config, backend, domain) if backend else config
     plugin = _get_cached_plugin(cls, plugin_name, full_config)
     added = updated = skipped = 0
     for item in plugin.fetch(project_id):
@@ -360,7 +362,7 @@ def ingest_from_plugin(
     if saved_cfg is None:
         raise HTTPException(status_code=422, detail="No plugin config found. Provide config in request body.")
 
-    added, updated, skipped = _run_plugin_ingest(proj.id, body.plugin_name, saved_cfg.config, mat_store, backend)
+    added, updated, skipped = _run_plugin_ingest(proj.id, body.plugin_name, saved_cfg.config, mat_store, backend, getattr(proj.domain, "value", proj.domain))
     session.commit()
     return {"added": added, "updated": updated, "skipped": skipped}
 
@@ -397,7 +399,7 @@ def ingest_from_plugin_stream(
             yield f"data: {json.dumps({'error': f'Unknown plugin: {body.plugin_name!r}'})}\n\n"
         return StreamingResponse(_err2(), media_type="text/event-stream")
 
-    plugin = _get_cached_plugin(cls, body.plugin_name, _enrich_config(body.plugin_name, saved_cfg.config, backend))
+    plugin = _get_cached_plugin(cls, body.plugin_name, _enrich_config(body.plugin_name, saved_cfg.config, backend, getattr(proj.domain, "value", proj.domain)))
     total = plugin.estimate_count()
 
     def event_stream() -> Generator[str, None, None]:
@@ -471,7 +473,7 @@ def update_from_plugin_stream(
             yield f"data: {json.dumps({'error': f'Unknown plugin: {cfg.plugin_name!r}'})}\n\n"
         return StreamingResponse(_err2(), media_type="text/event-stream")
 
-    plugin = _get_cached_plugin(cls, cfg.plugin_name, _enrich_config(cfg.plugin_name, cfg.config, backend))
+    plugin = _get_cached_plugin(cls, cfg.plugin_name, _enrich_config(cfg.plugin_name, cfg.config, backend, getattr(proj.domain, "value", proj.domain)))
     stored = mat_store.list_by_source_plugin(proj.id, cfg.plugin_name)
     work_ids = [i.plugin_metadata["work_id"] for i in stored if i.plugin_metadata.get("work_id")]
     stored_by_work_id = {i.plugin_metadata["work_id"]: i for i in stored if i.plugin_metadata.get("work_id")}

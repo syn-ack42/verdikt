@@ -49,6 +49,7 @@ class LoginError(RuntimeError):
 
 class AO3Plugin(PluginBase):
     plugin_name = "ao3"
+    supported_domains = frozenset({Domain.TEXT})
 
     def __init__(self, config: dict) -> None:
         self._config = config
