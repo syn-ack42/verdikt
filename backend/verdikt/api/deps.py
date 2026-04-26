@@ -15,13 +15,34 @@ from sqlalchemy.orm import Session
 from verdikt.core.config import AppConfig
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.storage.auth_orm import AuthBase, UserRow
-from verdikt.storage.files import LocalStorageBackend, StorageBackend
+from verdikt.storage.files import EncryptedStorageBackend, StorageBackend
 from verdikt.storage.orm import Base
 
 log = logging.getLogger(__name__)
 
 # Per-user engine cache: user_id → Engine
 _user_engines: dict[str, Engine] = {}
+
+# Track which users have had their files migrated this process lifetime
+_files_migrated: set[str] = {}
+
+
+def _derive_file_key(db_key: str) -> bytes:
+    """Derive a 32-byte AES key for file encryption from the user's db_key.
+
+    Uses HKDF-SHA256 with a dedicated info tag so the file key is distinct
+    from the SQLCipher database key even though both derive from the same secret.
+    """
+    import base64
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    raw = base64.b64decode(db_key)
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=b"verdikt-file-encryption-v1",
+    ).derive(raw)
 
 
 @lru_cache
@@ -198,6 +219,17 @@ def get_chroma_client(
 
 def get_storage(
     user: AuthenticatedUser = Depends(get_current_user),
-) -> StorageBackend:
+    session: Session = Depends(get_session),
+) -> Generator[StorageBackend, None, None]:
     config = get_config()
-    return LocalStorageBackend(config.user_files_path(user.id))
+    key = _derive_file_key(user.db_key)
+    backend = EncryptedStorageBackend(config.user_files_path(user.id), key, session)
+    if user.id not in _files_migrated:
+        _files_migrated.add(user.id)
+        n = backend.migrate_plaintext_files()
+        if n:
+            log.info("migrated %d plaintext file(s) to encrypted storage for user %s", n, user.id)
+    try:
+        yield backend
+    finally:
+        backend.cleanup()

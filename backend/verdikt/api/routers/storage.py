@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi import Form
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 
 from verdikt.api.deps import get_storage
 from verdikt.storage.files import StorageBackend, StorageEntry
@@ -64,12 +64,16 @@ def create_directory(
 def download_file(
     path: str,
     backend: StorageBackend = Depends(get_storage),
-) -> FileResponse:
+) -> Response:
     if not backend.exists(path) or backend.is_dir(path):
         raise HTTPException(status_code=404, detail="File not found")
-    fs_path = backend.resolve(path)
-    filename = fs_path.name
-    return FileResponse(path=str(fs_path), filename=filename, media_type="application/octet-stream")
+    data = backend.read(path)
+    filename = path.split("/")[-1]
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("", status_code=204)

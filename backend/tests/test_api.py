@@ -13,6 +13,7 @@ from verdikt.core.models import Chunk, Domain, MaterialItem, Project, RatingDime
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.base import EmbedderBase
 from verdikt.storage.base import VectorStore
+from verdikt.storage.files import LocalStorageBackend
 from verdikt.storage.orm import Base
 from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteMaterialStore, SQLiteProjectStore
 
@@ -69,7 +70,7 @@ _MOCK_USER = AuthenticatedUser(id="test-user-id", email="test@test.com", is_admi
 
 
 @pytest.fixture
-def client(mem_engine):
+def client(mem_engine, tmp_path):
     app = create_app()
 
     def override_session():
@@ -79,8 +80,12 @@ def client(mem_engine):
     def override_user():
         return _MOCK_USER
 
+    def override_storage():
+        yield LocalStorageBackend(tmp_path / "files")
+
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_storage] = override_storage
     return TestClient(app)
 
 

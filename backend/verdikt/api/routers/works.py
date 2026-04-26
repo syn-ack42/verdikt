@@ -18,8 +18,12 @@ _running_updates: dict[str, dict] = {}
 _plugin_instance_cache: dict[str, object] = {}
 
 
+_RUNTIME_CONFIG_KEYS = {"_storage_root", "_storage_backend"}
+
+
 def _get_cached_plugin(cls, plugin_name: str, config: dict) -> object:
-    config_hash = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+    serialisable = {k: v for k, v in config.items() if k not in _RUNTIME_CONFIG_KEYS}
+    config_hash = hashlib.sha256(json.dumps(serialisable, sort_keys=True).encode()).hexdigest()
     key = f"{plugin_name}:{config_hash}"
     if key not in _plugin_instance_cache:
         log.info("plugin-cache: creating new instance for %s (%s)", plugin_name, key[:16])
@@ -32,7 +36,11 @@ def _get_cached_plugin(cls, plugin_name: str, config: dict) -> object:
 def _enrich_config(plugin_name: str, config: dict, backend: StorageBackend) -> dict:
     """Inject runtime-only values into plugin config (not stored in DB)."""
     if plugin_name == "storage":
-        return {**config, "_storage_root": str(backend.resolve("/"))}
+        return {
+            **config,
+            "_storage_root": str(backend.resolve("/")),
+            "_storage_backend": backend,
+        }
     return config
 
 
@@ -196,6 +204,7 @@ def _ingest_fs_path(
     fs_path: Path,
     project_id: str,
     store: SQLiteMaterialStore,
+    source_path_override: str | None = None,
 ) -> tuple[int, int, int]:
     """Ingest a single resolved filesystem path (file or directory). Returns (added, updated, skipped)."""
     added = updated = skipped = 0
@@ -207,6 +216,8 @@ def _ingest_fs_path(
         return 0, 0, 0
 
     for item in items:
+        if source_path_override and item.source_path != source_path_override:
+            item = item.model_copy(update={"source_path": source_path_override})
         existing = (
             store.get_by_source(project_id, item.source_plugin, item.source_path)
             if item.source_path else None
@@ -231,13 +242,17 @@ def ingest_from_storage(
 ) -> dict:
     proj = _get_project_or_404(project_id, session)
     store = SQLiteMaterialStore(session)
+    storage_root = backend.resolve("/")
     total_added = total_updated = total_skipped = 0
 
     for storage_path in body.storage_paths:
         if not backend.exists(storage_path):
             raise HTTPException(status_code=422, detail=f"Storage path not found: {storage_path}")
         fs_path = backend.resolve(storage_path)
-        a, u, s = _ingest_fs_path(fs_path, proj.id, store)
+        # For encrypted backends, fs_path is a temp file whose path must not be
+        # used as the stable source_path identifier — use the canonical path instead.
+        canonical = str(storage_root / storage_path.lstrip("/")) if not fs_path.is_dir() else None
+        a, u, s = _ingest_fs_path(fs_path, proj.id, store, source_path_override=canonical)
         total_added += a
         total_updated += u
         total_skipped += s

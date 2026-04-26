@@ -100,3 +100,16 @@ class PluginConfigRow(Base):
     config_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FileManifestRow(Base):
+    """Maps on-disk UUID blobs to their user-visible virtual paths."""
+    __tablename__ = "file_manifest"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # UUID — on-disk filename
+    user_path: Mapped[str] = mapped_column(String, nullable=False, unique=True)  # e.g. "/books/foo.epub"
+    original_name: Mapped[str] = mapped_column(String, nullable=False)           # "foo.epub"
+    suffix: Mapped[str] = mapped_column(String, nullable=False, default="")      # ".epub"
+    is_dir: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
