@@ -20,8 +20,9 @@ class AppConfig(BaseSettings):
     )
 
     data_dir: Path = Field(default=Path("/var/lib/verdikt"))
-    users_dir: Optional[Path] = Field(default=None)  # defaults to data_dir / "users"
-    root_path: str = ""                              # set VERDIKT_ROOT_PATH for reverse proxy subpath
+    users_dir: Optional[Path] = Field(default=None)      # defaults to data_dir / "users"
+    frontend_dir: Optional[Path] = Field(default=None)   # set to serve built frontend static files
+    root_path: str = ""                                  # set VERDIKT_ROOT_PATH for reverse proxy subpath
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
     jwt_secret: str = Field(default="")             # populated from data_dir/jwt_secret if not set via env

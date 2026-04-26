@@ -21,7 +21,21 @@ A local-first, open-source preference learning platform. Rate content samples ac
 ollama pull llama3.1:8b
 ```
 
-## Setup
+## Docker deployment (recommended for servers)
+
+Requires Docker with Compose. Ollama must be running on the host.
+
+```bash
+docker compose up -d
+```
+
+The app is available at `http://localhost:8765`. Data persists in the `verdikt-data` Docker volume.
+
+To point at a remote Ollama instance, set `VERDIKT_INFERENCE__OLLAMA_BASE_URL` in `docker-compose.yml` or via an environment variable.
+
+HuggingFace model files (sentence-transformers) are cached in the data volume at `.cache/huggingface` and downloaded automatically on first use.
+
+## Setup (local development)
 
 ```bash
 python -m venv .venv
