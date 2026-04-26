@@ -1,21 +1,22 @@
 from __future__ import annotations
 
 from prefect import flow, task
+from prefect.cache_policies import NO_CACHE
 
 from verdikt.pipeline.runner import PhaseResult, PipelineResult, PipelineRunner
 
 
-@task
+@task(cache_policy=NO_CACHE)
 def chunk_task(runner: PipelineRunner, project_id: str) -> PhaseResult:
     return runner._chunk(project_id)
 
 
-@task
+@task(cache_policy=NO_CACHE)
 def embed_task(runner: PipelineRunner, project_id: str) -> PhaseResult:
     return runner._embed(project_id)
 
 
-@task
+@task(cache_policy=NO_CACHE)
 def cluster_task(runner: PipelineRunner, project_id: str) -> PhaseResult:
     return runner._cluster(project_id)
 
