@@ -42,11 +42,13 @@ class CLIPEmbedder(EmbedderBase):
                     "For text projects use SentenceTransformerEmbedder."
                 )
 
-        processed = self._processor(images=images, return_tensors="pt")
+        pixel_values = self._processor(images=images, return_tensors="pt")["pixel_values"]
         with torch.no_grad():
-            features = self._model.get_image_features(**processed)
+            vision_out = self._model.vision_model(pixel_values=pixel_values)
+            # pooler_output is the [CLS] token embedding; project to CLIP embedding space
+            features = self._model.visual_projection(vision_out.pooler_output)
             # L2-normalise so cosine similarity == dot product in ChromaDB
-            features = features / features.norm(dim=-1, keepdim=True)
+            features = torch.nn.functional.normalize(features, dim=-1)
 
         return features.cpu().numpy().astype(np.float32)
 
