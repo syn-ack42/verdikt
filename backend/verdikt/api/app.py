@@ -11,19 +11,23 @@ from verdikt.core.config import AppConfig
 
 
 def _configure_logging(config: AppConfig) -> None:
-    config.ensure_dirs()
+    try:
+        config.ensure_dirs()
+        file_handler: logging.Handler | None = logging.handlers.RotatingFileHandler(
+            config.log_path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+        )
+    except OSError:
+        file_handler = None  # data_dir not yet writable (tests / first run before dirs created)
+
     fmt = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s - %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
-
-    file_handler = logging.handlers.RotatingFileHandler(
-        config.log_path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-    )
-    file_handler.setFormatter(fmt)
-    file_handler.setLevel(logging.DEBUG)
-
     root = logging.getLogger()
-    if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers):
-        root.addHandler(file_handler)
     root.setLevel(logging.DEBUG)
+
+    if file_handler is not None:
+        file_handler.setFormatter(fmt)
+        file_handler.setLevel(logging.DEBUG)
+        if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers):
+            root.addHandler(file_handler)
 
     # Quiet down noisy third-party loggers
     for noisy in ("httpx", "httpcore", "urllib3", "multipart", "sqlalchemy.engine"):

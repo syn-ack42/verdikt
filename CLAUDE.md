@@ -26,8 +26,9 @@ Five layers with strict separation of concerns:
 
 ## Auth and per-user isolation
 
-- **Global auth DB**: `~/.verdikt/auth.db` — plain SQLite, `users` table only (id, email, argon2 hash, salt, is_admin, is_blocked)
-- **Per-user data**: `~/.verdikt/users/<user_id>/` containing `verdikt.db` (SQLCipher-encrypted), `chroma/`, and `files/`
+- **Global auth DB**: `$VERDIKT_DATA_DIR/auth.db` (default `/var/lib/verdikt/auth.db`) — plain SQLite, `users` table only (id, email, argon2 hash, salt, is_admin, is_blocked)
+- **Per-user data**: `$VERDIKT_USERS_DIR/<user_id>/` (default `data_dir/users/<user_id>/`) containing `verdikt.db` (SQLCipher-encrypted), `chroma/`, and `files/`
+- **Two configurable roots**: `VERDIKT_DATA_DIR` for system files; `VERDIKT_USERS_DIR` for user spaces (can be a separate volume). Both default to `/var/lib/verdikt[/users]`.
 - **JWT**: HttpOnly cookie `verdikt_token`; payload contains `sub=user_id` and `key=base64(derived_key)`; the derived key is Argon2id(password, salt) and never written to disk; the per-user DB is unreadable without it
 - **File encryption**: `EncryptedStorageBackend` in `backend/verdikt/storage/files.py` — AES-256-GCM, key derived via HKDF-SHA256 from `db_key` with info tag `verdikt-file-encryption-v1`. On-disk files are opaque UUID blobs with no extension; the `file_manifest` table in `verdikt.db` maps UUIDs to virtual paths, original names, and metadata. `resolve()` decrypts to a temp file for parsers that need a real path; `cleanup()` removes temp files at request end. Plaintext files from before this feature are migrated automatically on first login.
 - **`get_current_user()`** in `backend/verdikt/api/deps.py` — validates cookie, returns `User`; every route depends on this

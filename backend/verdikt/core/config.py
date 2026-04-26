@@ -2,32 +2,43 @@ from __future__ import annotations
 
 import secrets
 from pathlib import Path
+from typing import Optional
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from verdikt.core.models import InferenceConfig
-
-_JWT_SECRET_FILE = Path.home() / ".verdikt" / "jwt_secret"
-
-
-def _load_or_generate_jwt_secret() -> str:
-    if _JWT_SECRET_FILE.exists():
-        return _JWT_SECRET_FILE.read_text().strip()
-    secret = secrets.token_hex(32)
-    _JWT_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _JWT_SECRET_FILE.write_text(secret)
-    return secret
 
 
 class AppConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="VERDIKT_", env_nested_delimiter="__")
 
-    data_dir: Path = Field(default_factory=lambda: Path.home() / ".verdikt")
-    root_path: str = ""                                        # set VERDIKT_ROOT_PATH for reverse proxy subpath
+    data_dir: Path = Field(default=Path("/var/lib/verdikt"))
+    users_dir: Optional[Path] = Field(default=None)  # defaults to data_dir / "users"
+    root_path: str = ""                              # set VERDIKT_ROOT_PATH for reverse proxy subpath
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
-    jwt_secret: str = Field(default_factory=_load_or_generate_jwt_secret)
+    jwt_secret: str = Field(default="")             # populated from data_dir/jwt_secret if not set via env
+
+    @model_validator(mode="after")
+    def _apply_defaults(self) -> AppConfig:
+        if self.users_dir is None:
+            object.__setattr__(self, "users_dir", self.data_dir / "users")
+        if not self.jwt_secret:
+            object.__setattr__(self, "jwt_secret", self._read_or_generate_jwt())
+        return self
+
+    def _read_or_generate_jwt(self) -> str:
+        path = self.data_dir / "jwt_secret"
+        if path.exists():
+            return path.read_text().strip()
+        secret = secrets.token_hex(32)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(secret)
+        except OSError:
+            pass  # ephemeral secret acceptable when data_dir not yet writable (tests/dev)
+        return secret
 
     # ── Legacy paths (used by CLI and migration script; pre-auth global DB) ──────
     @property
@@ -54,12 +65,8 @@ class AppConfig(BaseSettings):
     def auth_db_path(self) -> Path:
         return self.data_dir / "auth.db"
 
-    @property
-    def users_dir(self) -> Path:
-        return self.data_dir / "users"
-
     def user_data_path(self, user_id: str) -> Path:
-        return self.users_dir / user_id
+        return self.users_dir / user_id  # type: ignore[operator]
 
     def user_db_path(self, user_id: str) -> Path:
         return self.user_data_path(user_id) / "verdikt.db"
@@ -88,4 +95,4 @@ class AppConfig(BaseSettings):
 
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        self.users_dir.mkdir(parents=True, exist_ok=True)
+        self.users_dir.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]

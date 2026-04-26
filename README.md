@@ -88,7 +88,7 @@ Files for ingest are managed per-user at `~/.verdikt/users/<user_id>/files/`. Tw
 
 Files are stored encrypted at rest using AES-256-GCM. On disk each file is an opaque UUID-named blob with no extension or readable metadata; filenames, paths, and sizes are kept only in the per-user SQLCipher database. A server admin with filesystem access cannot read file content or determine what files a user has uploaded. Existing plaintext files are migrated automatically on first login after an upgrade.
 
-The storage root is configurable via `VERDIKT_DATA_DIR` (defaults to `~/.verdikt`).
+The storage root is configurable via `VERDIKT_DATA_DIR` (defaults to `/var/lib/verdikt`). User spaces can be placed on a separate volume with `VERDIKT_USERS_DIR`.
 
 ## Project settings
 
@@ -108,8 +108,9 @@ All configuration is via environment variables (prefix `VERDIKT_`):
 
 | Variable | Default | Description |
 |---|---|---|
-| `VERDIKT_DATA_DIR` | `~/.verdikt` | Root data directory |
-| `VERDIKT_JWT_SECRET` | *(auto-generated)* | Secret for JWT signing; persisted to `~/.verdikt/jwt_secret` if not set |
+| `VERDIKT_DATA_DIR` | `/var/lib/verdikt` | System data directory (auth.db, jwt_secret, logs) |
+| `VERDIKT_USERS_DIR` | `$VERDIKT_DATA_DIR/users` | Per-user data root; can point to a separate volume |
+| `VERDIKT_JWT_SECRET` | *(auto-generated)* | Secret for JWT signing; persisted to `$VERDIKT_DATA_DIR/jwt_secret` if not set |
 | `VERDIKT_ROOT_PATH` | *(empty)* | ASGI subpath prefix (e.g. `/verdikt`) |
 | `VERDIKT_CORS_ORIGINS` | `http://localhost:5173` | Allowed CORS origins |
 | `VERDIKT_INFERENCE__OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API URL |
@@ -192,27 +193,24 @@ pytest -q
 ## Data directory layout
 
 ```
-~/.verdikt/
+/var/lib/verdikt/           VERDIKT_DATA_DIR  — system files
   auth.db                   Global users table (unencrypted)
   jwt_secret                Auto-generated JWT signing key
-  users/
-    <user_id>/
-      verdikt.db            Per-user SQLite database (SQLCipher encrypted)
-      chroma/               Per-user ChromaDB vector store
-      files/                Per-user upload root (AES-256-GCM encrypted UUID blobs)
-        <uuid4>             Encrypted file content (no extension, opaque filename)
-        <uuid4>             ...
-        file_manifest       Metadata lives in verdikt.db, not here
+  verdikt.log               Application log
   backups/                  Pre-migration backups (if migration script was run)
+
+/var/lib/verdikt/users/     VERDIKT_USERS_DIR — per-user spaces (default: data_dir/users)
+  <user_id>/
+    verdikt.db              Per-user SQLite database (SQLCipher encrypted)
+    chroma/                 Per-user ChromaDB vector store
+    files/                  Per-user upload root (AES-256-GCM encrypted UUID blobs)
+      <uuid4>               Encrypted file content — opaque, no extension or readable name
+      <uuid4>               ...
 ```
 
-To start fresh for a specific user, delete `~/.verdikt/users/<user_id>/`. To wipe everything:
+`VERDIKT_USERS_DIR` can point to a separate volume (e.g. a large data disk) while `VERDIKT_DATA_DIR` stays on the system volume.
 
-```bash
-rm -rf ~/.verdikt
-```
-
-The directory and schema are recreated automatically on next use.
+To start fresh for a specific user, delete `VERDIKT_USERS_DIR/<user_id>/`. Directories and schema are recreated automatically on next use.
 
 ## Project structure
 
