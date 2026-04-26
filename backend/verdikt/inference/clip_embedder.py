@@ -17,9 +17,11 @@ class CLIPEmbedder(EmbedderBase):
     """
 
     def __init__(self, model_name: str = _DEFAULT_MODEL) -> None:
-        from transformers import CLIPModel, CLIPProcessor
+        from transformers import CLIPImageProcessor, CLIPModel
         self._model_name = model_name
-        self._processor = CLIPProcessor.from_pretrained(model_name)
+        # CLIPImageProcessor.from_pretrained bypasses AutoImageProcessor, which requires the
+        # newer image_processor_type key absent from openai/clip-vit-base-patch32's config.
+        self._processor = CLIPImageProcessor.from_pretrained(model_name)
         self._model = CLIPModel.from_pretrained(model_name)
         self._model.eval()
 
@@ -40,7 +42,7 @@ class CLIPEmbedder(EmbedderBase):
                     "For text projects use SentenceTransformerEmbedder."
                 )
 
-        processed = self._processor(images=images, return_tensors="pt", padding=True)
+        processed = self._processor(images=images, return_tensors="pt")
         with torch.no_grad():
             features = self._model.get_image_features(**processed)
             # L2-normalise so cosine similarity == dot product in ChromaDB
