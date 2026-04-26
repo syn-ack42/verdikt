@@ -11,7 +11,13 @@ from verdikt.core.models import InferenceConfig
 
 
 class AppConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="VERDIKT_", env_nested_delimiter="__")
+    model_config = SettingsConfigDict(
+        env_prefix="VERDIKT_",
+        env_nested_delimiter="__",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     data_dir: Path = Field(default=Path("/var/lib/verdikt"))
     users_dir: Optional[Path] = Field(default=None)  # defaults to data_dir / "users"
