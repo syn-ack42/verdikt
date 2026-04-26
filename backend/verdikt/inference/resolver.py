@@ -31,6 +31,9 @@ def resolve_embedder(project: Project, config: AppConfig) -> EmbedderBase:
     if ":" in model_name:
         from verdikt.inference.ollama_embedder import OllamaEmbedder
         return OllamaEmbedder(model_name, config.inference.ollama_base_url)
+    if "clip" in model_name.lower():
+        from verdikt.inference.clip_embedder import CLIPEmbedder
+        return CLIPEmbedder(model_name)
     return SentenceTransformerEmbedder(model_name)
 
 
