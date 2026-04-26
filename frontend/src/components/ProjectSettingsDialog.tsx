@@ -45,6 +45,8 @@ export default function ProjectSettingsDialog({ project, ratings, onClose }: Pro
     enabled: !isImage,
   })
 
+  const defaultLlm = modelDefaults?.llm_by_domain?.[project.domain] ?? null
+
   const deleteProject = useMutation({
     mutationFn: () => api.projects.delete(project.id),
     onSuccess: () => {
@@ -89,8 +91,7 @@ export default function ProjectSettingsDialog({ project, ratings, onClose }: Pro
     fontSize: 14,
   }
 
-  const defaultLlmLabel = modelDefaults ? ` (${modelDefaults.llm_model})` : ''
-  const defaultEmbLabel = modelDefaults ? ` (${modelDefaults.embedding_model})` : ''
+  const defaultEmbLabel = modelDefaults ? ' (bundled)' : ''
 
   return (
     <div
@@ -157,16 +158,19 @@ export default function ProjectSettingsDialog({ project, ratings, onClose }: Pro
             <div style={{ marginBottom: 16, display: 'flex', gap: 16 }}>
               <div style={{ flex: 1 }}>
                 <label style={{ display: 'block', marginBottom: 4, fontSize: 13, fontWeight: 600 }}>Language model</label>
-                <select
-                  value={llmModel}
-                  onChange={e => setLlmModel(e.target.value)}
-                  style={{ ...inputStyle }}
-                >
-                  <option value="">Server default{defaultLlmLabel}</option>
-                  {(llmModels ?? []).map(m => (
-                    <option key={m.id} value={m.id}>{m.display_name || m.id}{m.parameter_size ? ` · ${m.parameter_size}` : ''}</option>
-                  ))}
-                </select>
+                {(llmModels ?? []).length > 0 ? (
+                  <select
+                    value={llmModel || (defaultLlm ?? '')}
+                    onChange={e => setLlmModel(e.target.value)}
+                    style={{ ...inputStyle }}
+                  >
+                    {(llmModels ?? []).map(m => (
+                      <option key={m.id} value={m.id}>{m.display_name || m.id}{m.parameter_size ? ` · ${m.parameter_size}` : ''}{m.is_default ? ' ★' : ''}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>No models enabled for this domain.</p>
+                )}
               </div>
               {!isImage && (
                 <div style={{ flex: 1 }}>
@@ -179,7 +183,7 @@ export default function ProjectSettingsDialog({ project, ratings, onClose }: Pro
                     }}
                     style={{ ...inputStyle }}
                   >
-                    <option value="">Server default{defaultEmbLabel}</option>
+                    <option value="">Bundled default{defaultEmbLabel}</option>
                     {(embModels ?? []).map(m => (
                       <option key={m.id} value={m.id}>{m.display_name || m.id}</option>
                     ))}

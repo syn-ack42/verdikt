@@ -62,7 +62,16 @@ def get_auth_engine() -> Engine:
         connect_args={"check_same_thread": False},
     )
     AuthBase.metadata.create_all(engine)
+    _migrate_auth_db(engine)
     return engine
+
+
+def _migrate_auth_db(engine: Engine) -> None:
+    with engine.connect() as conn:
+        cols = {row[1] for row in conn.execute(_text("PRAGMA table_info(model_catalog)")).fetchall()}
+        if "is_default" not in cols:
+            conn.execute(_text("ALTER TABLE model_catalog ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0"))
+            conn.commit()
 
 
 def get_auth_session() -> Generator[Session, None, None]:

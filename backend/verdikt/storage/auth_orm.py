@@ -37,4 +37,5 @@ class ModelCatalogRow(AuthBase):
     context_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     quantization: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

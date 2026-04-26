@@ -77,7 +77,8 @@ export const api = {
       req<ModelCatalogEntry>('PATCH', `/admin/models/${encodeURIComponent(id)}`, body),
   },
   models: {
-    defaults: () => req<{ llm_model: string; embedding_model: string }>('GET', '/models/defaults'),
+    defaults: () => req<{ llm_by_domain: Record<string, string | null> }>('GET', '/models/defaults'),
+    domainAvailability: () => req<Record<string, boolean>>('GET', '/models/domain-availability'),
     list: (type?: string, domain?: string) => {
       const p = new URLSearchParams()
       if (type) p.set('type', type)

@@ -87,7 +87,7 @@ export default function AdminModels() {
       {models && models.length > 0 && (
         <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
           {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 60px 60px', gap: 8, padding: '8px 14px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border)', background: 'var(--surface, rgba(128,128,128,0.04))' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 60px 80px 60px', gap: 8, padding: '8px 14px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border)', background: 'var(--surface, rgba(128,128,128,0.04))' }}>
             <span>Model</span>
             <span>Type</span>
             <span>Domain</span>
@@ -95,13 +95,14 @@ export default function AdminModels() {
             <span>Context</span>
             <span>Quant</span>
             <span>Enabled</span>
+            <span>Default</span>
             <span></span>
           </div>
           {models.map((m, i) => (
             <div
               key={m.id}
               style={{
-                display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 60px 60px', gap: 8, padding: '10px 14px', alignItems: 'center',
+                display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 60px 80px 60px', gap: 8, padding: '10px 14px', alignItems: 'center',
                 borderBottom: i < models.length - 1 ? '1px solid var(--border)' : 'none',
                 opacity: m.enabled ? 1 : 0.6,
               }}
@@ -132,6 +133,20 @@ export default function AdminModels() {
                 >
                   {m.enabled ? 'On' : 'Off'}
                 </button>
+              </span>
+              <span>
+                {m.type === 'llm' && (
+                  m.is_default
+                    ? <span style={{ fontSize: 11, color: '#c08020', fontWeight: 600 }}>★ Default</span>
+                    : m.enabled
+                      ? <button
+                          onClick={() => update.mutate({ id: m.id, body: { is_default: true } })}
+                          style={{ padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                        >
+                          Set
+                        </button>
+                      : null
+                )}
               </span>
               <span>
                 <button

@@ -55,18 +55,24 @@ export default function ProjectCreate() {
     setLlmModel('')
   }
 
+  const { data: domainAvailability } = useQuery({
+    queryKey: ['models', 'domain-availability'],
+    queryFn: () => api.models.domainAvailability(),
+  })
   const { data: modelDefaults } = useQuery({
     queryKey: ['models', 'defaults'],
     queryFn: () => api.models.defaults(),
   })
   const { data: llmModels } = useQuery({
-    queryKey: ['models', 'llm'],
-    queryFn: () => api.models.list('llm'),
+    queryKey: ['models', 'llm', domain],
+    queryFn: () => api.models.list('llm', domain),
   })
   const { data: embModels } = useQuery({
     queryKey: ['models', 'embedding', domain],
     queryFn: () => api.models.list('embedding', domain),
   })
+
+  const defaultLlm = modelDefaults?.llm_by_domain?.[domain] ?? null
 
   const create = useMutation({
     mutationFn: () => api.projects.create({
@@ -109,24 +115,29 @@ export default function ProjectCreate() {
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'block', marginBottom: 8 }}>Domain</label>
           <div style={{ display: 'flex', gap: 8 }}>
-            {DOMAIN_OPTIONS.map(opt => (
-              <button
-                key={opt.value}
-                type="button"
-                title={opt.description}
-                onClick={() => handleDomainChange(opt.value)}
-                style={{
-                  flex: 1, padding: '8px 12px', borderRadius: 6, fontSize: 14,
-                  cursor: 'pointer',
-                  border: domain === opt.value ? '2px solid #6b7de0' : '1px solid var(--border)',
-                  background: domain === opt.value ? 'rgba(107,125,224,0.12)' : 'none',
-                  color: domain === opt.value ? '#6b7de0' : 'var(--text)',
-                  fontWeight: domain === opt.value ? 600 : 400,
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
+            {DOMAIN_OPTIONS.map(opt => {
+              const available = domainAvailability == null || domainAvailability[opt.value] !== false
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  title={available ? opt.description : 'No LLM model enabled for this domain — configure in Admin › Models'}
+                  disabled={!available}
+                  onClick={() => handleDomainChange(opt.value)}
+                  style={{
+                    flex: 1, padding: '8px 12px', borderRadius: 6, fontSize: 14,
+                    cursor: available ? 'pointer' : 'not-allowed',
+                    border: domain === opt.value ? '2px solid #6b7de0' : '1px solid var(--border)',
+                    background: domain === opt.value ? 'rgba(107,125,224,0.12)' : 'none',
+                    color: domain === opt.value ? '#6b7de0' : available ? 'var(--text)' : 'var(--text-muted)',
+                    fontWeight: domain === opt.value ? 600 : 400,
+                    opacity: available ? 1 : 0.5,
+                  }}
+                >
+                  {opt.label}{!available && ' (no model)'}
+                </button>
+              )
+            })}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
             {DOMAIN_OPTIONS.find(o => o.value === domain)?.description}
@@ -145,22 +156,31 @@ export default function ProjectCreate() {
             style={{ width: '5ch' }}
           />
         </div>
-        {llmModels && llmModels.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', marginBottom: 4 }}>Language model <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 12 }}>(optional — uses server default if not set)</span></label>
-            <select value={llmModel} onChange={e => setLlmModel(e.target.value)} style={{ width: '100%' }}>
-              <option value="">Server default{modelDefaults ? ` (${modelDefaults.llm_model})` : ''}</option>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 4 }}>Language model</label>
+          {llmModels && llmModels.length > 0 ? (
+            <select
+              value={llmModel || (defaultLlm ?? '')}
+              onChange={e => setLlmModel(e.target.value)}
+              style={{ width: '100%' }}
+            >
               {llmModels.map(m => (
-                <option key={m.id} value={m.id} title={m.description}>{modelOption(m)}</option>
+                <option key={m.id} value={m.id} title={m.description}>
+                  {modelOption(m)}{m.is_default ? ' ★' : ''}
+                </option>
               ))}
             </select>
-          </div>
-        )}
+          ) : (
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>
+              No LLM models enabled for this domain. Go to Admin › Models to enable one.
+            </p>
+          )}
+        </div>
         {embModels && embModels.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', marginBottom: 4 }}>Embedding model <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 12 }}>(cannot be changed after embedding)</span></label>
             <select value={embModel} onChange={e => setEmbModel(e.target.value)} style={{ width: '100%' }}>
-              <option value="">Server default{modelDefaults ? ` (${modelDefaults.embedding_model})` : ''}</option>
+              <option value="">Bundled default</option>
               {embModels.map(m => (
                 <option key={m.id} value={m.id} title={m.description}>{modelOption(m)}</option>
               ))}

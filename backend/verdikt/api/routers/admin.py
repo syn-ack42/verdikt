@@ -95,6 +95,7 @@ def _model_dict(m: ModelCatalogRow) -> dict:
         "type": m.type,
         "domain": m.domain,
         "enabled": m.enabled,
+        "is_default": m.is_default,
         "display_name": m.display_name,
         "description": m.description,
         "parameter_size": m.parameter_size,
@@ -202,6 +203,7 @@ def list_models(
 
 class ModelUpdate(BaseModel):
     enabled: bool | None = None
+    is_default: bool | None = None
     type: str | None = None
     domain: str | None = None
     display_name: str | None = None
@@ -220,6 +222,8 @@ def update_model(
         raise HTTPException(status_code=404, detail="Model not found")
     if body.enabled is not None:
         row.enabled = body.enabled
+        if not body.enabled:
+            row.is_default = False  # disabled models cannot be the default
     if body.type is not None:
         row.type = body.type
     if body.domain is not None:
@@ -228,5 +232,16 @@ def update_model(
         row.display_name = body.display_name
     if body.description is not None:
         row.description = body.description
+    if body.is_default is not None:
+        if body.is_default:
+            # Clear any existing default for this type+domain combination
+            effective_domain = body.domain or row.domain
+            effective_type = body.type or row.type
+            session.query(ModelCatalogRow).filter(
+                ModelCatalogRow.type == effective_type,
+                ModelCatalogRow.domain == effective_domain,
+                ModelCatalogRow.id != row.id,
+            ).update({"is_default": False})
+        row.is_default = body.is_default
     session.commit()
     return _model_dict(row)

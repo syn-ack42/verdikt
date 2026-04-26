@@ -36,6 +36,7 @@ export interface ModelCatalogEntry {
   type: 'llm' | 'embedding'
   domain: string
   enabled?: boolean
+  is_default?: boolean
   display_name: string
   description: string
   parameter_size: string | null
