@@ -11,6 +11,7 @@ from jose import JWTError, jwt
 from sqlalchemy import create_engine, text as _text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import NullPool
 
 from verdikt.core.config import AppConfig
 from verdikt.core.user_models import AuthenticatedUser
@@ -90,9 +91,12 @@ def _make_user_engine(db_path: str, db_key: str) -> Engine:
 
         # Use plain sqlite:// dialect so SQLAlchemy doesn't inject its own PRAGMA key.
         # The creator= function overrides the connection path entirely.
+        # NullPool: each Session gets a fresh connection; avoids StaticPool's single-connection
+        # sharing which causes "Cannot operate on a closed database" under concurrent requests.
         engine = create_engine(
             "sqlite:///:memory:",
             creator=_creator,
+            poolclass=NullPool,
         )
     except ImportError:
         log.warning("sqlcipher3 not installed — using plain SQLite (no encryption)")
