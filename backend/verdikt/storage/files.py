@@ -208,35 +208,46 @@ class EncryptedStorageBackend(StorageBackend):
         seen_dirs: set[str] = set()
         entries: list[StorageEntry] = []
 
+        # Pass 1: explicit rows that are direct children of this path.
+        # Register explicit dirs in seen_dirs so pass 2 doesn't synthesize duplicates.
         for row in rows:
             up = row.user_path
             if not up.startswith(prefix):
                 continue
             rel = up[len(prefix):]
-            if not rel:
+            if not rel or "/" in rel:
                 continue
+            entries.append(StorageEntry(
+                name=row.original_name,
+                path=up,
+                is_dir=row.is_dir,
+                size=row.size,
+                modified_at=row.modified_at,
+            ))
+            if row.is_dir:
+                seen_dirs.add(up)
 
+        # Pass 2: synthesize virtual directory entries from deeper descendants
+        # (handles dirs that were never explicitly mkdir'd).
+        for row in rows:
+            up = row.user_path
+            if not up.startswith(prefix):
+                continue
+            rel = up[len(prefix):]
             slash_idx = rel.find("/")
             if slash_idx == -1:
+                continue  # direct children already handled above
+            dir_name = rel[:slash_idx]
+            dir_path = prefix + dir_name
+            if dir_path not in seen_dirs:
+                seen_dirs.add(dir_path)
                 entries.append(StorageEntry(
-                    name=row.original_name,
-                    path=up,
-                    is_dir=row.is_dir,
-                    size=row.size,
+                    name=dir_name,
+                    path=dir_path,
+                    is_dir=True,
+                    size=0,
                     modified_at=row.modified_at,
                 ))
-            else:
-                dir_name = rel[:slash_idx]
-                dir_path = prefix + dir_name
-                if dir_path not in seen_dirs:
-                    seen_dirs.add(dir_path)
-                    entries.append(StorageEntry(
-                        name=dir_name,
-                        path=dir_path,
-                        is_dir=True,
-                        size=0,
-                        modified_at=row.modified_at,
-                    ))
 
         return sorted(entries, key=lambda e: (not e.is_dir, e.name.lower()))
 
