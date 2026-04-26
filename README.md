@@ -86,6 +86,8 @@ Files for ingest are managed per-user at `~/.verdikt/users/<user_id>/files/`. Tw
 
 **Supported formats:** `.txt`, `.md`, `.html`, `.epub`, `.pdf`, `.rtf`
 
+Files are stored encrypted at rest using AES-256-GCM. On disk each file is an opaque UUID-named blob with no extension or readable metadata; filenames, paths, and sizes are kept only in the per-user SQLCipher database. A server admin with filesystem access cannot read file content or determine what files a user has uploaded. Existing plaintext files are migrated automatically on first login after an upgrade.
+
 The storage root is configurable via `VERDIKT_DATA_DIR` (defaults to `~/.verdikt`).
 
 ## Project settings
@@ -197,7 +199,10 @@ pytest -q
     <user_id>/
       verdikt.db            Per-user SQLite database (SQLCipher encrypted)
       chroma/               Per-user ChromaDB vector store
-      files/                Per-user upload root
+      files/                Per-user upload root (AES-256-GCM encrypted UUID blobs)
+        <uuid4>             Encrypted file content (no extension, opaque filename)
+        <uuid4>             ...
+        file_manifest       Metadata lives in verdikt.db, not here
   backups/                  Pre-migration backups (if migration script was run)
 ```
 

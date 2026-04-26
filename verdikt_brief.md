@@ -16,7 +16,7 @@ Verdikt fixes this by being personal, private, and multi-dimensional. Your prefe
 
 ## Design principles
 
-**Privacy first.** Preference data never leaves the user's machine unless they explicitly choose otherwise. No cloud sync by default. Each user's database is encrypted at rest with a key derived from their password (SQLCipher + Argon2id) — unreadable without login. This is not negotiable — it's central to the value proposition and the ethical basis for a potential monetisation model.
+**Privacy first.** Preference data never leaves the user's machine unless they explicitly choose otherwise. No cloud sync by default. Each user's database is encrypted at rest with a key derived from their password (SQLCipher + Argon2id). Uploaded files are encrypted with AES-256-GCM and stored as opaque UUID blobs — a server admin with filesystem access cannot read file content or even determine what files a user has stored. This is not negotiable — it's central to the value proposition and the ethical basis for a potential monetisation model.
 
 **Pluggable everything.** Content sources are plugins. Embedding models are plugins. The rating dimensions are configured per project. The domain (text today, images and audio tomorrow) is an abstraction, not a hardcoded assumption. New sources and new media types should drop in without touching core code.
 
@@ -34,7 +34,7 @@ The system has five layers. Each layer has a single responsibility and communica
 
 **Pipeline layer** — processes MaterialItems through phases: ingest → chunk/embed/cluster → rate → crystallise → evaluate → recommend. Phases are orchestrated by Prefect. Each phase is idempotent where possible. The pipeline layer knows nothing about UI or storage implementation details.
 
-**Storage layer** — SQLite (via SQLAlchemy) for structured data (projects, materials, chunks, ratings, profiles, recommendations). ChromaDB for vector embeddings, one collection per project. Raw files on disk, organised by project. Storage is an abstraction — the pipeline layer calls storage interfaces, not SQLite directly.
+**Storage layer** — SQLite (via SQLAlchemy) for structured data (projects, materials, chunks, ratings, profiles, recommendations). ChromaDB for vector embeddings, one collection per project. User-uploaded files stored encrypted at rest: each file is an AES-256-GCM-encrypted UUID blob with no extension or readable filename on disk; the `file_manifest` table in the per-user SQLCipher database maps UUIDs to virtual paths and metadata. Storage is an abstraction — the pipeline layer calls storage interfaces, not SQLite directly.
 
 **Inference layer** — Ollama running locally for LLM tasks (preference profile crystallisation, LLM judging, explanation generation). sentence-transformers for embeddings. This layer is also abstracted — swapping Ollama for an API-based model should require a config change, not a code change.
 
@@ -102,7 +102,7 @@ AO3Plugin implemented. Plugin registry and entry_points system. Config schema �
 Embedding pre-filter. LLM judge with profile. Recommendation browser UI. Feedback loop (rating a recommendation reinforces the model).
 
 **Milestone 5 — Production hardening** *(complete)*
-User authentication (email/password, HttpOnly JWT cookie). Per-user data isolation with SQLCipher-encrypted databases. Project export/import. AI-accuracy-based confidence indicators. Background AI preview in rating interface. Active learning for chunk selection. Admin user management UI.
+User authentication (email/password, HttpOnly JWT cookie). Per-user data isolation with SQLCipher-encrypted databases. AES-256-GCM file encryption at rest (opaque UUID blobs, metadata in encrypted DB). Project export/import. AI-accuracy-based confidence indicators. Background AI preview in rating interface. Active learning for chunk selection. Admin user management UI.
 
 **Milestone 6 — Domain extensibility**
 Image domain support (CLIP embeddings, image display in rating UI). Validates that the domain abstraction actually works.

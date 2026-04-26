@@ -20,7 +20,7 @@ Five layers with strict separation of concerns:
 
 1. **Plugin layer** — fetches and normalises raw content into `MaterialItem` objects. Plugins know nothing about preference learning. Each plugin declares a JSON Schema config; the UI renders config forms from it automatically.
 2. **Pipeline layer** — processes `MaterialItem`s through phases: `ingest → chunk → embed → cluster → rate → crystallise → evaluate → recommend`. Orchestrated by Prefect. Phases are idempotent. This layer calls storage interfaces, never SQLite directly.
-3. **Storage layer** — SQLite via SQLAlchemy for structured data; ChromaDB (one collection per project) for vectors; raw files on disk. Exposed through interfaces so the pipeline layer is decoupled from implementation.
+3. **Storage layer** — SQLite via SQLAlchemy for structured data; ChromaDB (one collection per project) for vectors; user files encrypted at rest via `EncryptedStorageBackend` (AES-256-GCM, UUID-named blobs, manifest in per-user DB). Exposed through interfaces so the pipeline layer is decoupled from implementation.
 4. **Inference layer** — Ollama for LLM tasks (profile crystallisation, LLM judging, explanations); sentence-transformers for embeddings. Abstracted so swapping providers is a config change.
 5. **UI layer** — React + FastAPI. Three surfaces: project dashboard, rating interface, recommendation browser.
 
@@ -29,6 +29,7 @@ Five layers with strict separation of concerns:
 - **Global auth DB**: `~/.verdikt/auth.db` — plain SQLite, `users` table only (id, email, argon2 hash, salt, is_admin, is_blocked)
 - **Per-user data**: `~/.verdikt/users/<user_id>/` containing `verdikt.db` (SQLCipher-encrypted), `chroma/`, and `files/`
 - **JWT**: HttpOnly cookie `verdikt_token`; payload contains `sub=user_id` and `key=base64(derived_key)`; the derived key is Argon2id(password, salt) and never written to disk; the per-user DB is unreadable without it
+- **File encryption**: `EncryptedStorageBackend` in `backend/verdikt/storage/files.py` — AES-256-GCM, key derived via HKDF-SHA256 from `db_key` with info tag `verdikt-file-encryption-v1`. On-disk files are opaque UUID blobs with no extension; the `file_manifest` table in `verdikt.db` maps UUIDs to virtual paths, original names, and metadata. `resolve()` decrypts to a temp file for parsers that need a real path; `cleanup()` removes temp files at request end. Plaintext files from before this feature are migrated automatically on first login.
 - **`get_current_user()`** in `backend/verdikt/api/deps.py` — validates cookie, returns `User`; every route depends on this
 - **First registered user** is auto-promoted to admin
 
