@@ -3,11 +3,23 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_auth_session, get_current_user
+from verdikt.api.deps import get_auth_session, get_current_user, get_config
+from verdikt.core.config import AppConfig
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.storage.auth_orm import ModelCatalogRow
 
 router = APIRouter(prefix="/api/models", tags=["models"])
+
+
+@router.get("/defaults")
+def get_model_defaults(
+    _user: AuthenticatedUser = Depends(get_current_user),
+    config: AppConfig = Depends(get_config),
+) -> dict:
+    return {
+        "llm_model": config.inference.ollama_model,
+        "embedding_model": config.inference.embedding_model,
+    }
 
 
 @router.get("")

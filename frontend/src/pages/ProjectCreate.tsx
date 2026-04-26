@@ -30,6 +30,10 @@ export default function ProjectCreate() {
   const [llmModel, setLlmModel] = useState<string>('')
   const [embModel, setEmbModel] = useState<string>('')
 
+  const { data: modelDefaults } = useQuery({
+    queryKey: ['models', 'defaults'],
+    queryFn: () => api.models.defaults(),
+  })
   const { data: llmModels } = useQuery({
     queryKey: ['models', 'llm'],
     queryFn: () => api.models.list('llm'),
@@ -92,7 +96,7 @@ export default function ProjectCreate() {
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', marginBottom: 4 }}>Language model <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 12 }}>(optional — uses server default if not set)</span></label>
             <select value={llmModel} onChange={e => setLlmModel(e.target.value)} style={{ width: '100%' }}>
-              <option value="">Server default</option>
+              <option value="">Server default{modelDefaults ? ` (${modelDefaults.llm_model})` : ''}</option>
               {llmModels.map(m => (
                 <option key={m.id} value={m.id} title={m.description}>{modelOption(m)}</option>
               ))}
@@ -103,7 +107,7 @@ export default function ProjectCreate() {
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', marginBottom: 4 }}>Embedding model <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 12 }}>(cannot be changed after embedding)</span></label>
             <select value={embModel} onChange={e => setEmbModel(e.target.value)} style={{ width: '100%' }}>
-              <option value="">Server default</option>
+              <option value="">Server default{modelDefaults ? ` (${modelDefaults.embedding_model})` : ''}</option>
               {embModels.map(m => (
                 <option key={m.id} value={m.id} title={m.description}>{modelOption(m)}</option>
               ))}
