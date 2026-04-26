@@ -5,7 +5,7 @@ import { api } from '../api/client'
 import type { ModelCatalogEntry, User } from '../api/types'
 
 const TYPE_LABELS: Record<string, string> = { llm: 'LLM', embedding: 'Embedding' }
-const DOMAIN_LABELS: Record<string, string> = { text: 'Text', image: 'Image', audio: 'Audio', any: 'Any' }
+const DOMAIN_LABELS: Record<string, string> = { text: 'Text', image: 'Image', any: 'Any' }
 
 function Badge({ label, color }: { label: string; color: string }) {
   return (
@@ -182,7 +182,6 @@ export default function AdminModels() {
               <option value="any">Any</option>
               <option value="text">Text</option>
               <option value="image">Image</option>
-              <option value="audio">Audio</option>
             </select>
 
             <label style={{ display: 'block', fontSize: 12, marginBottom: 4 }}>Description / notes</label>
