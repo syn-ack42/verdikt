@@ -5,7 +5,7 @@ import logging.handlers
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from verdikt.api.routers import admin, ai_rating, auth, export, pipeline, plugins, profile, projects, rating, storage, works
 from verdikt.core.config import AppConfig
@@ -79,7 +79,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(ai_rating.router)
 
     if config.frontend_dir and config.frontend_dir.is_dir():
-        app.mount("/", StaticFiles(directory=config.frontend_dir, html=True), name="frontend")
+        _frontend_root = config.frontend_dir.resolve()
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def serve_spa(full_path: str) -> FileResponse:
+            candidate = (_frontend_root / full_path).resolve()
+            if candidate.is_file() and candidate.is_relative_to(_frontend_root):
+                return FileResponse(candidate)
+            return FileResponse(_frontend_root / "index.html")
 
     return app
 

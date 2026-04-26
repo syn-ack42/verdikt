@@ -1,5 +1,7 @@
 # ── Stage 1: Build frontend ──────────────────────────────────────────────────
 FROM node:20-alpine AS frontend-build
+ARG VITE_BASE=/
+ENV VITE_BASE=${VITE_BASE}
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci --prefer-offline
@@ -26,7 +28,7 @@ FROM python:3.12-slim AS runtime
 
 # Only the runtime SQLCipher shared library — no headers needed
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libsqlcipher0 \
+        libsqlcipher1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=python-build /venv /venv

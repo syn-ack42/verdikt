@@ -19,6 +19,9 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
+# Docker bind-mount data directory
+_data/
+
 # Project data (never commit user content or preference data)
 *.db
 *.sqlite3

@@ -1,27 +1,26 @@
 services:
   verdikt:
-    build: .
+    build:
+      context: .
+      args:
+        VITE_BASE: /verdikt/
     image: verdikt:latest
     restart: unless-stopped
     ports:
       - "8765:8765"
     volumes:
-      - verdikt-data:/var/lib/verdikt
+      - ./_data:/var/lib/verdikt
     environment:
       # Point at the host's Ollama instance.
       # On Linux, host.docker.internal requires the extra_hosts entry below.
       # On macOS / Docker Desktop it works without it.
       VERDIKT_INFERENCE__OLLAMA_BASE_URL: http://host.docker.internal:11434
       # Lock CORS to the port the container is exposed on
-      VERDIKT_CORS_ORIGINS: '["http://localhost:8765"]'
+      VERDIKT_CORS_ORIGINS: '["https://docker.franz-renger.de"]'
       # Uncomment to set a stable JWT secret instead of auto-generating on first run:
       # VERDIKT_JWT_SECRET: "change-me-to-a-long-random-string"
-      # Uncomment to serve behind a reverse-proxy subpath (e.g. /verdikt):
-      # VERDIKT_ROOT_PATH: /verdikt
+      VERDIKT_ROOT_PATH: /verdikt
     extra_hosts:
       # Allows host.docker.internal to resolve on Linux
       - "host.docker.internal:host-gateway"
 
-volumes:
-  verdikt-data:
-    driver: local

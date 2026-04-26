@@ -4,7 +4,7 @@ import type {
   UpdatePluginEvent, UpdatePluginStatus, User, WorkDetail,
 } from './types'
 
-const BASE = import.meta.env.VITE_API_URL ?? '/api'
+const BASE = import.meta.env.VITE_API_URL ?? `${import.meta.env.BASE_URL}api`
 
 async function req<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -16,8 +16,8 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
   })
   if (res.status === 401) {
     // Redirect to login on auth failure (unless we're already there)
-    if (!window.location.pathname.startsWith('/login')) {
-      window.location.href = '/login'
+    if (!window.location.pathname.startsWith(`${import.meta.env.BASE_URL}login`)) {
+      window.location.href = `${import.meta.env.BASE_URL}login`
     }
     const err = await res.json().catch(() => ({ detail: 'Not authenticated' }))
     throw Object.assign(new Error(err.detail ?? 'Not authenticated'), { status: 401 })
@@ -32,8 +32,8 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
 
 async function streamFetch(path: string, opts: RequestInit, onEvent: (e: unknown) => void): Promise<void> {
   const res = await fetch(`${BASE}${path}`, { ...opts, credentials: 'include' })
-  if (res.status === 401 && !window.location.pathname.startsWith('/login')) {
-    window.location.href = '/login'
+  if (res.status === 401 && !window.location.pathname.startsWith(`${import.meta.env.BASE_URL}login`)) {
+    window.location.href = `${import.meta.env.BASE_URL}login`
     return
   }
   if (!res.ok) {
