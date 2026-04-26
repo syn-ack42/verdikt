@@ -579,12 +579,19 @@ def get_work_detail(
     if item is None:
         raise HTTPException(status_code=404, detail="Work not found")
 
+    import base64
     content: str | None = None
+    content_is_image = False
     if isinstance(item.content, bytes):
-        try:
-            content = item.content.decode("utf-8", errors="replace")
-        except Exception:
-            content = None
+        from verdikt.core.models import Domain
+        if getattr(item, "domain", None) == Domain.IMAGE or getattr(item, "domain", None) == "image":
+            content = base64.b64encode(item.content).decode()
+            content_is_image = True
+        else:
+            try:
+                content = item.content.decode("utf-8", errors="replace")
+            except Exception:
+                content = None
     else:
         content = item.content
 
@@ -602,6 +609,7 @@ def get_work_detail(
     return {
         **_work_response(item),
         "content": content,
+        "content_is_image": content_is_image,
         "storage_path": storage_path,
     }
 

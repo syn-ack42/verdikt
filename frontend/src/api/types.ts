@@ -77,6 +77,7 @@ export type PipelineStreamEvent =
 export interface ChunkInfo {
   id: string
   content: string | null
+  domain: 'text' | 'image'
   position: number
   cluster_id: number | null
 }
@@ -187,6 +188,7 @@ export type UpdatePluginEvent =
 
 export interface WorkDetail extends MaterialItem {
   content: string | null
+  content_is_image?: boolean
   storage_path: string | null
 }
 
@@ -196,6 +198,7 @@ export interface RatedChunkEntry {
   chunk_position: number
   chunk_count: number
   chunk_content: string | null
+  chunk_domain?: 'text' | 'image'
   material_item_id: string
   work_seq: number | null
   work_title: string | null

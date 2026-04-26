@@ -68,10 +68,19 @@ def next_chunk(
     total_rated = rating_count - skipped
     confidence = min(1.0, rating_count / proj.crystallisation_threshold) if proj.crystallisation_threshold > 0 else 1.0
 
+    import base64
+    if isinstance(chunk.content, bytes):
+        chunk_content = base64.b64encode(chunk.content).decode()
+        chunk_domain = "image"
+    else:
+        chunk_content = chunk.content
+        chunk_domain = "text"
+
     response: dict = {
         "chunk": {
             "id": chunk.id,
-            "content": chunk.content if isinstance(chunk.content, str) else None,
+            "content": chunk_content,
+            "domain": chunk_domain,
             "position": chunk.position,
             "cluster_id": chunk.cluster_id,
         },
@@ -189,12 +198,20 @@ def list_rated_chunks(
             sum(r.dimension_scores.values()) / len(r.dimension_scores)
             if r.dimension_scores else None
         )
+        import base64 as _b64
+        if isinstance(chunk.content, bytes):
+            chunk_content = _b64.b64encode(chunk.content).decode()
+            chunk_domain = "image"
+        else:
+            chunk_content = chunk.content
+            chunk_domain = "text"
         result.append({
             "rating_id": r.id,
             "chunk_id": r.chunk_id,
             "chunk_position": chunk.position,
             "chunk_count": chunk_count_cache.get(mid, 0),
-            "chunk_content": chunk.content if isinstance(chunk.content, str) else None,
+            "chunk_content": chunk_content,
+            "chunk_domain": chunk_domain,
             "material_item_id": mid,
             "work_seq": mat.project_seq if mat else None,
             "work_title": mat.work_title if mat else None,

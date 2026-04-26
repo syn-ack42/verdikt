@@ -121,16 +121,22 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
                 {editing.author && ` — ${editing.author}`}
                 {' · '}chunk {editing.chunk_position + 1} of {editing.chunk_count}
               </div>
-              <div style={{
-                background: 'var(--surface, rgba(128,128,128,0.08))',
-                border: '1px solid var(--border)',
-                borderRadius: 8, padding: '12px 16px',
-                lineHeight: 1.7, fontSize: 14, whiteSpace: 'pre-wrap',
-                maxHeight: 'clamp(150px, 30vh, 320px)', overflowY: 'auto',
-                fontFamily: 'Georgia, serif',
-              }}>
-                {editing.chunk_content ?? '(binary content)'}
-              </div>
+              {editing.chunk_domain === 'image' && editing.chunk_content ? (
+                <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
+                  <img src={`data:image/jpeg;base64,${editing.chunk_content}`} alt="rated image" style={{ maxWidth: '100%', maxHeight: 'clamp(150px, 30vh, 320px)', objectFit: 'contain', borderRadius: 4 }} />
+                </div>
+              ) : (
+                <div style={{
+                  background: 'var(--surface, rgba(128,128,128,0.08))',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8, padding: '12px 16px',
+                  lineHeight: 1.7, fontSize: 14, whiteSpace: 'pre-wrap',
+                  maxHeight: 'clamp(150px, 30vh, 320px)', overflowY: 'auto',
+                  fontFamily: 'Georgia, serif',
+                }}>
+                  {editing.chunk_content ?? '(no content)'}
+                </div>
+              )}
               {editing.explanations && Object.keys(editing.explanations).length > 0 && (
                 <div
                   onClick={() => setExpandedExpl(expandedExpl === editing.rating_id ? null : editing.rating_id)}

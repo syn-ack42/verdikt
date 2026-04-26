@@ -110,9 +110,13 @@ export default function WorkDetailModal({ projectId, workRef, onClose, onRemove 
               {/* Full content */}
               <div>
                 <h4 style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Full Content
+                  {work.content_is_image ? 'Image' : 'Full Content'}
                 </h4>
-                {work.content ? (
+                {work.content_is_image && work.content ? (
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
+                    <img src={`data:image/jpeg;base64,${work.content}`} alt={work.work_title ?? 'image'} style={{ maxWidth: '100%', maxHeight: 'clamp(200px, 40vh, 480px)', objectFit: 'contain', borderRadius: 4 }} />
+                  </div>
+                ) : work.content ? (
                   <div style={{
                     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
                     padding: '12px 16px', maxHeight: 'clamp(180px, 35vh, 400px)', overflowY: 'auto',
@@ -123,7 +127,7 @@ export default function WorkDetailModal({ projectId, workRef, onClose, onRemove 
                     {work.content}
                   </div>
                 ) : (
-                  <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>(Binary content — not displayable)</p>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>(No content)</p>
                 )}
               </div>
             </>

@@ -236,16 +236,16 @@ export default function RatingInterface() {
         background: 'var(--chunk-bg)',
         border: '1px solid var(--border)',
         borderRadius: 8,
-        padding: '12px 16px',
         marginBottom: 16,
-        lineHeight: 1.7,
-        fontSize: 14,
-        whiteSpace: 'pre-wrap',
-        fontFamily: 'Georgia, serif',
-        maxHeight: 'clamp(150px, 35vh, 320px)',
-        overflowY: 'auto',
+        ...(chunk.domain === 'image'
+          ? { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8, maxHeight: 'clamp(200px, 50vh, 520px)', overflow: 'hidden' }
+          : { padding: '12px 16px', lineHeight: 1.7, fontSize: 14, whiteSpace: 'pre-wrap', fontFamily: 'Georgia, serif', maxHeight: 'clamp(150px, 35vh, 320px)', overflowY: 'auto' }
+        ),
       }}>
-        {chunk.content ?? '(binary content)'}
+        {chunk.domain === 'image' && chunk.content
+          ? <img src={`data:image/jpeg;base64,${chunk.content}`} alt={material_item.work_title ?? 'image'} style={{ maxWidth: '100%', maxHeight: 'clamp(200px, 50vh, 500px)', objectFit: 'contain', borderRadius: 4 }} />
+          : chunk.content ?? '(no content)'
+        }
       </div>
 
       {mode === 'confirm_ai' && data?.ai_explanations && Object.keys(data.ai_explanations).length > 0 && (
