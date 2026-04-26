@@ -20,6 +20,16 @@ class ChunkerBase(ABC):
         """Return the domain-native size of a chunk (words, frames, tiles, etc.)."""
 
 
+class IdentityChunker(ChunkerBase):
+    """One item → one chunk. Used for image (and future audio) domains."""
+
+    def chunk(self, content: str | bytes) -> list[str | bytes]:
+        return [content] if content else []
+
+    def measure(self, chunk: str | bytes) -> int:
+        return 1
+
+
 class TextChunker(ChunkerBase):
     """Splits text into paragraph-respecting chunks within a word-count window.
 

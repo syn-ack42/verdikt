@@ -11,7 +11,14 @@ from sqlalchemy.orm import Session
 from verdikt.api.deps import get_config, get_current_user, get_session
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.resolver import resolve_embedder
-from verdikt.pipeline.chunker import TextChunker
+from verdikt.core.models import Domain
+from verdikt.pipeline.chunker import IdentityChunker, TextChunker
+
+
+def _make_chunker(proj):
+    if getattr(proj.domain, "value", proj.domain) == Domain.IMAGE.value:
+        return IdentityChunker()
+    return TextChunker(min_words=proj.chunk_min_size, max_words=proj.chunk_max_size)
 from verdikt.pipeline.flows import run_pipeline_flow
 from verdikt.pipeline.runner import PipelineRunner
 from verdikt.storage.chroma import ChromaVectorStore
@@ -42,7 +49,7 @@ def run_pipeline(
         chunk_store=SQLiteChunkStore(session),
         vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
         embedder=resolve_embedder(proj, config),
-        chunker=TextChunker(min_words=proj.chunk_min_size, max_words=proj.chunk_max_size),
+        chunker=_make_chunker(proj),
     )
     result = run_pipeline_flow(project_id=proj.id, runner=runner)
     session.commit()
@@ -64,7 +71,7 @@ def _make_runner(proj, session, config) -> PipelineRunner:
         chunk_store=SQLiteChunkStore(session),
         vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
         embedder=SentenceTransformerEmbedder(config.inference.embedding_model),
-        chunker=TextChunker(min_words=proj.chunk_min_size, max_words=proj.chunk_max_size),
+        chunker=_make_chunker(proj),
     )
 
 
@@ -82,7 +89,7 @@ def run_pipeline_stream(
         chunk_store=SQLiteChunkStore(session),
         vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
         embedder=resolve_embedder(proj, config),
-        chunker=TextChunker(min_words=proj.chunk_min_size, max_words=proj.chunk_max_size),
+        chunker=_make_chunker(proj),
     )
 
     def event_stream() -> Generator[str, None, None]:
