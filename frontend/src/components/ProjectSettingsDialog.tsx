@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import DimensionEditor from './DimensionEditor'
@@ -21,10 +21,29 @@ export default function ProjectSettingsDialog({ project, ratings, onClose }: Pro
   const [chunkMin, setChunkMin] = useState(project.chunk_min_size)
   const [chunkMax, setChunkMax] = useState(project.chunk_max_size)
   const [dims, setDims] = useState<RatingDimension[]>(project.rating_dimensions)
+  const [llmModel, setLlmModel] = useState(project.llm_model ?? '')
+  const [embModel, setEmbModel] = useState(project.embedding_model ?? '')
+  const [embChanged, setEmbChanged] = useState(false)
+
+  const isImage = project.domain === 'image'
 
   const originalNames = project.rating_dimensions.map(d => d.name)
   const originalDescriptions = project.rating_dimensions.map(d => d.description)
   const ratedNames = new Set(ratings.flatMap(r => Object.keys(r.dimension_scores)))
+
+  const { data: modelDefaults } = useQuery({
+    queryKey: ['model-defaults'],
+    queryFn: () => api.models.defaults(),
+  })
+  const { data: llmModels } = useQuery({
+    queryKey: ['models', 'llm', project.domain],
+    queryFn: () => api.models.list('llm', project.domain),
+  })
+  const { data: embModels } = useQuery({
+    queryKey: ['models', 'embedding', project.domain],
+    queryFn: () => api.models.list('embedding', project.domain),
+    enabled: !isImage,
+  })
 
   const deleteProject = useMutation({
     mutationFn: () => api.projects.delete(project.id),
@@ -46,8 +65,9 @@ export default function ProjectSettingsDialog({ project, ratings, onClose }: Pro
         description: description || undefined,
         rating_dimensions: dims,
         crystallisation_threshold: threshold,
-        chunk_min_size: chunkMin,
-        chunk_max_size: chunkMax,
+        ...(isImage ? {} : { chunk_min_size: chunkMin, chunk_max_size: chunkMax }),
+        llm_model: llmModel || undefined,
+        embedding_model: embModel || undefined,
         ...(Object.keys(renames).length > 0 ? { dimension_renames: renames } : {}),
       })
     },
@@ -68,6 +88,9 @@ export default function ProjectSettingsDialog({ project, ratings, onClose }: Pro
     boxSizing: 'border-box',
     fontSize: 14,
   }
+
+  const defaultLlmLabel = modelDefaults ? ` (${modelDefaults.llm_model})` : ''
+  const defaultEmbLabel = modelDefaults ? ` (${modelDefaults.embedding_model})` : ''
 
   return (
     <div
@@ -111,22 +134,63 @@ export default function ProjectSettingsDialog({ project, ratings, onClose }: Pro
                   style={{ ...inputStyle, width: 100 }}
                 />
               </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: 4, fontSize: 13, fontWeight: 600 }}>Chunk size (min / max words)</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input
-                    type="number" min={100} value={chunkMin}
-                    onChange={e => setChunkMin(Number(e.target.value))}
-                    style={{ ...inputStyle, width: 80 }}
-                  />
-                  <span style={{ color: 'var(--text-muted)' }}>–</span>
-                  <input
-                    type="number" min={100} value={chunkMax}
-                    onChange={e => setChunkMax(Number(e.target.value))}
-                    style={{ ...inputStyle, width: 80 }}
-                  />
+              {!isImage && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: 4, fontSize: 13, fontWeight: 600 }}>Chunk size (min / max words)</label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      type="number" min={100} value={chunkMin}
+                      onChange={e => setChunkMin(Number(e.target.value))}
+                      style={{ ...inputStyle, width: 80 }}
+                    />
+                    <span style={{ color: 'var(--text-muted)' }}>–</span>
+                    <input
+                      type="number" min={100} value={chunkMax}
+                      onChange={e => setChunkMax(Number(e.target.value))}
+                      style={{ ...inputStyle, width: 80 }}
+                    />
+                  </div>
                 </div>
+              )}
+            </div>
+
+            <div style={{ marginBottom: 16, display: 'flex', gap: 16 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: 4, fontSize: 13, fontWeight: 600 }}>Language model</label>
+                <select
+                  value={llmModel}
+                  onChange={e => setLlmModel(e.target.value)}
+                  style={{ ...inputStyle }}
+                >
+                  <option value="">Server default{defaultLlmLabel}</option>
+                  {(llmModels ?? []).map(m => (
+                    <option key={m.id} value={m.id}>{m.display_name || m.id}{m.parameter_size ? ` · ${m.parameter_size}` : ''}</option>
+                  ))}
+                </select>
               </div>
+              {!isImage && (
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', marginBottom: 4, fontSize: 13, fontWeight: 600 }}>Embedding model</label>
+                  <select
+                    value={embModel}
+                    onChange={e => {
+                      setEmbModel(e.target.value)
+                      setEmbChanged(e.target.value !== (project.embedding_model ?? ''))
+                    }}
+                    style={{ ...inputStyle }}
+                  >
+                    <option value="">Server default{defaultEmbLabel}</option>
+                    {(embModels ?? []).map(m => (
+                      <option key={m.id} value={m.id}>{m.display_name || m.id}</option>
+                    ))}
+                  </select>
+                  {embChanged && (
+                    <p style={{ margin: '6px 0 0', fontSize: 12, color: '#c08020' }}>
+                      Changing the embedding model invalidates existing vectors. Re-run the pipeline after saving to re-embed all works.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div style={{ marginBottom: 8 }}>
