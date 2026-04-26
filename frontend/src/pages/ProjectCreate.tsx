@@ -7,10 +7,10 @@ import type { ModelCatalogEntry, RatingDimension } from '../api/types'
 
 type Domain = 'text' | 'image' | 'audio'
 
-const DOMAIN_OPTIONS: { value: Domain; label: string; description: string }[] = [
+const DOMAIN_OPTIONS: { value: Domain; label: string; description: string; disabled?: boolean }[] = [
   { value: 'text', label: 'Text', description: 'Prose, articles, stories, documents' },
   { value: 'image', label: 'Image', description: 'Photos, illustrations, artwork' },
-  { value: 'audio', label: 'Audio', description: 'Music, podcasts, recordings' },
+  { value: 'audio', label: 'Audio', description: 'Not yet supported', disabled: true },
 ]
 
 const DEFAULT_DIMS: Record<Domain, RatingDimension[]> = {
@@ -121,13 +121,16 @@ export default function ProjectCreate() {
                 key={opt.value}
                 type="button"
                 title={opt.description}
-                onClick={() => handleDomainChange(opt.value)}
+                disabled={opt.disabled}
+                onClick={() => !opt.disabled && handleDomainChange(opt.value)}
                 style={{
-                  flex: 1, padding: '8px 12px', borderRadius: 6, fontSize: 14, cursor: 'pointer',
+                  flex: 1, padding: '8px 12px', borderRadius: 6, fontSize: 14,
+                  cursor: opt.disabled ? 'not-allowed' : 'pointer',
                   border: domain === opt.value ? '2px solid #6b7de0' : '1px solid var(--border)',
                   background: domain === opt.value ? 'rgba(107,125,224,0.12)' : 'none',
-                  color: domain === opt.value ? '#6b7de0' : 'var(--text)',
+                  color: opt.disabled ? 'var(--text-muted)' : domain === opt.value ? '#6b7de0' : 'var(--text)',
                   fontWeight: domain === opt.value ? 600 : 400,
+                  opacity: opt.disabled ? 0.5 : 1,
                 }}
               >
                 {opt.label}
