@@ -122,14 +122,24 @@ export default function ProjectList() {
                 Manage Files
               </button>
               {user?.is_admin && (
-                <button
-                  onClick={() => { setShowSettingsMenu(false); navigate('/admin/users') }}
-                  style={{ width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface, rgba(255,255,255,0.06))')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                >
-                  Admin: Users
-                </button>
+                <>
+                  <button
+                    onClick={() => { setShowSettingsMenu(false); navigate('/admin/users') }}
+                    style={{ width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface, rgba(255,255,255,0.06))')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                  >
+                    Admin: Users
+                  </button>
+                  <button
+                    onClick={() => { setShowSettingsMenu(false); navigate('/admin/models') }}
+                    style={{ width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface, rgba(255,255,255,0.06))')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                  >
+                    Admin: Models
+                  </button>
+                </>
               )}
               <button
                 onClick={() => { setShowSettingsMenu(false); handleLogout() }}
