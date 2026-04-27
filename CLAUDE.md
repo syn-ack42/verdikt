@@ -10,7 +10,7 @@ Verdikt is a local-first, open-source **preference learning platform**. Users ra
 
 - **Backend**: Python, FastAPI, SQLAlchemy + SQLite (SQLCipher for per-user encryption), Prefect (pipeline orchestration)
 - **Frontend**: React + TypeScript, Vite, TanStack Query
-- **ML**: Ollama (local LLM), sentence-transformers (embeddings), ChromaDB (vector store)
+- **ML**: Ollama (local LLM), sentence-transformers (text embeddings), OpenAI CLIP via `transformers` (image embeddings), ChromaDB (vector store)
 - **Auth**: HttpOnly JWT cookie (`SameSite=Lax`), Argon2id password hashing
 - **Plugin system**: Python packages registered via `entry_points`
 
@@ -18,15 +18,15 @@ Verdikt is a local-first, open-source **preference learning platform**. Users ra
 
 Five layers with strict separation of concerns:
 
-1. **Plugin layer** — fetches and normalises raw content into `MaterialItem` objects. Plugins know nothing about preference learning. Each plugin declares a JSON Schema config; the UI renders config forms from it automatically.
-2. **Pipeline layer** — processes `MaterialItem`s through phases: `ingest → chunk → embed → cluster → rate → crystallise → evaluate → recommend`. Orchestrated by Prefect. Phases are idempotent. This layer calls storage interfaces, never SQLite directly.
-3. **Storage layer** — SQLite via SQLAlchemy for structured data; ChromaDB (one collection per project) for vectors; user files encrypted at rest via `EncryptedStorageBackend` (AES-256-GCM, UUID-named blobs, manifest in per-user DB). Exposed through interfaces so the pipeline layer is decoupled from implementation.
-4. **Inference layer** — Ollama for LLM tasks (profile crystallisation, LLM judging, explanations); sentence-transformers for embeddings. Abstracted so swapping providers is a config change.
+1. **Plugin layer** — fetches and normalises raw content into `MaterialItem` objects. Plugins know nothing about preference learning. Each plugin declares a JSON Schema config; the UI renders config forms from it automatically. Plugins declare `supported_domains: ClassVar[frozenset[Domain]]` to restrict which project domains they appear in (e.g. AO3 is text-only; Storage plugin supports text and image).
+2. **Pipeline layer** — processes `MaterialItem`s through phases: `ingest → chunk → embed → cluster → rate → crystallise → evaluate → recommend`. Orchestrated by Prefect with `cache_policy=NO_CACHE` on all tasks (PipelineRunner is not serialisable). Phases are idempotent. This layer calls storage interfaces, never SQLite directly.
+3. **Storage layer** — SQLite via SQLAlchemy for structured data; ChromaDB (one collection per project) for vectors; user files encrypted at rest via `EncryptedStorageBackend` (AES-256-GCM, UUID-named blobs, manifest in per-user DB). Exposed through interfaces so the pipeline layer is decoupled from implementation. User DB engines use `NullPool` to prevent connection sharing across concurrent requests.
+4. **Inference layer** — Ollama for LLM tasks (profile crystallisation, LLM judging, explanations); sentence-transformers for text embeddings; `CLIPEmbedder` (`transformers.CLIPModel` + `CLIPImageProcessor`, `openai/clip-vit-base-patch32`) for image embeddings. `backend/verdikt/inference/resolver.py` is the single routing point: given a project and config it returns the correct `EmbedderBase` implementation. Per-project model overrides apply; domain determines embedder class.
 5. **UI layer** — React + FastAPI. Three surfaces: project dashboard, rating interface, recommendation browser.
 
 ## Auth and per-user isolation
 
-- **Global auth DB**: `$VERDIKT_DATA_DIR/auth.db` (default `/var/lib/verdikt/auth.db`) — plain SQLite, `users` table only (id, email, argon2 hash, salt, is_admin, is_blocked)
+- **Global auth DB**: `$VERDIKT_DATA_DIR/auth.db` (default `/var/lib/verdikt/auth.db`) — plain SQLite, `users` table (id, email, argon2 hash, salt, is_admin, is_blocked) and `model_catalog` table (Ollama model registry with per-domain defaults)
 - **Per-user data**: `$VERDIKT_USERS_DIR/<user_id>/` (default `data_dir/users/<user_id>/`) containing `verdikt.db` (SQLCipher-encrypted), `chroma/`, and `files/`
 - **Two configurable roots**: `VERDIKT_DATA_DIR` for system files; `VERDIKT_USERS_DIR` for user spaces (can be a separate volume). Both default to `/var/lib/verdikt[/users]`.
 - **JWT**: HttpOnly cookie `verdikt_token`; payload contains `sub=user_id` and `key=base64(derived_key)`; the derived key is Argon2id(password, salt) and never written to disk; the per-user DB is unreadable without it
@@ -92,6 +92,29 @@ The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.y
 
 **Ollama:** expected on the host; `docker-compose.yml` sets `host.docker.internal:11434` with `extra_hosts: host.docker.internal:host-gateway` for Linux compatibility.
 
+## Domain implementation details
+
+### Text projects
+- Chunker: `TextChunker` (paragraph-aware word-count windows, configurable min/max per project)
+- Embedder: `SentenceTransformerEmbedder` (bundled, no Ollama needed); Ollama embedding models selectable via catalog
+- LLM: any Ollama text/any-domain model; must be set as catalog default or overridden per project
+- Rating UI: renders chunk text; crystalliser uses full text content as examples in LLM prompts
+
+### Image projects
+- Chunker: `IdentityChunker` (1 image = 1 chunk, always; chunk size settings hidden in UI)
+- Embedder: `CLIPEmbedder` using `openai/clip-vit-base-patch32` via HuggingFace `transformers`; not catalog-managed
+- LLM: must be a vision-capable Ollama model; `LLMJudge` sends base64-encoded image bytes in Ollama's `images` field
+- Rating UI: renders `<img src="data:image/jpeg;base64,...">` using `chunk_domain` flag from API
+- Crystalliser: image chunks use positional label `[image #N]` in LLM prompts (no text content to quote)
+- AI rater: skips text-embedding similarity ordering (CLIP cannot embed text summaries); uses random ordering instead
+
+### Model catalog
+- `auth.db` `model_catalog` table: `ModelCatalogRow` in `backend/verdikt/storage/auth_orm.py`
+- Admin syncs from Ollama via `POST /api/admin/models/sync`; auto-detects type (embedding vs LLM) and domain (text/image/any) from model name and families/capabilities
+- `is_default: bool` per row; at most one default per type+domain; "any"-domain conflicts are cleared on set
+- `GET /api/models/defaults` → `{llm_by_domain: {text: model_id|null, image: model_id|null}}`
+- `GET /api/models/domain-availability` → `{text: bool, image: bool}` — domains with no enabled LLM are disabled in project create
+
 ## Build order (milestones)
 
 1. ✅ `MaterialItem` dataclass + SQLite schema + `FileDropPlugin` + chunk/embed/cluster pipeline (no UI)
@@ -99,7 +122,7 @@ The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.y
 3. ✅ `AO3Plugin` + plugin registry (`entry_points`) + auto-generated config forms
 4. ✅ Embedding pre-filter + LLM judge + recommendation browser + feedback loop
 5. ✅ Auth (JWT + Argon2id) + per-user SQLCipher encryption + project export/import + AI accuracy confidence + background AI preview + active learning + admin UI
-6. Image domain support (CLIP) — validates domain abstraction
+6. ✅ Image domain support — CLIP embedder, vision LLM judging, identity chunker, domain-filtered plugins, per-domain model catalog with admin-managed defaults
 
 ## Branch conventions
 

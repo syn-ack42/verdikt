@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterator
+from typing import ClassVar
 
 from verdikt.core.models import ContentType, Domain, MaterialItem
 from verdikt.plugins.base import PluginBase
@@ -46,6 +47,11 @@ from verdikt.plugins.base import PluginBase
 
 class MyPlugin(PluginBase):
     plugin_name = "myplugin"   # must be unique across installed plugins
+
+    # Optional: restrict which project domains this plugin appears in.
+    # Default is frozenset(Domain) — all domains. Restrict when your source
+    # only makes sense for a specific domain (e.g. a text-only API).
+    supported_domains: ClassVar[frozenset[Domain]] = frozenset({Domain.TEXT})
 
     def __init__(self, config: dict) -> None:
         self._config = config
@@ -160,7 +166,7 @@ Verdikt discovers the plugin automatically via `importlib.metadata.entry_points`
 |---|---|
 | `Domain.TEXT` | prose, articles, fan fiction, documents |
 | `Domain.IMAGE` | photos, artwork, illustrations |
-| `Domain.AUDIO` | music, podcasts, recorded speech |
+| `Domain.AUDIO` | music, podcasts, recorded speech *(no UI support yet — do not use)* |
 
 ### `ContentType` values
 
@@ -320,12 +326,49 @@ def test_estimate_count(plugin):
 
 ---
 
+## Writing an image plugin
+
+Image plugins work identically to text plugins at the `MaterialItem` level. The key differences:
+
+- Set `domain=Domain.IMAGE` and `content_type=ContentType.JPEG` (or `PNG`)
+- `content` must be raw image **bytes**, not a string
+- Set `supported_domains = frozenset({Domain.IMAGE})` so the plugin only appears in image projects
+- The pipeline uses `IdentityChunker` for image projects — each `MaterialItem` becomes exactly one chunk; do not pre-split images yourself
+- The pipeline uses `CLIPEmbedder` for image projects — no Ollama embedding is needed
+- Compute `content_hash` as `hashlib.sha256(image_bytes).hexdigest()`
+
+```python
+class MyImagePlugin(PluginBase):
+    plugin_name = "myimages"
+    supported_domains: ClassVar[frozenset[Domain]] = frozenset({Domain.IMAGE})
+
+    def fetch(self, project_id: str) -> Iterator[MaterialItem]:
+        for path in self._list_images():
+            raw = path.read_bytes()
+            yield MaterialItem(
+                project_id=project_id,
+                source_plugin=self.plugin_name,
+                source_path=str(path),
+                work_title=path.name,
+                content=raw,
+                content_hash=hashlib.sha256(raw).hexdigest(),
+                domain=Domain.IMAGE,
+                content_type=ContentType.JPEG,  # or ContentType.PNG
+            )
+```
+
+The rating UI automatically renders image chunks as `<img>` elements. The LLM judge sends image bytes to Ollama via its `images` field — ensure the project's LLM model is vision-capable (e.g. `llava:7b`).
+
+---
+
 ## Packaging checklist
 
 - [ ] `plugin_name` is set as a class attribute and matches the `entry_points` key
+- [ ] `supported_domains` is set if the plugin only applies to specific domains (omit for all-domain plugins)
 - [ ] `config_schema()` returns valid JSON Schema with `"required"` for all mandatory fields
 - [ ] Every `MaterialItem` has `source_path` set (for upsert detection)
 - [ ] Every `MaterialItem` has `content_hash` set (for change detection)
+- [ ] `content` is `str` for text, `bytes` for images
 - [ ] `fetch()` is a generator (`yield`, not `return list`)
 - [ ] The entry point is declared in `pyproject.toml` under `verdikt.plugins`
 - [ ] Rate limits and ToS respected; `User-Agent` identifies your plugin
