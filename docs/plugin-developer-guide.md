@@ -166,7 +166,7 @@ Verdikt discovers the plugin automatically via `importlib.metadata.entry_points`
 |---|---|
 | `Domain.TEXT` | prose, articles, fan fiction, documents |
 | `Domain.IMAGE` | photos, artwork, illustrations |
-| `Domain.AUDIO` | music, podcasts, recorded speech *(no UI support yet — do not use)* |
+| `Domain.AUDIO` | music, podcasts, recorded speech *(not yet supported — do not use)* |
 
 ### `ContentType` values
 
