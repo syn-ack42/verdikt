@@ -112,6 +112,7 @@ def _make_user_engine(db_path: str, db_key: str) -> Engine:
         engine = create_engine(
             f"sqlite:///{db_path}",
             connect_args={"check_same_thread": False},
+            poolclass=NullPool,
         )
     return engine
 

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from verdikt.core.models import Chunk, DimensionProfile, PreferenceProfile, Project, Rating, RatingDimension
+from verdikt.core.models import Chunk, DimensionProfile, Domain, PreferenceProfile, Project, Rating, RatingDimension
 from verdikt.inference.ai_rater import AIRater
 from verdikt.inference.judge import LLMJudge
 
@@ -205,3 +205,63 @@ def test_user_stop_respected():
     final = events[-1]
     assert final["type"] == "stopped"
     assert final["reason"] == "user_stopped"
+
+
+# ── image domain ──────────────────────────────────────────────────────────────
+
+def _make_image_project() -> Project:
+    return Project(
+        name="Images",
+        domain=Domain.IMAGE,
+        rating_dimensions=[RatingDimension(name="Composition", description="Balance", weight=1.0)],
+    )
+
+
+def _make_image_profile(project: Project) -> PreferenceProfile:
+    return PreferenceProfile(
+        project_id=project.id,
+        overall_summary="Prefers balanced compositions.",
+        dimensions=[DimensionProfile(name="Composition", description="Balance", summary="Good.", typical_score=4.0)],
+        rating_count=10,
+    )
+
+
+def test_image_project_skips_text_embedding():
+    """For image projects the embedder must not be called (CLIP rejects text)."""
+    project = _make_image_project()
+    profile = _make_image_profile(project)
+    chunks = [
+        Chunk(id="img1", material_item_id="m1", project_id=project.id,
+              content=b"\xff\xd8\xff", position=0, size=1),
+    ]
+    chunk_store, rating_store, mat_store, vs, emb = _make_stores(chunks, [])
+    rating_store.get_all_rated_chunk_ids.return_value = set()
+
+    judge = MagicMock(spec=LLMJudge)
+    judge.score_chunk.return_value = ({"Composition": 4.0}, 4.0, {})
+
+    rater = AIRater(vs, emb, judge, chunk_store, rating_store, mat_store)
+    _collect_events(rater, project, profile, batch_size=10)
+
+    emb.embed.assert_not_called()
+
+
+def test_image_project_still_rates_chunks():
+    """Image project AI rater must score chunks even without similarity ordering."""
+    project = _make_image_project()
+    profile = _make_image_profile(project)
+    chunks = [
+        Chunk(id=f"img{i}", material_item_id="m1", project_id=project.id,
+              content=b"\xff\xd8\xff", position=i, size=1)
+        for i in range(3)
+    ]
+    chunk_store, rating_store, mat_store, vs, emb = _make_stores(chunks, [])
+    rating_store.get_all_rated_chunk_ids.return_value = set()
+
+    judge = MagicMock(spec=LLMJudge)
+    judge.score_chunk.return_value = ({"Composition": 3.5}, 3.5, {})
+
+    rater = AIRater(vs, emb, judge, chunk_store, rating_store, mat_store)
+    _collect_events(rater, project, profile, batch_size=10)
+
+    assert rating_store.save.call_count == 3

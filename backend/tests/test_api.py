@@ -656,3 +656,133 @@ def test_update_rating_confirms_ai(client, project_id, ai_rated_chunk):
     data = resp.json()
     assert data["dimension_scores"]["Prose"] == 4.0
     assert data["is_ai"] is False
+
+
+# ── Model catalog endpoints ───────────────────────────────────────────────────
+
+from sqlalchemy.pool import StaticPool as _StaticPool
+from verdikt.api.deps import get_auth_session as _get_auth_session
+from verdikt.storage.auth_orm import AuthBase, ModelCatalogRow
+
+
+@pytest.fixture
+def auth_engine():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=_StaticPool,
+    )
+    AuthBase.metadata.create_all(engine)
+    return engine
+
+
+@pytest.fixture
+def catalog_client(mem_engine, auth_engine, tmp_path):
+    app = create_app()
+
+    def override_session():
+        with Session(mem_engine) as s:
+            yield s
+
+    def override_auth_session():
+        with Session(auth_engine) as s:
+            yield s
+
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_current_user] = lambda: _MOCK_USER
+    app.dependency_overrides[get_storage] = lambda: LocalStorageBackend(tmp_path / "files")
+    app.dependency_overrides[_get_auth_session] = override_auth_session
+    return TestClient(app)
+
+
+def _seed_model(auth_engine, model_id: str, type_: str, domain: str,
+                enabled: bool = True, is_default: bool = False) -> None:
+    with Session(auth_engine) as s:
+        s.add(ModelCatalogRow(
+            id=model_id, source="ollama", type=type_, domain=domain,
+            enabled=enabled, is_default=is_default,
+            display_name=model_id, description="",
+        ))
+        s.commit()
+
+
+def test_model_defaults_returns_per_domain(catalog_client, auth_engine):
+    _seed_model(auth_engine, "llama3:8b", "llm", "text", is_default=True)
+    _seed_model(auth_engine, "llava:7b", "llm", "image", is_default=True)
+
+    resp = catalog_client.get("/api/models/defaults")
+    assert resp.status_code == 200
+    data = resp.json()["llm_by_domain"]
+    assert data["text"] == "llama3:8b"
+    assert data["image"] == "llava:7b"
+
+
+def test_model_defaults_any_domain_fills_both(catalog_client, auth_engine):
+    _seed_model(auth_engine, "universal:7b", "llm", "any", is_default=True)
+
+    resp = catalog_client.get("/api/models/defaults")
+    data = resp.json()["llm_by_domain"]
+    assert data["text"] == "universal:7b"
+    assert data["image"] == "universal:7b"
+
+
+def test_model_defaults_disabled_model_not_returned(catalog_client, auth_engine):
+    _seed_model(auth_engine, "disabled:7b", "llm", "text", enabled=False, is_default=True)
+
+    resp = catalog_client.get("/api/models/defaults")
+    assert resp.json()["llm_by_domain"]["text"] is None
+
+
+def test_domain_availability_reflects_enabled_models(catalog_client, auth_engine):
+    _seed_model(auth_engine, "text-llm:7b", "llm", "text")
+
+    resp = catalog_client.get("/api/models/domain-availability")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["text"] is True
+    assert data["image"] is False
+
+
+def test_domain_availability_any_domain_covers_all(catalog_client, auth_engine):
+    _seed_model(auth_engine, "any-llm:7b", "llm", "any")
+
+    resp = catalog_client.get("/api/models/domain-availability")
+    data = resp.json()
+    assert data["text"] is True
+    assert data["image"] is True
+
+
+def test_admin_set_default_clears_previous(catalog_client, auth_engine):
+    _seed_model(auth_engine, "old:7b", "llm", "text", is_default=True)
+    _seed_model(auth_engine, "new:7b", "llm", "text")
+
+    resp = catalog_client.patch("/api/admin/models/new:7b", json={"is_default": True})
+    assert resp.status_code == 200
+    assert resp.json()["is_default"] is True
+
+    # old model must no longer be default
+    with Session(auth_engine) as s:
+        old = s.get(ModelCatalogRow, "old:7b")
+        assert old.is_default is False
+
+
+def test_admin_set_default_clears_any_domain_conflict(catalog_client, auth_engine):
+    """Setting a text-domain model as default must clear an 'any'-domain default."""
+    _seed_model(auth_engine, "universal:7b", "llm", "any", is_default=True)
+    _seed_model(auth_engine, "text-only:7b", "llm", "text")
+
+    catalog_client.patch("/api/admin/models/text-only:7b", json={"is_default": True})
+
+    with Session(auth_engine) as s:
+        universal = s.get(ModelCatalogRow, "universal:7b")
+        assert universal.is_default is False
+
+
+def test_admin_disable_model_clears_default(catalog_client, auth_engine):
+    _seed_model(auth_engine, "m:7b", "llm", "text", is_default=True)
+
+    catalog_client.patch("/api/admin/models/m:7b", json={"enabled": False})
+
+    with Session(auth_engine) as s:
+        row = s.get(ModelCatalogRow, "m:7b")
+        assert row.is_default is False

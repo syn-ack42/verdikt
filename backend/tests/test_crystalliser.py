@@ -285,3 +285,69 @@ def test_crystallise_missing_chunk_skipped_gracefully():
 
     # No crash; dimension falls back to "No ratings" (chunk content unavailable)
     assert "No ratings" in profile.dimensions[0].summary
+
+
+# ── image domain ──────────────────────────────────────────────────────────────
+
+def _make_image_chunk(chunk_id: str, position: int = 0) -> Chunk:
+    return Chunk(
+        id=chunk_id,
+        project_id="proj",
+        material_item_id="mat",
+        content=b"\xff\xd8\xff",  # minimal JPEG header bytes
+        position=position,
+        size=1,
+    )
+
+
+def test_crystallise_image_chunks_included():
+    """Image chunks (bytes content) must contribute to scored ratings."""
+    project = Project(
+        name="Images",
+        domain=Domain.IMAGE,
+        crystallisation_threshold=1,
+        rating_dimensions=[RatingDimension(name="Composition", description="Balance", weight=1.0)],
+    )
+    chunks = {
+        "img1": _make_image_chunk("img1", position=0),
+        "img2": _make_image_chunk("img2", position=1),
+    }
+    ratings = [
+        _make_rating(project.id, "img1", "m1", {"Composition": 5.0}),
+        _make_rating(project.id, "img2", "m1", {"Composition": 2.0}),
+    ]
+
+    c = _make_crystalliser()
+    with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
+        mock_post.return_value = _ollama_response("Prefers balanced compositions.")
+        profile = c.crystallise(project, ratings, chunks)
+
+    dim = profile.dimensions[0]
+    assert dim.name == "Composition"
+    assert dim.typical_score == pytest.approx(3.5)
+    assert dim.summary == "Prefers balanced compositions."
+
+
+def test_crystallise_image_chunk_label_uses_position():
+    """The LLM prompt for image chunks must contain a positional label, not raw bytes."""
+    project = Project(
+        name="Images",
+        domain=Domain.IMAGE,
+        crystallisation_threshold=1,
+        rating_dimensions=[RatingDimension(name="Lighting", description="Light quality", weight=1.0)],
+    )
+    chunks = {"img0": _make_image_chunk("img0", position=2)}
+    ratings = [_make_rating(project.id, "img0", "m1", {"Lighting": 4.0})]
+
+    c = _make_crystalliser()
+    captured_prompts: list[str] = []
+    def _capture(url, json, **kwargs):
+        captured_prompts.append(json.get("prompt", ""))
+        return _ollama_response("Good lighting.")
+
+    with patch("verdikt.inference.crystalliser.httpx.post", side_effect=_capture):
+        c.crystallise(project, ratings, chunks)
+
+    assert any("[image #3]" in p for p in captured_prompts), "Expected positional label in prompt"
+    assert not any(b"\xff\xd8" in p.encode("utf-8", errors="replace") for p in captured_prompts), \
+        "Raw bytes must not appear in prompt"

@@ -5,7 +5,7 @@ import { api } from '../api/client'
 import DimensionEditor from '../components/DimensionEditor'
 import type { ModelCatalogEntry, RatingDimension } from '../api/types'
 
-type Domain = 'text' | 'image' | 'audio'
+type Domain = 'text' | 'image'
 
 const DOMAIN_OPTIONS: { value: Domain; label: string; description: string }[] = [
   { value: 'text', label: 'Text', description: 'Prose, articles, stories, documents' },
@@ -27,7 +27,6 @@ const DEFAULT_DIMS: Record<Domain, RatingDimension[]> = {
     { name: 'Subject', description: 'Clarity and interest of the subject matter', weight: 1.0 },
     { name: 'Originality', description: 'Freshness and distinctiveness of the image', weight: 1.0 },
   ],
-  audio: [], // not surfaced in UI
 }
 
 function modelOption(m: ModelCatalogEntry): string {
@@ -81,7 +80,7 @@ export default function ProjectCreate() {
       domain,
       rating_dimensions: dims,
       crystallisation_threshold: threshold,
-      llm_model: llmModel || undefined,
+      llm_model: llmModel || defaultLlm || undefined,
       embedding_model: embModel || undefined,
     }),
     onSuccess: (p) => {

@@ -234,12 +234,14 @@ def update_model(
         row.description = body.description
     if body.is_default is not None:
         if body.is_default:
-            # Clear any existing default for this type+domain combination
             effective_domain = body.domain or row.domain
             effective_type = body.type or row.type
+            # Clear any existing default that overlaps with the effective domain.
+            # A model with domain="any" conflicts with any specific domain, and vice-versa.
+            overlapping = [effective_domain, "any"] if effective_domain != "any" else ["any"]
             session.query(ModelCatalogRow).filter(
                 ModelCatalogRow.type == effective_type,
-                ModelCatalogRow.domain == effective_domain,
+                ModelCatalogRow.domain.in_(overlapping),
                 ModelCatalogRow.id != row.id,
             ).update({"is_default": False})
         row.is_default = body.is_default
