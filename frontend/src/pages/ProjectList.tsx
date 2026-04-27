@@ -5,8 +5,8 @@ import { api } from '../api/client'
 import type { User } from '../api/types'
 import StorageManager from '../components/StorageManager'
 import { iconBtn } from '../styles'
-import logoLight from '../assets/verdikt-icon-light.svg'
-import logoDark from '../assets/verdikt-icon-dark.svg'
+import logoLight from '../assets/verdikt-icon-transparent-dark.svg'
+import logoDark from '../assets/verdikt-icon-transparent-white.svg'
 
 function ProjectJobBadges({ projectId }: { projectId: string }) {
   const { data: aiStatus } = useQuery({
@@ -104,7 +104,7 @@ export default function ProjectList() {
         <h1 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
           <picture>
             <source srcSet={logoLight} media="(prefers-color-scheme: light)" />
-            <img src={logoDark} alt="" width={36} height={36} style={{ display: 'block' }} />
+            <img src={logoDark} alt="" width={44} height={44} style={{ display: 'block' }} />
           </picture>
           Verdikt
         </h1>
