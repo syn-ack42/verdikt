@@ -104,7 +104,7 @@ export default function ProjectList() {
         <h1 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
           <picture>
             <source srcSet={logoLight} media="(prefers-color-scheme: light)" />
-            <img src={logoDark} alt="" width={44} height={44} style={{ display: 'block' }} />
+            <img src={logoDark} alt="" width={52} height={52} style={{ display: 'block' }} />
           </picture>
           Verdikt
         </h1>
