@@ -5,6 +5,8 @@ import { api } from '../api/client'
 import type { User } from '../api/types'
 import StorageManager from '../components/StorageManager'
 import { iconBtn } from '../styles'
+import logoLight from '../assets/verdikt-icon-light.svg'
+import logoDark from '../assets/verdikt-icon-dark.svg'
 
 function ProjectJobBadges({ projectId }: { projectId: string }) {
   const { data: aiStatus } = useQuery({
@@ -99,7 +101,13 @@ export default function ProjectList() {
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto', padding: 'clamp(12px, 4vw, 24px)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-        <h1 style={{ margin: 0 }}>Verdikt</h1>
+        <h1 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <picture>
+            <source srcSet={logoLight} media="(prefers-color-scheme: light)" />
+            <img src={logoDark} alt="" width={36} height={36} style={{ display: 'block' }} />
+          </picture>
+          Verdikt
+        </h1>
         <div ref={settingsRef} style={{ position: 'relative' }}>
           <button
             onClick={() => setShowSettingsMenu(v => !v)}
