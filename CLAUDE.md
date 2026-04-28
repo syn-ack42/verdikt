@@ -114,6 +114,37 @@ The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.y
 - `is_default: bool` per row; at most one default per type+domain; "any"-domain conflicts are cleared on set
 - `GET /api/models/defaults` → `{llm_by_domain: {text: model_id|null, image: model_id|null}}`
 - `GET /api/models/domain-availability` → `{text: bool, image: bool}` — domains with no enabled LLM are disabled in project create
+- `POST /api/admin/models` — manually register local models (e.g. sentence-transformer embedding models); upserts by id
+
+## Token usage & budget
+
+- `token_usage` and `token_grants` tables in `auth.db`; `UserRow` gains `daily_token_grant` (null=unlimited), `token_grant_expiry_days` (default 7)
+- `backend/verdikt/api/token_budget.py` — `ensure_daily_grant`, `get_token_balance`, `check_token_budget` (raises 402), `record_usage`
+- Daily grants are lazily issued (at first balance check of the day), not via a scheduler
+- `LLMJudge._call_ollama` returns `(response, prompt_eval_count, eval_count)`; `judge.usage` accumulates per-run; flushed to auth.db by routers after each run
+- `ProfileCrystalliser.crystallise` returns `(profile, total_prompt_tokens, total_completion_tokens)`
+- Pre-flight `check_token_budget` before: crystallise, ai-rating/start, ai-rating/preview
+- Background ai_rating thread records accumulated usage into a fresh auth session at end of run
+- `GET /api/usage` — user's balance + day/week/month/all-time + per-project breakdown
+- `GET /api/admin/users/{id}/usage`, `POST /api/admin/users/{id}/grants`, `PATCH /api/admin/users/{id}/limits`
+
+## Admin user management
+
+- `is_founding_admin` column on `UserRow` — set True for the first registered user; cannot be demoted
+- `POST /api/admin/users/{id}/promote` and `/demote` — 403 if target is founding admin or self-demote
+- AdminUsers page: promote/demote buttons, grant tokens modal, daily limit + expiry settings modal
+
+## OAuth (Google + GitHub)
+
+- `UserRow` gains `oauth_provider`, `oauth_provider_id`, `oauth_db_key_enc`; `argon2_hash`/`kdf_salt` nullable
+- OAuth users' DB key: random 32 bytes wrapped with `Fernet(HKDF(jwt_secret, "verdikt-oauth-key-wrap-v1"))`; stored in `oauth_db_key_enc`
+- Stateless CSRF state: `nonce.expiry.HMAC-SHA256(jwt_secret, nonce+expiry)`, 10-minute window
+- `GET /api/auth/oauth/providers` — lists configured providers
+- `GET /api/auth/oauth/{provider}/authorize` → redirect to provider
+- `GET /api/auth/oauth/{provider}/callback` → exchange, find/create user, issue JWT, redirect to `/`
+- Find/create: look up by provider_id first, then by email (link existing), then create new
+- Config: `VERDIKT_GOOGLE_CLIENT_ID`, `VERDIKT_GOOGLE_CLIENT_SECRET`, `VERDIKT_GITHUB_CLIENT_ID`, `VERDIKT_GITHUB_CLIENT_SECRET`, `VERDIKT_OAUTH_REDIRECT_BASE`
+- Login page shows OAuth buttons when providers are configured; OAuth errors surfaced via `?error=` query param
 
 ## Build order (milestones)
 
@@ -123,6 +154,7 @@ The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.y
 4. ✅ Embedding pre-filter + LLM judge + recommendation browser + feedback loop
 5. ✅ Auth (JWT + Argon2id) + per-user SQLCipher encryption + project export/import + AI accuracy confidence + background AI preview + active learning + admin UI
 6. ✅ Image domain support — CLIP embedder, vision LLM judging, identity chunker, domain-filtered plugins, per-domain model catalog with admin-managed defaults
+7. ✅ Token usage tracking + budget grants, admin promote/demote, OAuth (Google/GitHub), sentence-transformer catalog
 
 ## Branch conventions
 
