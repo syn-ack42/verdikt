@@ -16,11 +16,44 @@ class UserRow(AuthBase):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     email: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
-    argon2_hash: Mapped[str] = mapped_column(String, nullable=False)
-    kdf_salt: Mapped[str] = mapped_column(String, nullable=False)  # hex-encoded 32-byte salt for key derivation
+    argon2_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # null for OAuth users
+    kdf_salt: Mapped[Optional[str]] = mapped_column(String, nullable=True)       # null for OAuth users
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_founding_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Token budget settings (null daily_token_grant = unlimited)
+    daily_token_grant: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    token_grant_expiry_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
+    # OAuth identity
+    oauth_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    oauth_provider_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    oauth_db_key_enc: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class TokenUsageRow(AuthBase):
+    __tablename__ = "token_usage"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    model_id: Mapped[str] = mapped_column(String, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False)  # "ai_rating"|"crystallise"|"preview"
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class TokenGrantRow(AuthBase):
+    __tablename__ = "token_grants"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    granted_by: Mapped[str] = mapped_column(String, nullable=False)  # "system_daily" | admin_user_id
+    note: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class ModelCatalogRow(AuthBase):

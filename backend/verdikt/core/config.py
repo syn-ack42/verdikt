@@ -25,7 +25,13 @@ class AppConfig(BaseSettings):
     root_path: str = ""                                  # set VERDIKT_ROOT_PATH for reverse proxy subpath
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
-    jwt_secret: str = Field(default="")             # populated from data_dir/jwt_secret if not set via env
+    jwt_secret: str = Field(default="")
+    # OAuth providers (env: VERDIKT_GOOGLE_CLIENT_ID, VERDIKT_GITHUB_CLIENT_ID, etc.)
+    google_client_id: Optional[str] = Field(default=None)
+    google_client_secret: Optional[str] = Field(default=None)
+    github_client_id: Optional[str] = Field(default=None)
+    github_client_secret: Optional[str] = Field(default=None)
+    oauth_redirect_base: str = Field(default="http://localhost:8765")             # populated from data_dir/jwt_secret if not set via env
 
     @model_validator(mode="after")
     def _apply_defaults(self) -> AppConfig:

@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from typing import Annotated
 
-from verdikt.api.deps import get_config, get_current_user, get_session
+from verdikt.api.deps import get_auth_session, get_config, get_current_user, get_session
+from verdikt.api.token_budget import check_token_budget, record_usage
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.core.models import DimensionProfile, PreferenceProfile
 from verdikt.inference.crystalliser import ProfileCrystalliser
@@ -81,8 +82,11 @@ def crystallise_status(
 @router.post("/crystallise", status_code=201)
 def crystallise_profile(
     project_id: str,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     session: Session = Depends(get_session),
+    auth_session: Session = Depends(get_auth_session),
 ) -> dict:
+    check_token_budget(user.id, auth_session)
     proj = _get_project_or_404(project_id, session)
     rating_store = SQLiteRatingStore(session)
     chunk_store = SQLiteChunkStore(session)
@@ -112,7 +116,7 @@ def crystallise_profile(
     )
     _crystallise_running.add(project_id)
     try:
-        profile = crystalliser.crystallise(
+        profile, prompt_tokens, completion_tokens = crystalliser.crystallise(
             project=proj,
             ratings=ratings,
             chunks_by_id=chunks_by_id,
@@ -131,6 +135,7 @@ def crystallise_profile(
     finally:
         _crystallise_running.discard(project_id)
 
+    record_usage(user.id, project_id, llm_model, "crystallise", prompt_tokens, completion_tokens, auth_session)
     profile_store.save(profile)
     session.commit()
     return _profile_response(profile)

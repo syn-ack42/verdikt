@@ -21,6 +21,8 @@ export default function AdminModels() {
   const qc = useQueryClient()
   const [editing, setEditing] = useState<ModelCatalogEntry | null>(null)
   const [editForm, setEditForm] = useState<Partial<ModelCatalogEntry>>({})
+  const [showAddModel, setShowAddModel] = useState(false)
+  const [addForm, setAddForm] = useState({ id: '', type: 'embedding', domain: 'text', display_name: '', description: '' })
 
   if (!me.is_admin) return <div style={{ padding: 24 }}>Access denied.</div>
 
@@ -43,6 +45,11 @@ export default function AdminModels() {
     },
   })
 
+  const addModel = useMutation({
+    mutationFn: (body: typeof addForm) => api.admin.createModel(body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-models'] }); setShowAddModel(false); setAddForm({ id: '', type: 'embedding', domain: 'text', display_name: '', description: '' }) },
+  })
+
   const openEdit = (m: ModelCatalogEntry) => {
     setEditing(m)
     setEditForm({ type: m.type, domain: m.domain, display_name: m.display_name, description: m.description })
@@ -61,6 +68,12 @@ export default function AdminModels() {
           style={{ padding: '6px 14px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)', cursor: 'pointer' }}
         >
           {sync.isPending ? 'Syncing…' : '↻ Sync from Ollama'}
+        </button>
+        <button
+          onClick={() => setShowAddModel(true)}
+          style={{ padding: '6px 14px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)', cursor: 'pointer' }}
+        >
+          + Add Model
         </button>
         <button
           onClick={() => navigate('/admin/users')}
@@ -220,6 +233,54 @@ export default function AdminModels() {
                 {update.isPending ? 'Saving…' : 'Save'}
               </button>
               <button onClick={() => setEditing(null)} style={{ padding: '7px 14px', borderRadius: 4, fontSize: 13 }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add model modal */}
+      {showAddModel && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 24 }}
+          onClick={e => { if (e.target === e.currentTarget) setShowAddModel(false) }}>
+          <div style={{ background: 'var(--modal-bg)', borderRadius: 8, padding: 24, width: 'min(420px, 100%)', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>Add Model</h3>
+            {[
+              { label: 'Model ID (e.g. all-MiniLM-L6-v2)', key: 'id', type: 'text' as const },
+              { label: 'Display Name', key: 'display_name', type: 'text' as const },
+              { label: 'Description', key: 'description', type: 'text' as const },
+            ].map(f => (
+              <div key={f.key} style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{f.label}</label>
+                <input type={f.type} value={(addForm as any)[f.key]} onChange={e => setAddForm(p => ({ ...p, [f.key]: e.target.value }))}
+                  style={{ width: '100%', padding: '7px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14, boxSizing: 'border-box' }} />
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Type</label>
+                <select value={addForm.type} onChange={e => setAddForm(p => ({ ...p, type: e.target.value }))}
+                  style={{ width: '100%', padding: '7px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14 }}>
+                  <option value="embedding">Embedding</option>
+                  <option value="llm">LLM</option>
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Domain</label>
+                <select value={addForm.domain} onChange={e => setAddForm(p => ({ ...p, domain: e.target.value }))}
+                  style={{ width: '100%', padding: '7px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14 }}>
+                  <option value="text">Text</option>
+                  <option value="image">Image</option>
+                  <option value="any">Any</option>
+                </select>
+              </div>
+            </div>
+            {addModel.isError && <p style={{ color: '#c00', fontSize: 12, marginBottom: 8 }}>{(addModel.error as Error).message}</p>}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => addModel.mutate(addForm)} disabled={addModel.isPending || !addForm.id || !addForm.display_name}
+                style={{ padding: '7px 16px', borderRadius: 4, border: 'none', background: '#6b7de0', color: '#fff', fontSize: 13, cursor: 'pointer' }}>
+                {addModel.isPending ? 'Adding…' : 'Add'}
+              </button>
+              <button onClick={() => setShowAddModel(false)} style={{ padding: '7px 14px', borderRadius: 4, fontSize: 13 }}>Cancel</button>
             </div>
           </div>
         </div>

@@ -68,9 +68,29 @@ def get_auth_engine() -> Engine:
 
 def _migrate_auth_db(engine: Engine) -> None:
     with engine.connect() as conn:
-        cols = {row[1] for row in conn.execute(_text("PRAGMA table_info(model_catalog)")).fetchall()}
-        if "is_default" not in cols:
+        catalog_cols = {row[1] for row in conn.execute(_text("PRAGMA table_info(model_catalog)")).fetchall()}
+        if "is_default" not in catalog_cols:
             conn.execute(_text("ALTER TABLE model_catalog ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0"))
+            conn.commit()
+
+        user_cols = {row[1] for row in conn.execute(_text("PRAGMA table_info(users)")).fetchall()}
+        if "is_founding_admin" not in user_cols:
+            conn.execute(_text("ALTER TABLE users ADD COLUMN is_founding_admin INTEGER NOT NULL DEFAULT 0"))
+            conn.commit()
+        if "daily_token_grant" not in user_cols:
+            conn.execute(_text("ALTER TABLE users ADD COLUMN daily_token_grant INTEGER"))
+            conn.commit()
+        if "token_grant_expiry_days" not in user_cols:
+            conn.execute(_text("ALTER TABLE users ADD COLUMN token_grant_expiry_days INTEGER NOT NULL DEFAULT 7"))
+            conn.commit()
+        if "oauth_provider" not in user_cols:
+            conn.execute(_text("ALTER TABLE users ADD COLUMN oauth_provider TEXT"))
+            conn.commit()
+        if "oauth_provider_id" not in user_cols:
+            conn.execute(_text("ALTER TABLE users ADD COLUMN oauth_provider_id TEXT"))
+            conn.commit()
+        if "oauth_db_key_enc" not in user_cols:
+            conn.execute(_text("ALTER TABLE users ADD COLUMN oauth_db_key_enc TEXT"))
             conn.commit()
 
 

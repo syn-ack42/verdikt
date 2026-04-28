@@ -2,8 +2,36 @@ export interface User {
   id: string
   email: string
   is_admin: boolean
+  is_founding_admin?: boolean
   created_at?: string
   is_blocked?: boolean
+  daily_token_grant?: number | null
+  token_grant_expiry_days?: number
+}
+
+export interface TokenWindowStats {
+  prompt: number
+  completion: number
+  total: number
+}
+
+export interface UsageSummary {
+  balance: number | null
+  today: TokenWindowStats
+  week: TokenWindowStats
+  month: TokenWindowStats
+  all_time: TokenWindowStats
+  by_project: { project_id: string; project_name?: string; all_time: TokenWindowStats }[]
+}
+
+export interface TokenGrant {
+  id: string
+  user_id: string
+  amount: number
+  granted_at: string
+  expires_at: string | null
+  granted_by: string
+  note: string | null
 }
 
 export interface RatingDimension {

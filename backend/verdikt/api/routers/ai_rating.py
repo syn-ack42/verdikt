@@ -9,7 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_config, get_current_user, get_session
+from verdikt.api.deps import get_auth_engine, get_auth_session, get_config, get_current_user, get_session
+from verdikt.api.token_budget import check_token_budget, record_usage
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.ai_rater import AIRater
 from verdikt.inference.judge import LLMJudge
@@ -71,7 +72,9 @@ def start_ai_rating(
     user: AuthenticatedUser = Depends(get_current_user),
     body: StartRequest = StartRequest(),
     session: Session = Depends(get_session),
+    auth_session: Session = Depends(get_auth_session),
 ) -> dict:
+    check_token_budget(user.id, auth_session)
     proj = _get_project_or_404(project_id, session)
 
     if project_id in _stop_flags:
@@ -100,6 +103,8 @@ def start_ai_rating(
         "running": True,
         "profile_version": profile.version,
     }
+
+    user_id_capture = user.id
 
     def _run() -> None:
         with _Session(engine) as thread_session:
@@ -158,6 +163,17 @@ def start_ai_rating(
                 _status[project_id]["running"] = False
                 _stop_flags.pop(project_id, None)
 
+            # Flush token usage accumulated during run
+            if judge.usage:
+                total_prompt = sum(p for p, _ in judge.usage)
+                total_completion = sum(c for _, c in judge.usage)
+                try:
+                    with _Session(get_auth_engine()) as auth_sess:
+                        record_usage(user_id_capture, project_id, llm_model, "ai_rating",
+                                     total_prompt, total_completion, auth_sess)
+                except Exception:
+                    log.warning("ai_rater: failed to record token usage")
+
     thread = threading.Thread(target=_run, daemon=True, name=f"ai-rater-{project_id}")
     thread.start()
 
@@ -188,8 +204,10 @@ def ai_preview_rating(
     body: AiPreviewRequest,
     user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_session),
+    auth_session: Session = Depends(get_auth_session),
 ) -> dict:
     """Rate a single chunk synchronously against the current profile (for background eager preview)."""
+    check_token_budget(user.id, auth_session)
     proj = _get_project_or_404(project_id, session)
 
     rating_store = SQLiteRatingStore(session)
@@ -212,6 +230,10 @@ def ai_preview_rating(
         scores, _, explanations = judge.score_chunk(chunk.content, profile, proj)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"AI rating failed: {exc}")
+
+    if judge.usage:
+        p, c = judge.usage[-1]
+        record_usage(user.id, project_id, llm_model, "preview", p, c, auth_session)
 
     rating = Rating(
         project_id=project_id,

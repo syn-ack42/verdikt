@@ -1,7 +1,7 @@
 import type {
   AIRatingStatus, CrystalliseStatus, IngestResult, MaterialItemWithStats, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
   PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, RatedChunkEntry, Rating, StorageListing,
-  UpdatePluginEvent, UpdatePluginStatus, User, WorkDetail,
+  TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkDetail,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? `${import.meta.env.BASE_URL}api`
@@ -65,16 +65,30 @@ export const api = {
     register: (email: string, password: string) =>
       req<User>('POST', '/auth/register', { email, password }),
     logout: () => req<{ ok: boolean }>('POST', '/auth/logout'),
+    oauthProviders: () => req<string[]>('GET', '/auth/oauth/providers'),
+    oauthAuthorizeUrl: (provider: string) => `${BASE}/auth/oauth/${provider}/authorize`,
   },
   admin: {
     listUsers: () => req<User[]>('GET', '/admin/users'),
     blockUser: (id: string) => req<User>('POST', `/admin/users/${id}/block`),
     unblockUser: (id: string) => req<User>('POST', `/admin/users/${id}/unblock`),
     deleteUser: (id: string) => req<{ ok: boolean }>('DELETE', `/admin/users/${id}`),
+    promoteUser: (id: string) => req<User>('POST', `/admin/users/${id}/promote`),
+    demoteUser: (id: string) => req<User>('POST', `/admin/users/${id}/demote`),
+    updateUserLimits: (id: string, body: { daily_token_grant?: number | null; token_grant_expiry_days?: number }) =>
+      req<User>('PATCH', `/admin/users/${id}/limits`, body),
+    createGrant: (id: string, body: { amount: number; expires_at?: string | null; note?: string }) =>
+      req<TokenGrant>('POST', `/admin/users/${id}/grants`, body),
+    getUserUsage: (id: string) => req<UsageSummary>('GET', `/admin/users/${id}/usage`),
     syncModels: () => req<ModelCatalogEntry[]>('POST', '/admin/models/sync'),
     listModels: () => req<ModelCatalogEntry[]>('GET', '/admin/models'),
+    createModel: (body: { id: string; type: string; domain: string; display_name: string; description?: string; source?: string }) =>
+      req<ModelCatalogEntry>('POST', '/admin/models', body),
     updateModel: (id: string, body: Partial<ModelCatalogEntry>) =>
       req<ModelCatalogEntry>('PATCH', `/admin/models/${encodeURIComponent(id)}`, body),
+  },
+  usage: {
+    get: () => req<UsageSummary>('GET', '/usage'),
   },
   models: {
     defaults: () => req<{ llm_by_domain: Record<string, string | null> }>('GET', '/models/defaults'),

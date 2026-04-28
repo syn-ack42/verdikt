@@ -31,8 +31,11 @@ class ProfileCrystalliser:
         ratings: list[Rating],
         chunks_by_id: dict[str, Chunk],
         current_version: int = 0,
-    ) -> PreferenceProfile:
+    ) -> tuple[PreferenceProfile, int, int]:
+        """Returns (profile, total_prompt_tokens, total_completion_tokens)."""
         dimensions: list[DimensionProfile] = []
+        total_prompt = 0
+        total_completion = 0
 
         for dim in project.rating_dimensions:
             scored: list[tuple[float, str]] = []
@@ -90,7 +93,10 @@ class ProfileCrystalliser:
                 timeout=120.0,
             )
             response.raise_for_status()
-            raw = response.json()["response"]
+            rdata = response.json()
+            total_prompt += rdata.get("prompt_eval_count", 0)
+            total_completion += rdata.get("eval_count", 0)
+            raw = rdata["response"]
             parsed = json.loads(raw)
             summary = parsed.get("summary", "").strip() or "Unable to generate summary."
 
@@ -116,12 +122,15 @@ class ProfileCrystalliser:
             timeout=120.0,
         )
         overall_response.raise_for_status()
-        overall_raw = overall_response.json()["response"]
+        ordata = overall_response.json()
+        total_prompt += ordata.get("prompt_eval_count", 0)
+        total_completion += ordata.get("eval_count", 0)
+        overall_raw = ordata["response"]
         overall_parsed = json.loads(overall_raw)
         overall_summary = overall_parsed.get("summary", "").strip() or "Unable to generate summary."
 
         non_skipped = [r for r in ratings if not r.skipped]
-        return PreferenceProfile(
+        profile = PreferenceProfile(
             id=str(uuid.uuid4()),
             project_id=project.id,
             version=current_version + 1,
@@ -130,3 +139,4 @@ class ProfileCrystalliser:
             rating_count=len(non_skipped),
             created_at=datetime.now(timezone.utc),
         )
+        return profile, total_prompt, total_completion

@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from verdikt.api.app import create_app
-from verdikt.api.deps import get_current_user, get_session, get_storage
+from verdikt.api.deps import get_auth_session, get_current_user, get_session, get_storage
+from verdikt.storage.auth_orm import AuthBase
 from verdikt.core.models import Chunk, Domain, MaterialItem, Project, RatingDimension
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.base import EmbedderBase
@@ -66,15 +67,30 @@ def mem_engine():
     return engine
 
 
+@pytest.fixture
+def mem_auth_engine():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    AuthBase.metadata.create_all(engine)
+    return engine
+
+
 _MOCK_USER = AuthenticatedUser(id="test-user-id", email="test@test.com", is_admin=True, db_key="testkey")
 
 
 @pytest.fixture
-def client(mem_engine, tmp_path):
+def client(mem_engine, mem_auth_engine, tmp_path):
     app = create_app()
 
     def override_session():
         with Session(mem_engine) as s:
+            yield s
+
+    def override_auth_session():
+        with Session(mem_auth_engine) as s:
             yield s
 
     def override_user():
@@ -84,6 +100,7 @@ def client(mem_engine, tmp_path):
         yield LocalStorageBackend(tmp_path / "files")
 
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_auth_session] = override_auth_session
     app.dependency_overrides[get_current_user] = override_user
     app.dependency_overrides[get_storage] = override_storage
     return TestClient(app)
@@ -406,7 +423,7 @@ def test_save_plugin_config_unknown_plugin(client, project_id):
     assert resp.status_code == 422
 
 
-def test_ingest_plugin_storage(mem_engine, tmp_path):
+def test_ingest_plugin_storage(mem_engine, mem_auth_engine, tmp_path):
     from verdikt.storage.files import LocalStorageBackend
     app = create_app()
     storage_root = tmp_path / "storage"
@@ -416,12 +433,16 @@ def test_ingest_plugin_storage(mem_engine, tmp_path):
     def override_session():
         with Session(mem_engine) as s:
             yield s
+    def override_auth_session():
+        with Session(mem_auth_engine) as s:
+            yield s
     def override_user():
         return _MOCK_USER
     def override_storage():
         return LocalStorageBackend(storage_root)
 
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_auth_session] = override_auth_session
     app.dependency_overrides[get_current_user] = override_user
     app.dependency_overrides[get_storage] = override_storage
     client = TestClient(app)

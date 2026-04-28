@@ -24,6 +24,8 @@ class LLMJudge:
     def __init__(self, ollama_base_url: str, model: str) -> None:
         self._base_url = ollama_base_url.rstrip("/")
         self._model = model
+        # Accumulates (prompt_tokens, completion_tokens) per call; flush after each run.
+        self.usage: list[tuple[int, int]] = []
 
     def score_chunk(
         self,
@@ -66,7 +68,8 @@ class LLMJudge:
             )
 
         image_b64 = base64.b64encode(chunk_content).decode() if is_image else None
-        raw = self._call_ollama(prompt, image_b64)
+        raw, prompt_tokens, completion_tokens = self._call_ollama(prompt, image_b64)
+        self.usage.append((prompt_tokens, completion_tokens))
         scores, explanations = self._parse_response(raw, typical)
         overall = self._weighted_average(scores, weights)
         return scores, overall, explanations
@@ -94,7 +97,7 @@ class LLMJudge:
                 pass
         return None
 
-    def _call_ollama(self, prompt: str, image_b64: str | None = None) -> str:
+    def _call_ollama(self, prompt: str, image_b64: str | None = None) -> tuple[str, int, int]:
         payload: dict = {
             "model": self._model,
             "prompt": prompt,
@@ -131,7 +134,12 @@ class LLMJudge:
                 ) from exc
             raise RuntimeError(f"Ollama returned {status}: {body}") from exc
 
-        return resp.json().get("response", "")
+        data = resp.json()
+        return (
+            data.get("response", ""),
+            data.get("prompt_eval_count", 0),
+            data.get("eval_count", 0),
+        )
 
     def _parse_response(self, raw: str, typical: dict[str, float]) -> tuple[dict[str, float], dict[str, str]]:
         scores: dict[str, float] = {}

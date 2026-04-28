@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import shutil
+import uuid
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from verdikt.api.deps import get_auth_session, get_config, require_admin
 from verdikt.core.user_models import AuthenticatedUser
-from verdikt.storage.auth_orm import ModelCatalogRow, UserRow
+from verdikt.storage.auth_orm import ModelCatalogRow, TokenGrantRow, UserRow
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -21,7 +22,10 @@ def _user_dict(u: UserRow) -> dict:
         "email": u.email,
         "created_at": u.created_at.isoformat(),
         "is_admin": u.is_admin,
+        "is_founding_admin": getattr(u, "is_founding_admin", False),
         "is_blocked": u.is_blocked,
+        "daily_token_grant": getattr(u, "daily_token_grant", None),
+        "token_grant_expiry_days": getattr(u, "token_grant_expiry_days", 7),
     }
 
 
@@ -84,6 +88,101 @@ def delete_user(
         shutil.rmtree(user_dir)
 
     return {"ok": True}
+
+
+@router.post("/users/{user_id}/promote")
+def promote_user(
+    user_id: str,
+    admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    user = session.get(UserRow, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_admin = True
+    session.commit()
+    return _user_dict(user)
+
+
+@router.post("/users/{user_id}/demote")
+def demote_user(
+    user_id: str,
+    admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    if user_id == admin.id:
+        raise HTTPException(status_code=400, detail="Cannot demote yourself")
+    user = session.get(UserRow, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if getattr(user, "is_founding_admin", False):
+        raise HTTPException(status_code=403, detail="The founding admin cannot be demoted")
+    user.is_admin = False
+    session.commit()
+    return _user_dict(user)
+
+
+class UserLimitsUpdate(BaseModel):
+    daily_token_grant: Optional[int] = None
+    token_grant_expiry_days: Optional[int] = None
+
+
+@router.patch("/users/{user_id}/limits")
+def update_user_limits(
+    user_id: str,
+    body: UserLimitsUpdate,
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    user = session.get(UserRow, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if body.daily_token_grant is not None:
+        user.daily_token_grant = body.daily_token_grant if body.daily_token_grant > 0 else None
+    if body.token_grant_expiry_days is not None:
+        user.token_grant_expiry_days = body.token_grant_expiry_days
+    session.commit()
+    return _user_dict(user)
+
+
+class GrantCreate(BaseModel):
+    amount: int
+    expires_at: Optional[datetime] = None
+    note: Optional[str] = None
+
+
+@router.post("/users/{user_id}/grants", status_code=201)
+def create_grant(
+    user_id: str,
+    body: GrantCreate,
+    admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    user = session.get(UserRow, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if body.amount <= 0:
+        raise HTTPException(status_code=422, detail="Amount must be positive")
+    grant = TokenGrantRow(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        amount=body.amount,
+        granted_at=datetime.now(timezone.utc),
+        expires_at=body.expires_at,
+        granted_by=admin.id,
+        note=body.note,
+    )
+    session.add(grant)
+    session.commit()
+    return {
+        "id": grant.id,
+        "user_id": grant.user_id,
+        "amount": grant.amount,
+        "granted_at": grant.granted_at.isoformat(),
+        "expires_at": grant.expires_at.isoformat() if grant.expires_at else None,
+        "granted_by": grant.granted_by,
+        "note": grant.note,
+    }
 
 
 # ── Model catalog ─────────────────────────────────────────────────────────────
@@ -199,6 +298,45 @@ def list_models(
 ) -> list[dict]:
     rows = session.query(ModelCatalogRow).order_by(ModelCatalogRow.type, ModelCatalogRow.id).all()
     return [_model_dict(r) for r in rows]
+
+
+class ModelCreate(BaseModel):
+    id: str
+    type: str
+    domain: str = "any"
+    display_name: str
+    description: str = ""
+    source: str = "local"
+
+
+@router.post("/models")
+def create_model(
+    body: ModelCreate,
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    """Manually register a model (e.g. a sentence-transformer embedding model)."""
+    existing = session.get(ModelCatalogRow, body.id)
+    if existing is not None:
+        existing.type = body.type
+        existing.domain = body.domain
+        existing.display_name = body.display_name
+        existing.description = body.description
+        existing.source = body.source
+        session.commit()
+        return _model_dict(existing)
+    row = ModelCatalogRow(
+        id=body.id,
+        source=body.source,
+        type=body.type,
+        domain=body.domain,
+        enabled=False,
+        display_name=body.display_name,
+        description=body.description,
+    )
+    session.add(row)
+    session.commit()
+    return _model_dict(row)
 
 
 class ModelUpdate(BaseModel):

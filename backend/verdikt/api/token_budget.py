@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+import uuid
+from datetime import date, datetime, timezone
+from typing import Optional
+
+from fastapi import HTTPException
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session
+
+from verdikt.storage.auth_orm import TokenGrantRow, TokenUsageRow, UserRow
+
+
+def ensure_daily_grant(user_id: str, session: Session) -> None:
+    """Lazily issue today's system daily grant if not yet issued today."""
+    user = session.get(UserRow, user_id)
+    if user is None or user.daily_token_grant is None:
+        return  # unlimited or user gone
+
+    today = date.today()
+    existing = (
+        session.query(TokenGrantRow)
+        .filter(
+            TokenGrantRow.user_id == user_id,
+            TokenGrantRow.granted_by == "system_daily",
+        )
+        .order_by(TokenGrantRow.granted_at.desc())
+        .first()
+    )
+    if existing is not None and existing.granted_at.date() == today:
+        return  # already issued today
+
+    now = datetime.now(timezone.utc)
+    from datetime import timedelta
+    expiry_days = user.token_grant_expiry_days or 7
+    session.add(TokenGrantRow(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        amount=user.daily_token_grant,
+        granted_at=now,
+        expires_at=now + timedelta(days=expiry_days),
+        granted_by="system_daily",
+        note=None,
+    ))
+    session.commit()
+
+
+def get_token_balance(user_id: str, session: Session) -> Optional[int]:
+    """Return remaining token balance, or None if the user has no grant limit."""
+    user = session.get(UserRow, user_id)
+    if user is None or user.daily_token_grant is None:
+        return None  # unlimited
+
+    ensure_daily_grant(user_id, session)
+
+    now = datetime.now(timezone.utc)
+    granted = session.query(func.sum(TokenGrantRow.amount)).filter(
+        TokenGrantRow.user_id == user_id,
+        or_(TokenGrantRow.expires_at.is_(None), TokenGrantRow.expires_at > now),
+    ).scalar() or 0
+
+    used = session.query(
+        func.sum(TokenUsageRow.prompt_tokens + TokenUsageRow.completion_tokens)
+    ).filter(TokenUsageRow.user_id == user_id).scalar() or 0
+
+    return max(0, int(granted) - int(used))
+
+
+def check_token_budget(user_id: str, session: Session) -> None:
+    """Raise HTTP 402 if the user's token balance is exhausted."""
+    balance = get_token_balance(user_id, session)
+    if balance is not None and balance <= 0:
+        raise HTTPException(
+            status_code=402,
+            detail="Token budget exhausted. Contact your admin for more tokens.",
+        )
+
+
+def record_usage(
+    user_id: str,
+    project_id: Optional[str],
+    model_id: str,
+    source: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    session: Session,
+) -> None:
+    """Insert a TokenUsageRow for a completed LLM call."""
+    session.add(TokenUsageRow(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        project_id=project_id,
+        model_id=model_id,
+        source=source,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        recorded_at=datetime.now(timezone.utc),
+    ))
+    session.commit()

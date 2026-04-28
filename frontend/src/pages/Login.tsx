@@ -1,13 +1,36 @@
-import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
+
+const PROVIDER_LABELS: Record<string, string> = {
+  google: 'Google',
+  github: 'GitHub',
+}
 
 export default function Login() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [oauthProviders, setOauthProviders] = useState<string[]>([])
+
+  useEffect(() => {
+    api.auth.oauthProviders().then(setOauthProviders).catch(() => {})
+    const oauthError = searchParams.get('error')
+    if (oauthError) {
+      const messages: Record<string, string> = {
+        oauth_denied: 'Sign-in was cancelled.',
+        oauth_token_failed: 'Could not exchange OAuth token. Try again.',
+        oauth_userinfo_failed: 'Could not retrieve account information.',
+        oauth_no_email: 'No email address found in your account.',
+        oauth_no_id: 'Could not identify your account.',
+        account_blocked: 'Your account has been blocked.',
+      }
+      setError(messages[oauthError] ?? 'OAuth sign-in failed.')
+    }
+  }, [])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -67,6 +90,31 @@ export default function Login() {
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        {oauthProviders.length > 0 && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '20px 0 16px' }}>
+              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>or</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {oauthProviders.map(provider => (
+                <a
+                  key={provider}
+                  href={api.auth.oauthAuthorizeUrl(provider)}
+                  style={{
+                    display: 'block', textAlign: 'center', padding: '9px 0',
+                    border: '1px solid var(--border)', borderRadius: 4, fontSize: 14,
+                    color: 'var(--text)', textDecoration: 'none', cursor: 'pointer',
+                  }}
+                >
+                  Sign in with {PROVIDER_LABELS[provider] ?? provider}
+                </a>
+              ))}
+            </div>
+          </>
+        )}
 
         <p style={{ marginTop: 20, fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>
           No account?{' '}

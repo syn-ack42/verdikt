@@ -92,7 +92,7 @@ def test_crystallise_returns_profile_with_correct_version():
     c = _make_crystalliser()
     with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
         mock_post.return_value = _ollama_response("User likes clear prose.")
-        profile = c.crystallise(project, ratings, chunks, current_version=2)
+        profile, _, _ = c.crystallise(project, ratings, chunks, current_version=2)
 
     assert profile.version == 3
 
@@ -113,7 +113,7 @@ def test_crystallise_typical_score_is_mean_of_ratings():
     c = _make_crystalliser()
     with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
         mock_post.return_value = _ollama_response("Mixed style preferences.")
-        profile = c.crystallise(project, ratings, chunks)
+        profile, _, _ = c.crystallise(project, ratings, chunks)
 
     dim = profile.dimensions[0]
     assert dim.name == "Style"
@@ -132,7 +132,7 @@ def test_crystallise_skipped_ratings_excluded():
     c = _make_crystalliser()
     with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
         mock_post.return_value = _ollama_response("Loves fast pacing.")
-        profile = c.crystallise(project, ratings, chunks)
+        profile, _, _ = c.crystallise(project, ratings, chunks)
 
     assert profile.rating_count == 1
     assert profile.dimensions[0].typical_score == pytest.approx(5.0)
@@ -143,7 +143,7 @@ def test_crystallise_no_ratings_for_dimension():
     c = _make_crystalliser()
     with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
         mock_post.return_value = _ollama_response("Overall summary.")
-        profile = c.crystallise(project, [], {}, current_version=0)
+        profile, _, _ = c.crystallise(project, [], {}, current_version=0)
 
     mock_post.assert_called_once()  # only the overall summary call
     dim = profile.dimensions[0]
@@ -165,7 +165,7 @@ def test_crystallise_multiple_dimensions_each_gets_llm_call():
     c = _make_crystalliser()
     with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
         mock_post.return_value = _ollama_response("Some summary.")
-        profile = c.crystallise(project, ratings, chunks)
+        profile, _, _ = c.crystallise(project, ratings, chunks)
 
     # 2 dimension calls + 1 overall = 3 total
     assert mock_post.call_count == 3
@@ -241,7 +241,7 @@ def test_crystallise_profile_metadata():
     c = _make_crystalliser()
     with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
         mock_post.return_value = _ollama_response("Prefers elegant style.")
-        profile = c.crystallise(project, ratings, chunks)
+        profile, _, _ = c.crystallise(project, ratings, chunks)
 
     assert profile.project_id == project.id
     assert profile.rating_count == 1
@@ -267,7 +267,7 @@ def test_crystallise_overall_summary_references_dimensions():
         return _ollama_response(f"Summary {call_count}.")
 
     with patch("verdikt.inference.crystalliser.httpx.post", side_effect=side_effect):
-        profile = c.crystallise(project, ratings, chunks)
+        profile, _, _ = c.crystallise(project, ratings, chunks)
 
     # The last call is the overall summary; the prompt should include both dim summaries
     assert profile.overall_summary == "Summary 3."
@@ -281,7 +281,7 @@ def test_crystallise_missing_chunk_skipped_gracefully():
     c = _make_crystalliser()
     with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
         mock_post.return_value = _ollama_response("Overall summary.")
-        profile = c.crystallise(project, ratings, {})
+        profile, _, _ = c.crystallise(project, ratings, {})
 
     # No crash; dimension falls back to "No ratings" (chunk content unavailable)
     assert "No ratings" in profile.dimensions[0].summary
@@ -320,7 +320,7 @@ def test_crystallise_image_chunks_included():
     c = _make_crystalliser()
     with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
         mock_post.return_value = _ollama_response("Prefers balanced compositions.")
-        profile = c.crystallise(project, ratings, chunks)
+        profile, _, _ = c.crystallise(project, ratings, chunks)
 
     dim = profile.dimensions[0]
     assert dim.name == "Composition"
