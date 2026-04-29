@@ -49,6 +49,8 @@ def _default_status() -> dict:
         "batches_completed": 0,
         "last_batch_avg": None,
         "stopped_reason": None,
+        "tokens_prompt": 0,
+        "tokens_completion": 0,
     }
 
 
@@ -139,6 +141,9 @@ def start_ai_rating(
                         _status[project_id]["batches_completed"] = event.get("batch", 0)
                         _status[project_id]["last_batch_avg"] = event.get("avg")
                         _status[project_id]["chunks_rated"] = event.get("total_rated", 0)
+                        if judge.usage:
+                            _status[project_id]["tokens_prompt"] = sum(p for p, _ in judge.usage)
+                            _status[project_id]["tokens_completion"] = sum(c for _, c in judge.usage)
                     elif etype in ("stopped", "complete"):
                         _status[project_id]["stopped_reason"] = event.get("reason") or ("complete" if etype == "complete" else None)
                         _status[project_id]["chunks_rated"] = event.get("total_rated", _status[project_id].get("chunks_rated", 0))

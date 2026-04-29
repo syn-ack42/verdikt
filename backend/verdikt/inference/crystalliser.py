@@ -31,8 +31,12 @@ class ProfileCrystalliser:
         ratings: list[Rating],
         chunks_by_id: dict[str, Chunk],
         current_version: int = 0,
+        on_tokens: "Callable[[int, int], None] | None" = None,
     ) -> tuple[PreferenceProfile, int, int]:
-        """Returns (profile, total_prompt_tokens, total_completion_tokens)."""
+        """Returns (profile, total_prompt_tokens, total_completion_tokens).
+
+        on_tokens(prompt, completion) is called after each LLM call with running totals.
+        """
         dimensions: list[DimensionProfile] = []
         total_prompt = 0
         total_completion = 0
@@ -96,6 +100,8 @@ class ProfileCrystalliser:
             rdata = response.json()
             total_prompt += rdata.get("prompt_eval_count", 0)
             total_completion += rdata.get("eval_count", 0)
+            if on_tokens:
+                on_tokens(total_prompt, total_completion)
             raw = rdata["response"]
             parsed = json.loads(raw)
             summary = parsed.get("summary", "").strip() or "Unable to generate summary."
@@ -125,6 +131,8 @@ class ProfileCrystalliser:
         ordata = overall_response.json()
         total_prompt += ordata.get("prompt_eval_count", 0)
         total_completion += ordata.get("eval_count", 0)
+        if on_tokens:
+            on_tokens(total_prompt, total_completion)
         overall_raw = ordata["response"]
         overall_parsed = json.loads(overall_raw)
         overall_summary = overall_parsed.get("summary", "").strip() or "Unable to generate summary."

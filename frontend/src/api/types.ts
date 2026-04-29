@@ -299,10 +299,14 @@ export interface AIRatingStatus {
   batches_completed: number
   last_batch_avg: number | null
   stopped_reason: 'diminishing_returns' | 'user_stopped' | 'complete' | 'error' | null
+  tokens_prompt: number
+  tokens_completion: number
 }
 
 export interface CrystalliseStatus {
   running: boolean
+  tokens_prompt: number
+  tokens_completion: number
 }
 
 export type PluginIngestEvent =

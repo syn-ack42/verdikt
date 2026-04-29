@@ -21,8 +21,8 @@ from verdikt.storage.sqlite import (
 
 router = APIRouter(prefix="/api/projects/{project_id}/profile", tags=["profile"])
 
-# In-memory set of project_ids currently crystallising (single-process only)
-_crystallise_running: set[str] = set()
+# In-memory status for currently-crystallising projects (single-process only)
+_crystallise_status: dict[str, dict] = {}
 
 
 def _get_project_or_404(project_id: str, session: Session):
@@ -76,7 +76,10 @@ def crystallise_status(
     project_id: str,
     _: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict:
-    return {"running": project_id in _crystallise_running}
+    st = _crystallise_status.get(project_id)
+    if st is None:
+        return {"running": False, "tokens_prompt": 0, "tokens_completion": 0}
+    return dict(st)
 
 
 @router.post("/crystallise", status_code=201)
@@ -114,13 +117,20 @@ def crystallise_profile(
         ollama_base_url=ollama_base_url,
         model=llm_model,
     )
-    _crystallise_running.add(project_id)
+    _crystallise_status[project_id] = {"running": True, "tokens_prompt": 0, "tokens_completion": 0}
+
+    def _on_tokens(p: int, c: int) -> None:
+        if project_id in _crystallise_status:
+            _crystallise_status[project_id]["tokens_prompt"] = p
+            _crystallise_status[project_id]["tokens_completion"] = c
+
     try:
         profile, prompt_tokens, completion_tokens = crystalliser.crystallise(
             project=proj,
             ratings=ratings,
             chunks_by_id=chunks_by_id,
             current_version=current_version,
+            on_tokens=_on_tokens,
         )
     except Exception as exc:
         import httpx as _httpx
@@ -133,7 +143,7 @@ def crystallise_profile(
             raise HTTPException(status_code=502, detail=f"Ollama error: {exc.response.text[:200]}")
         raise HTTPException(status_code=500, detail=f"Crystallisation failed: {exc}")
     finally:
-        _crystallise_running.discard(project_id)
+        _crystallise_status.pop(project_id, None)
 
     record_usage(user.id, project_id, llm_model, "crystallise", prompt_tokens, completion_tokens, auth_session)
     profile_store.save(profile)
