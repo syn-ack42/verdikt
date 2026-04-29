@@ -1,7 +1,19 @@
 """AO3 content source plugin.
 
 Fetches works from Archive of Our Own. Always retrieves the full work
-(all chapters concatenated) via ?view_full_work=true.
+(all chapters concatenated) via ?view_full_work=true, then retains only
+a Gaussian-sampled subset of paragraphs to reduce storage.
+
+Sampling:
+  VERDIKT_AO3_SAMPLE_RATE   — fraction of paragraphs to keep (default 0.20, min 2 paragraphs)
+  VERDIKT_AO3_SAMPLE_STDDEV — controls how tightly sampling is concentrated around the work's
+                              midpoint. The value is the number of standard deviations that span
+                              from the centre to the edge of the work; higher = broader spread,
+                              lower = more tightly clustered in the middle. Default 1.5.
+  The RNG is seeded from the work ID so repeated fetches of the same work yield identical samples.
+
+Authentication:
+  username / password are optional. Without them, only public works are accessible.
 
 Rate limiting: AO3 is a community resource. This plugin enforces a minimum
 3-second delay between requests and defaults to 5 seconds.
@@ -9,6 +21,7 @@ Rate limiting: AO3 is a community resource. This plugin enforces a minimum
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import time
 from collections.abc import Iterator
@@ -42,9 +55,48 @@ _USER_AGENT = (
     "Verdikt/0.3"
 )
 
+_ENV_SAMPLE_RATE = float(os.environ.get("VERDIKT_AO3_SAMPLE_RATE", "0.20"))
+_ENV_SAMPLE_STDDEV = float(os.environ.get("VERDIKT_AO3_SAMPLE_STDDEV", "1.5"))
+
 
 class LoginError(RuntimeError):
     pass
+
+
+def _sample_paragraphs(text: str, work_id: str, sample_rate: float, stddev_span: float) -> str:
+    """Return a deterministic Gaussian-sampled subset of paragraphs.
+
+    Paragraphs are split by double-newline. Selection probability is proportional
+    to a Gaussian centred at the midpoint of the work, with σ = n / (2 * stddev_span),
+    so that ±stddev_span·σ reaches the edges of the work.
+
+    The RNG is seeded from work_id so repeated fetches produce identical samples.
+    """
+    import numpy as np
+
+    paragraphs = [p for p in text.split("\n\n") if p.strip()]
+    n = len(paragraphs)
+
+    min_keep = 2
+    target = max(min_keep, int(round(n * sample_rate)))
+    if target >= n or n <= min_keep:
+        return text
+
+    center = (n - 1) / 2.0
+    sigma = max(n / (2.0 * stddev_span), 1e-6)
+    raw_w = np.array([np.exp(-0.5 * ((i - center) / sigma) ** 2) for i in range(n)])
+    probs = raw_w / raw_w.sum()
+
+    seed = int(hashlib.md5(work_id.encode()).hexdigest(), 16) % (2 ** 31)
+    rng = np.random.default_rng(seed)
+    chosen = np.sort(rng.choice(n, size=target, replace=False, p=probs))
+
+    sampled = "\n\n".join(paragraphs[i] for i in chosen)
+    log.debug(
+        "ao3: work %s — sampled %d/%d paragraphs (rate=%.0f%%, stddev_span=%.1f)",
+        work_id, target, n, sample_rate * 100, stddev_span,
+    )
+    return sampled
 
 
 class AO3Plugin(PluginBase):
@@ -64,6 +116,8 @@ class AO3Plugin(PluginBase):
                 "Accept-Encoding": "gzip, deflate, br",
             })
         self._logged_in = False
+        self._sample_rate = _ENV_SAMPLE_RATE
+        self._sample_stddev = _ENV_SAMPLE_STDDEV
 
     @classmethod
     def config_schema(cls) -> dict:
@@ -75,11 +129,13 @@ class AO3Plugin(PluginBase):
                 "username": {
                     "type": "string",
                     "title": "AO3 Username",
+                    "description": "Optional. Required only to access locked or private works.",
                 },
                 "password": {
                     "type": "string",
                     "title": "AO3 Password",
                     "format": "password",
+                    "description": "Optional. Required only to access locked or private works.",
                 },
                 "search_urls": {
                     "type": "array",
@@ -118,8 +174,11 @@ class AO3Plugin(PluginBase):
                     "minimum": 3.0,
                 },
             },
-            "required": ["username", "password"],
+            "required": [],
         }
+
+    def _has_credentials(self) -> bool:
+        return bool(self._config.get("username", "").strip() and self._config.get("password", "").strip())
 
     def _normalise_search_entries(self) -> list[dict]:
         """Return [{url, max_works}] normalised from both old string format and new object format."""
@@ -145,7 +204,6 @@ class AO3Plugin(PluginBase):
 
     @staticmethod
     def _is_login_redirect(resp) -> bool:
-        """Return True if AO3 redirected us to the login page (session expired)."""
         return "/users/login" in str(resp.url)
 
     def _get(self, url: str, **kwargs):
@@ -159,23 +217,17 @@ class AO3Plugin(PluginBase):
         return resp
 
     def _login(self) -> None:
-        if self._logged_in:
+        if self._logged_in or not self._has_credentials():
             return
 
-        # Visit homepage first to pick up session cookies before the login form.
         log.info("ao3: GET %s", AO3_BASE)
         home = self._session.get(AO3_BASE, timeout=30)
         log.info("ao3: GET %s -> %s", AO3_BASE, home.status_code)
         home.raise_for_status()
-        #self._delay()
 
         sign_in_url = f"{AO3_BASE}/users/login"
         log.info("ao3: GET %s", sign_in_url)
-        resp = self._session.get(
-            sign_in_url,
-            timeout=30,
-            headers={"Referer": AO3_BASE},
-        )
+        resp = self._session.get(sign_in_url, timeout=30, headers={"Referer": AO3_BASE})
         log.info("ao3: GET %s -> %s", sign_in_url, resp.status_code)
         if resp.status_code == 404:
             raise LoginError(
@@ -194,7 +246,6 @@ class AO3Plugin(PluginBase):
             )
         token = token_input["value"]
 
-        #self._delay()
         log.info("ao3: POST %s (login user=%r)", sign_in_url, self._config.get("username"))
         login_resp = self._session.post(
             sign_in_url,
@@ -217,12 +268,6 @@ class AO3Plugin(PluginBase):
 
     @staticmethod
     def _parse_status_date(li_tag) -> datetime | None:
-        """Extract the last-updated date from a search result <li> element.
-
-        AO3 search cards carry the date in two places:
-        1. An HTML comment  <!-- updated_at=UNIX_TIMESTAMP -->  (most precise, preferred)
-        2. A <p class="datetime">DD Mon YYYY</p> visible display date (fallback)
-        """
         for node in li_tag.find_all(string=lambda t: isinstance(t, Comment)):
             m = _UPDATED_AT_RE.search(node)
             if m:
@@ -237,7 +282,6 @@ class AO3Plugin(PluginBase):
         return None
 
     def _get_work_ids_from_search(self, url: str, max_works: int) -> dict[str, datetime | None]:
-        """Return {work_id: last_updated} for up to max_works results from a search URL."""
         results: dict[str, datetime | None] = {}
         page = 1
         parsed = urlparse(url)
@@ -266,7 +310,6 @@ class AO3Plugin(PluginBase):
                     wid = m.group(1)
                     date = self._parse_status_date(li)
                     if date is None:
-                        # Show enough context to diagnose why the date wasn't found
                         comments = [str(c) for c in li.find_all(string=lambda t: isinstance(t, Comment))]
                         datetime_p = li.find("p", class_="datetime")
                         log.debug(
@@ -290,11 +333,6 @@ class AO3Plugin(PluginBase):
 
     @staticmethod
     def _extract_date_from_soup(soup) -> datetime | None:
-        """Extract last-updated (or published) date from a work page stats block.
-
-        AO3 only shows <dd class="status"> for multi-chapter or subsequently updated works.
-        Single-chapter one-shots only have <dd class="published">, so we fall back to that.
-        """
         dd = soup.find("dd", class_="status") or soup.find("dd", class_="published")
         if dd:
             m = _DATE_RE.search(dd.get_text())
@@ -306,7 +344,6 @@ class AO3Plugin(PluginBase):
         return None
 
     def _get_work_updated_at(self, work_id: str) -> datetime | None:
-        """Fetch only the first-chapter page of a work to read its last-updated date."""
         url = f"{AO3_BASE}/works/{work_id}?view_adult=true"
         log.info("ao3: GET %s", url)
         resp = self._get(url, timeout=30, headers={"Referer": AO3_BASE})
@@ -342,13 +379,15 @@ class AO3Plugin(PluginBase):
             for tag in ch.find_all(["h3", "h4"]):
                 tag.decompose()
             content_parts.append(ch.get_text(separator="\n", strip=True))
-        content = "\n\n".join(content_parts)
+        full_content = "\n\n".join(content_parts)
 
-        if not content.strip():
+        if not full_content.strip():
             log.warning("ao3: work %s had no extractable content", work_id)
             return None
 
-        # If not passed in, extract the last-updated (or published) date from the stats block
+        # Sample a Gaussian-distributed subset of paragraphs to reduce storage.
+        content = _sample_paragraphs(full_content, work_id, self._sample_rate, self._sample_stddev)
+
         if source_updated_at is None:
             source_updated_at = self._extract_date_from_soup(soup)
 
@@ -360,7 +399,7 @@ class AO3Plugin(PluginBase):
             plugin_metadata["source_updated_at"] = source_updated_at.isoformat()
 
         return MaterialItem(
-            project_id="",  # caller fills this in
+            project_id="",
             source_plugin="ao3",
             source_path=canonical_url,
             url=canonical_url,
@@ -379,11 +418,7 @@ class AO3Plugin(PluginBase):
         return sum(e["max_works"] for e in entries) + work_count
 
     def get_updated_ats(self, work_ids: list[str]) -> dict[str, datetime | None]:
-        """Check last-modified dates for stored works without downloading full content.
-
-        Runs configured search URLs first (one search page covers many works cheaply),
-        then falls back to a per-work lightweight page fetch for works not found in search.
-        """
+        """Check last-modified dates for stored works without downloading full content."""
         self._login()
 
         found: dict[str, datetime | None] = {}
@@ -402,7 +437,6 @@ class AO3Plugin(PluginBase):
             work_ids[:10], list(search_found)[:10],
         )
 
-        # For work_ids not in any search result, OR found in search but without a date, do a per-work check
         remaining = [wid for wid in work_ids if found.get(wid) is None]
         log.debug("ao3: %d works not covered by search, will fetch individually", len(remaining))
         for wid in remaining:
@@ -417,11 +451,6 @@ class AO3Plugin(PluginBase):
         work_ids: list[str],
         date_hints: dict[str, datetime | None] | None = None,
     ) -> Iterator[MaterialItem]:
-        """Fetch only the specified work IDs.
-
-        date_hints — dates already fetched by get_updated_ats, passed through to avoid
-        re-parsing the page (and to handle works where the full page has no status date).
-        """
         self._login()
         log.info("ao3: fetching %d works for project %s", len(work_ids), project_id)
         for wid in work_ids:
@@ -436,14 +465,12 @@ class AO3Plugin(PluginBase):
     def fetch(self, project_id: str) -> Iterator[MaterialItem]:
         self._login()
 
-        # Each search URL has its own max_works limit — no global cap across searches
         search_dates: dict[str, datetime | None] = {}
         for entry in self._normalise_search_entries():
             results = self._get_work_ids_from_search(entry["url"], entry["max_works"])
             search_dates.update(results)
             self._delay()
 
-        # Individual work_urls are always fetched — they don't count against any search total
         extra_ids: list[str] = []
         for wu in self._config.get("work_urls", []):
             wid = self._extract_work_id(str(wu))
