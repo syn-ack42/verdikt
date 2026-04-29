@@ -147,6 +147,9 @@ def start_ai_rating(
                     elif etype in ("stopped", "complete"):
                         _status[project_id]["stopped_reason"] = event.get("reason") or ("complete" if etype == "complete" else None)
                         _status[project_id]["chunks_rated"] = event.get("total_rated", _status[project_id].get("chunks_rated", 0))
+                        if judge.usage:
+                            _status[project_id]["tokens_prompt"] = sum(p for p, _ in judge.usage)
+                            _status[project_id]["tokens_completion"] = sum(c for _, c in judge.usage)
                     elif etype == "rescore":
                         pass  # progress shown via status polling
 
@@ -194,6 +197,9 @@ def stop_ai_rating(
     if flag is not None:
         flag.append(True)
     if project_id in _status:
+        # Mark as not running immediately so the UI reflects the stop without
+        # waiting for the current LLM call to finish.
+        _status[project_id]["running"] = False
         _status[project_id]["stopped_reason"] = "user_stopped"
     return {"status": "stopped"}
 

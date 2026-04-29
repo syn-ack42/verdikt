@@ -15,6 +15,12 @@ function fmtTokens(n: number): string {
   return String(n)
 }
 
+/** Returns formatted token string if total > 0, empty string otherwise. Handles undefined fields. */
+function tokenLabel(prompt: number | undefined, completion: number | undefined): string {
+  const total = (prompt ?? 0) + (completion ?? 0)
+  return total > 0 ? fmtTokens(total) : ''
+}
+
 type PhaseStatus = 'waiting' | 'running' | 'done' | 'error'
 type PhaseProgress = { phase: string; status: PhaseStatus; items?: number; current?: number; total?: number }
 
@@ -578,9 +584,9 @@ export default function ProjectDashboard() {
           <div style={{ width: '100%', marginTop: 8, fontSize: 13 }}>
             <p style={{ margin: 0, color: '#6b7de0' }}>
               ⟳ Crystallising…
-              {(crystalliseStatus.tokens_prompt + crystalliseStatus.tokens_completion) > 0 && (
+              {tokenLabel(crystalliseStatus.tokens_prompt, crystalliseStatus.tokens_completion) && (
                 <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>
-                  {fmtTokens(crystalliseStatus.tokens_prompt + crystalliseStatus.tokens_completion)} tokens used
+                  · {tokenLabel(crystalliseStatus.tokens_prompt, crystalliseStatus.tokens_completion)} tokens used
                 </span>
               )}
             </p>
@@ -594,9 +600,9 @@ export default function ProjectDashboard() {
               <p style={{ margin: 0, color: '#6b7de0' }}>
                 AI Rating · {aiRatingStatus.chunks_rated} chunks scored · batch {aiRatingStatus.batches_completed}
                 {aiRatingStatus.last_batch_avg != null && ` · avg ${aiRatingStatus.last_batch_avg.toFixed(2)}`}
-                {(aiRatingStatus.tokens_prompt + aiRatingStatus.tokens_completion) > 0 && (
+                {tokenLabel(aiRatingStatus.tokens_prompt, aiRatingStatus.tokens_completion) && (
                   <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>
-                    · {fmtTokens(aiRatingStatus.tokens_prompt + aiRatingStatus.tokens_completion)} tokens
+                    · {tokenLabel(aiRatingStatus.tokens_prompt, aiRatingStatus.tokens_completion)} tokens
                   </span>
                 )}
               </p>
@@ -604,19 +610,19 @@ export default function ProjectDashboard() {
             {!aiRatingStatus.running && aiRatingStatus.stopped_reason === 'diminishing_returns' && (
               <p style={{ margin: 0, color: 'var(--text-muted)' }}>
                 AI Rating done — {aiRatingStatus.chunks_rated} chunks scored · interesting chunks exhausted
-                {(aiRatingStatus.tokens_prompt + aiRatingStatus.tokens_completion) > 0 && ` · ${fmtTokens(aiRatingStatus.tokens_prompt + aiRatingStatus.tokens_completion)} tokens`}
+                {tokenLabel(aiRatingStatus.tokens_prompt, aiRatingStatus.tokens_completion) && ` · ${tokenLabel(aiRatingStatus.tokens_prompt, aiRatingStatus.tokens_completion)} tokens`}
               </p>
             )}
             {!aiRatingStatus.running && aiRatingStatus.stopped_reason === 'complete' && (
               <p style={{ margin: 0, color: '#390' }}>
                 AI Rating complete — {aiRatingStatus.chunks_rated} chunks scored
-                {(aiRatingStatus.tokens_prompt + aiRatingStatus.tokens_completion) > 0 && ` · ${fmtTokens(aiRatingStatus.tokens_prompt + aiRatingStatus.tokens_completion)} tokens`}
+                {tokenLabel(aiRatingStatus.tokens_prompt, aiRatingStatus.tokens_completion) && ` · ${tokenLabel(aiRatingStatus.tokens_prompt, aiRatingStatus.tokens_completion)} tokens`}
               </p>
             )}
             {!aiRatingStatus.running && aiRatingStatus.stopped_reason === 'user_stopped' && (
               <p style={{ margin: 0, color: 'var(--text-muted)' }}>
                 AI Rating stopped · {aiRatingStatus.chunks_rated} chunks scored
-                {(aiRatingStatus.tokens_prompt + aiRatingStatus.tokens_completion) > 0 && ` · ${fmtTokens(aiRatingStatus.tokens_prompt + aiRatingStatus.tokens_completion)} tokens`}
+                {tokenLabel(aiRatingStatus.tokens_prompt, aiRatingStatus.tokens_completion) && ` · ${tokenLabel(aiRatingStatus.tokens_prompt, aiRatingStatus.tokens_completion)} tokens`}
               </p>
             )}
             {aiRatingStatus.profile_stale && (
