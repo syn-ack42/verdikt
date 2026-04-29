@@ -137,6 +137,14 @@ export default function ProjectList() {
               >
                 Token Usage
               </button>
+              <button
+                onClick={() => { setShowSettingsMenu(false); navigate('/settings/password') }}
+                style={{ width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface, rgba(255,255,255,0.06))')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+              >
+                Change Password
+              </button>
               {user?.is_admin && (
                 <>
                   <button
@@ -154,6 +162,14 @@ export default function ProjectList() {
                     onMouseLeave={e => (e.currentTarget.style.background = 'none')}
                   >
                     Admin: Models
+                  </button>
+                  <button
+                    onClick={() => { setShowSettingsMenu(false); navigate('/admin/settings') }}
+                    style={{ width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface, rgba(255,255,255,0.06))')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                  >
+                    Admin: Settings
                   </button>
                 </>
               )}

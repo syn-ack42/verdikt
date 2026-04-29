@@ -161,13 +161,22 @@ class EncryptedStorageBackend(StorageBackend):
     distinct info tag so it's separate from the database encryption key.
     """
 
-    def __init__(self, root: Path, key: bytes, session: object) -> None:
+    def __init__(self, root: Path, key: bytes, session: object, storage_limit_bytes: int | None = None) -> None:
         from sqlalchemy.orm import Session as _Session
         self._root = root
         self._root.mkdir(parents=True, exist_ok=True)
         self._key = key  # 32-byte AES-256-GCM key
         self._session: _Session = session  # type: ignore[assignment]
         self._temp_files: list[str] = []
+        self._storage_limit_bytes = storage_limit_bytes
+
+    def _get_used_bytes(self) -> int:
+        from sqlalchemy import func, select
+        from verdikt.storage.orm import FileManifestRow
+        result = self._session.execute(
+            select(func.sum(FileManifestRow.size)).where(FileManifestRow.is_dir.is_(False))
+        ).scalar()
+        return result or 0
 
     # ── Crypto ─────────────────────────────────────────────────────────────────
 
@@ -290,10 +299,22 @@ class EncryptedStorageBackend(StorageBackend):
         )
 
     def write(self, path: str, data: bytes) -> None:
+        from fastapi import HTTPException
         from verdikt.storage.orm import FileManifestRow
 
         norm = self._normalize(path)
         row = self._row(norm)
+
+        if self._storage_limit_bytes is not None:
+            existing_size = row.size if row is not None else 0
+            net_increase = len(data) - existing_size
+            if net_increase > 0 and self._get_used_bytes() + net_increase > self._storage_limit_bytes:
+                limit_mb = self._storage_limit_bytes / (1024 * 1024)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Storage limit of {limit_mb:.0f} MB exceeded",
+                )
+
         file_id = row.id if row is not None else str(uuid4())
         encrypted = self._encrypt(data)
         (self._root / file_id).write_bytes(encrypted)

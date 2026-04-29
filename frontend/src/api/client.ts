@@ -1,6 +1,6 @@
 import type {
   AIRatingStatus, CrystalliseStatus, IngestResult, MaterialItemWithStats, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
-  PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, RatedChunkEntry, Rating, StorageListing,
+  PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, RatedChunkEntry, Rating, SiteSettings, StorageListing,
   TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkDetail,
 } from './types'
 
@@ -63,23 +63,31 @@ export const api = {
     login: (email: string, password: string) =>
       req<User>('POST', '/auth/login', { email, password }),
     register: (email: string, password: string) =>
-      req<User>('POST', '/auth/register', { email, password }),
+      req<{ id?: string; email?: string; is_admin?: boolean; pending_confirmation?: boolean }>('POST', '/auth/register', { email, password }),
     logout: () => req<{ ok: boolean }>('POST', '/auth/logout'),
+    confirmEmail: (token: string) => req<{ ok: boolean; email: string }>('POST', '/auth/confirm-email', { token }),
+    changePassword: (old_password: string, new_password: string) =>
+      req<{ ok: boolean }>('POST', '/auth/change-password', { old_password, new_password }),
     oauthProviders: () => req<string[]>('GET', '/auth/oauth/providers'),
     oauthAuthorizeUrl: (provider: string) => `${BASE}/auth/oauth/${provider}/authorize`,
   },
   admin: {
     listUsers: () => req<User[]>('GET', '/admin/users'),
+    createUser: (email: string, password: string) =>
+      req<User>('POST', '/admin/users', { email, password }),
     blockUser: (id: string) => req<User>('POST', `/admin/users/${id}/block`),
     unblockUser: (id: string) => req<User>('POST', `/admin/users/${id}/unblock`),
     deleteUser: (id: string) => req<{ ok: boolean }>('DELETE', `/admin/users/${id}`),
     promoteUser: (id: string) => req<User>('POST', `/admin/users/${id}/promote`),
     demoteUser: (id: string) => req<User>('POST', `/admin/users/${id}/demote`),
-    updateUserLimits: (id: string, body: { daily_token_grant?: number | null; token_grant_expiry_days?: number }) =>
+    updateUserLimits: (id: string, body: { daily_token_grant?: number | null; token_grant_expiry_days?: number; storage_limit_bytes?: number | null }) =>
       req<User>('PATCH', `/admin/users/${id}/limits`, body),
     createGrant: (id: string, body: { amount: number; expires_at?: string | null; note?: string }) =>
       req<TokenGrant>('POST', `/admin/users/${id}/grants`, body),
     getUserUsage: (id: string) => req<UsageSummary>('GET', `/admin/users/${id}/usage`),
+    getSettings: () => req<SiteSettings>('GET', '/admin/settings'),
+    updateSettings: (body: Partial<SiteSettings>) => req<SiteSettings>('PUT', '/admin/settings', body),
+    testSmtp: () => req<{ ok: boolean }>('POST', '/admin/settings/test-smtp'),
     syncModels: () => req<ModelCatalogEntry[]>('POST', '/admin/models/sync'),
     listModels: () => req<ModelCatalogEntry[]>('GET', '/admin/models'),
     createModel: (body: { id: string; type: string; domain: string; display_name: string; description?: string; source?: string }) =>

@@ -7,7 +7,7 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 import httpx
@@ -20,9 +20,10 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_auth_session, get_config, get_current_user
+from verdikt.api.deps import get_auth_session, get_config, get_current_user, rekey_user_db
+from verdikt.api.email import is_smtp_configured, send_email
 from verdikt.core.user_models import AuthenticatedUser
-from verdikt.storage.auth_orm import UserRow
+from verdikt.storage.auth_orm import EmailConfirmationRow, UserRow
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -33,8 +34,8 @@ _KDF_MEMORY_COST = 65536  # 64 MiB
 _KDF_PARALLELISM = 2
 _KDF_HASH_LEN = 32
 _JWT_ALGORITHM = "HS256"
-# 30-day token — user stays logged in across restarts
 _JWT_EXPIRE_SECONDS = 30 * 24 * 3600
+_CONFIRM_TOKEN_TTL_HOURS = 48
 
 
 class RegisterRequest(BaseModel):
@@ -45,6 +46,34 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
+class ConfirmEmailRequest(BaseModel):
+    token: str
+
+
+def _check_password_strength(password: str) -> None:
+    """Raise HTTP 400 if the password is too weak (zxcvbn score < 3)."""
+    try:
+        from zxcvbn import zxcvbn
+        result = zxcvbn(password)
+        if result["score"] < 3:
+            feedback = result.get("feedback", {})
+            warning = feedback.get("warning") or "Choose a longer or more unique password — a passphrase works well."
+            suggestions = feedback.get("suggestions", [])
+            detail = warning
+            if suggestions:
+                detail += " " + suggestions[0]
+            raise HTTPException(status_code=400, detail=detail)
+    except ImportError:
+        # zxcvbn not installed — fall back to length check
+        if len(password) < 10:
+            raise HTTPException(status_code=400, detail="Password must be at least 10 characters")
 
 
 def _derive_key(password: str, kdf_salt_hex: str) -> str:
@@ -79,8 +108,19 @@ def _set_cookie(response: Response, token: str) -> None:
         max_age=_JWT_EXPIRE_SECONDS,
         httponly=True,
         samesite="lax",
-        secure=False,  # set to True behind HTTPS reverse proxy
+        secure=False,
     )
+
+
+def _user_response(user: UserRow) -> dict:
+    return {
+        "id": user.id,
+        "email": user.email,
+        "is_admin": user.is_admin,
+        "is_founding_admin": getattr(user, "is_founding_admin", False),
+        "force_password_change": getattr(user, "force_password_change", False),
+        "email_confirmed": getattr(user, "email_confirmed", True),
+    }
 
 
 @router.post("/register")
@@ -89,10 +129,14 @@ def register(
     response: Response,
     session: Annotated[Session, Depends(get_auth_session)],
 ):
-    # First user becomes admin
-    is_first = session.query(UserRow).count() == 0
+    _check_password_strength(body.password)
 
-    kdf_salt = uuid.uuid4().hex + uuid.uuid4().hex  # 64 hex chars = 32 bytes
+    is_first = session.query(UserRow).count() == 0
+    smtp_ready = is_smtp_configured(session)
+    # Founding admin and instances without SMTP skip email confirmation
+    needs_confirmation = smtp_ready and not is_first
+
+    kdf_salt = uuid.uuid4().hex + uuid.uuid4().hex
     argon2_hash = _ph.hash(body.password)
     db_key = _derive_key(body.password, kdf_salt)
 
@@ -104,6 +148,7 @@ def register(
         is_admin=is_first,
         is_founding_admin=is_first,
         is_blocked=False,
+        email_confirmed=not needs_confirmation,
         created_at=datetime.now(timezone.utc),
     )
     session.add(user)
@@ -112,9 +157,67 @@ def register(
     except IntegrityError:
         raise HTTPException(status_code=409, detail="Email already registered")
 
+    if needs_confirmation:
+        _send_confirmation_email(user, session)
+        return {"pending_confirmation": True, "email": user.email}
+
     token = _make_token(user, db_key)
     _set_cookie(response, token)
-    return {"id": user.id, "email": user.email, "is_admin": user.is_admin}
+    return _user_response(user)
+
+
+def _send_confirmation_email(user: UserRow, session: Session) -> None:
+    token = uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    session.add(EmailConfirmationRow(
+        token=token,
+        user_id=user.id,
+        expires_at=now + timedelta(hours=_CONFIRM_TOKEN_TTL_HOURS),
+        created_at=now,
+    ))
+    session.commit()
+
+    config = get_config()
+    confirm_url = f"{config.oauth_redirect_base}/confirm-email?token={token}"
+    send_email(
+        session,
+        to=user.email,
+        subject="Confirm your Verdikt account",
+        body_html=f"""
+<p>Thanks for registering with Verdikt.</p>
+<p>Please click the link below to confirm your email address and activate your account.
+The link expires in {_CONFIRM_TOKEN_TTL_HOURS} hours.</p>
+<p><a href="{confirm_url}">{confirm_url}</a></p>
+<p>If you did not create this account, you can ignore this email.</p>
+""",
+        body_text=(
+            f"Confirm your Verdikt account by visiting:\n{confirm_url}\n\n"
+            f"The link expires in {_CONFIRM_TOKEN_TTL_HOURS} hours."
+        ),
+    )
+
+
+@router.post("/confirm-email")
+def confirm_email(
+    body: ConfirmEmailRequest,
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    row = session.get(EmailConfirmationRow, body.token)
+    if row is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired confirmation link")
+    if row.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+        session.delete(row)
+        session.commit()
+        raise HTTPException(status_code=400, detail="Confirmation link has expired. Please register again.")
+
+    user = session.get(UserRow, row.user_id)
+    if user is None:
+        raise HTTPException(status_code=400, detail="Account no longer exists")
+
+    user.email_confirmed = True
+    session.delete(row)
+    session.commit()
+    return {"ok": True, "email": user.email}
 
 
 @router.post("/login")
@@ -124,7 +227,7 @@ def login(
     session: Annotated[Session, Depends(get_auth_session)],
 ):
     user = session.query(UserRow).filter_by(email=body.email).first()
-    if user is None:
+    if user is None or user.argon2_hash is None:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     try:
         _ph.verify(user.argon2_hash, body.password)
@@ -133,11 +236,13 @@ def login(
 
     if user.is_blocked:
         raise HTTPException(status_code=403, detail="Account blocked")
+    if not getattr(user, "email_confirmed", True):
+        raise HTTPException(status_code=403, detail="Email address not confirmed. Check your inbox.")
 
     db_key = _derive_key(body.password, user.kdf_salt)
     token = _make_token(user, db_key)
     _set_cookie(response, token)
-    return {"id": user.id, "email": user.email, "is_admin": user.is_admin}
+    return _user_response(user)
 
 
 @router.post("/logout")
@@ -147,8 +252,56 @@ def logout(response: Response):
 
 
 @router.get("/me")
-def me(user: Annotated[AuthenticatedUser, Depends(get_current_user)]):
-    return {"id": user.id, "email": user.email, "is_admin": user.is_admin}
+def me(
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    row = session.get(UserRow, user.id)
+    return {
+        "id": user.id,
+        "email": user.email,
+        "is_admin": user.is_admin,
+        "is_founding_admin": getattr(row, "is_founding_admin", False) if row else False,
+        "force_password_change": getattr(row, "force_password_change", False) if row else False,
+        "email_confirmed": getattr(row, "email_confirmed", True) if row else True,
+        "storage_limit_bytes": getattr(row, "storage_limit_bytes", None) if row else None,
+    }
+
+
+@router.post("/change-password")
+def change_password(
+    body: ChangePasswordRequest,
+    response: Response,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    row = session.get(UserRow, user.id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if row.argon2_hash is None:
+        raise HTTPException(status_code=400, detail="OAuth accounts cannot change password here")
+
+    try:
+        _ph.verify(row.argon2_hash, body.old_password)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    _check_password_strength(body.new_password)
+
+    new_salt = uuid.uuid4().hex + uuid.uuid4().hex
+    new_db_key = _derive_key(body.new_password, new_salt)
+
+    # Re-encrypt the user's SQLCipher DB with the new key
+    rekey_user_db(user.id, user.db_key, new_db_key)
+
+    row.argon2_hash = _ph.hash(body.new_password)
+    row.kdf_salt = new_salt
+    row.force_password_change = False
+    session.commit()
+
+    token = _make_token(row, new_db_key)
+    _set_cookie(response, token)
+    return {"ok": True}
 
 
 # ── OAuth ─────────────────────────────────────────────────────────────────────
@@ -170,39 +323,31 @@ _OAUTH_PROVIDERS = {
 
 
 def _wrap_oauth_db_key(db_key_bytes: bytes, jwt_secret: str) -> str:
-    """Encrypt a DB key for an OAuth user using Fernet with HKDF-derived wrap key."""
     from cryptography.fernet import Fernet
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF
     wrap_key = HKDF(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=None,
+        algorithm=hashes.SHA256(), length=32, salt=None,
         info=b"verdikt-oauth-key-wrap-v1",
     ).derive(jwt_secret.encode())
-    fernet_key = base64.urlsafe_b64encode(wrap_key)
-    return Fernet(fernet_key).encrypt(db_key_bytes).decode()
+    return Fernet(base64.urlsafe_b64encode(wrap_key)).encrypt(db_key_bytes).decode()
 
 
 def _unwrap_oauth_db_key(ciphertext: str, jwt_secret: str) -> str:
-    """Decrypt an OAuth user's DB key; returns base64-encoded key."""
     from cryptography.fernet import Fernet
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF
     wrap_key = HKDF(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=None,
+        algorithm=hashes.SHA256(), length=32, salt=None,
         info=b"verdikt-oauth-key-wrap-v1",
     ).derive(jwt_secret.encode())
-    fernet_key = base64.urlsafe_b64encode(wrap_key)
-    raw = Fernet(fernet_key).decrypt(ciphertext.encode())
+    raw = Fernet(base64.urlsafe_b64encode(wrap_key)).decrypt(ciphertext.encode())
     return base64.b64encode(raw).decode()
 
 
 def _make_oauth_state(jwt_secret: str) -> str:
     nonce = os.urandom(16).hex()
-    expiry = str(int(time.time()) + 600)  # 10-minute window
+    expiry = str(int(time.time()) + 600)
     sig = hmac.new(jwt_secret.encode(), f"{nonce}.{expiry}".encode(), hashlib.sha256).hexdigest()
     return f"{nonce}.{expiry}.{sig}"
 
@@ -219,14 +364,8 @@ def _verify_oauth_state(state: str, jwt_secret: str) -> bool:
 
 
 def _find_or_create_oauth_user(
-    provider: str,
-    provider_id: str,
-    email: str,
-    session: Session,
-    config,
+    provider: str, provider_id: str, email: str, session: Session, config,
 ) -> tuple[UserRow, str]:
-    """Return (user, db_key_b64). Creates user if needed."""
-    # 1. Look up by provider + provider_id
     existing = session.query(UserRow).filter_by(
         oauth_provider=provider, oauth_provider_id=provider_id
     ).first()
@@ -234,21 +373,18 @@ def _find_or_create_oauth_user(
         db_key = _unwrap_oauth_db_key(existing.oauth_db_key_enc, config.jwt_secret)
         return existing, db_key
 
-    # 2. Look up by email — link OAuth to existing account
     by_email = session.query(UserRow).filter_by(email=email).first()
     if by_email:
         if not by_email.oauth_db_key_enc:
-            # First OAuth link for a password-auth user: derive DB key from stored credentials
-            # We can't re-derive (no password), so generate a new independent key
             raw_key = os.urandom(32)
             by_email.oauth_db_key_enc = _wrap_oauth_db_key(raw_key, config.jwt_secret)
         by_email.oauth_provider = provider
         by_email.oauth_provider_id = provider_id
+        by_email.email_confirmed = True
         session.commit()
         db_key = _unwrap_oauth_db_key(by_email.oauth_db_key_enc, config.jwt_secret)
         return by_email, db_key
 
-    # 3. Create new user
     is_first = session.query(UserRow).count() == 0
     raw_key = os.urandom(32)
     enc_key = _wrap_oauth_db_key(raw_key, config.jwt_secret)
@@ -260,6 +396,7 @@ def _find_or_create_oauth_user(
         is_admin=is_first,
         is_founding_admin=is_first,
         is_blocked=False,
+        email_confirmed=True,
         created_at=datetime.now(timezone.utc),
         oauth_provider=provider,
         oauth_provider_id=provider_id,
@@ -271,8 +408,7 @@ def _find_or_create_oauth_user(
     except IntegrityError:
         session.rollback()
         raise HTTPException(status_code=409, detail="Email already registered")
-    db_key_b64 = base64.b64encode(raw_key).decode()
-    return user, db_key_b64
+    return user, base64.b64encode(raw_key).decode()
 
 
 @router.get("/oauth/providers")
@@ -298,7 +434,6 @@ def oauth_authorize(provider: str) -> RedirectResponse:
     p = _OAUTH_PROVIDERS[provider]
     state = _make_oauth_state(config.jwt_secret)
     redirect_uri = f"{config.oauth_redirect_base}/api/auth/oauth/{provider}/callback"
-
     params = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,
@@ -310,8 +445,7 @@ def oauth_authorize(provider: str) -> RedirectResponse:
         params["access_type"] = "online"
 
     from urllib.parse import urlencode
-    url = p["auth_url"] + "?" + urlencode(params)
-    return RedirectResponse(url)
+    return RedirectResponse(p["auth_url"] + "?" + urlencode(params))
 
 
 @router.get("/oauth/{provider}/callback")
@@ -328,7 +462,6 @@ def oauth_callback(
 
     if error:
         return RedirectResponse("/login?error=oauth_denied")
-
     if not state or not _verify_oauth_state(state, config.jwt_secret):
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
 
@@ -340,29 +473,22 @@ def oauth_callback(
     p = _OAUTH_PROVIDERS[provider]
     redirect_uri = f"{config.oauth_redirect_base}/api/auth/oauth/{provider}/callback"
 
-    # Exchange code for access token
-    headers = {"Accept": "application/json"}
     token_resp = httpx.post(
         p["token_url"],
         data={
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "grant_type": "authorization_code",
+            "client_id": client_id, "client_secret": client_secret,
+            "code": code, "redirect_uri": redirect_uri, "grant_type": "authorization_code",
         },
-        headers=headers,
+        headers={"Accept": "application/json"},
         timeout=15.0,
     )
     if token_resp.status_code != 200:
         return RedirectResponse("/login?error=oauth_token_failed")
 
-    token_data = token_resp.json()
-    access_token = token_data.get("access_token")
+    access_token = token_resp.json().get("access_token")
     if not access_token:
         return RedirectResponse("/login?error=oauth_token_failed")
 
-    # Fetch user info
     user_resp = httpx.get(
         p["userinfo_url"],
         headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
@@ -372,22 +498,18 @@ def oauth_callback(
         return RedirectResponse("/login?error=oauth_userinfo_failed")
 
     user_info = user_resp.json()
-
-    # Extract email
     email: str | None = user_info.get("email")
     if not email and provider == "github":
-        # GitHub may not include email in /user; fetch separately
         emails_resp = httpx.get(
             "https://api.github.com/user/emails",
             headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
             timeout=10.0,
         )
         if emails_resp.status_code == 200:
-            primary = next(
+            email = next(
                 (e["email"] for e in emails_resp.json() if e.get("primary") and e.get("verified")),
                 None,
             )
-            email = primary
 
     if not email:
         return RedirectResponse("/login?error=oauth_no_email")
@@ -397,11 +519,10 @@ def oauth_callback(
         return RedirectResponse("/login?error=oauth_no_id")
 
     user, db_key = _find_or_create_oauth_user(provider, provider_id, email, session, config)
-
     if user.is_blocked:
         return RedirectResponse("/login?error=account_blocked")
 
     token = _make_token(user, db_key)
-    response = RedirectResponse("/")
-    _set_cookie(response, token)
-    return response
+    resp = RedirectResponse("/")
+    _set_cookie(resp, token)
+    return resp

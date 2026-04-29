@@ -5,8 +5,23 @@ export interface User {
   is_founding_admin?: boolean
   created_at?: string
   is_blocked?: boolean
+  email_confirmed?: boolean
+  force_password_change?: boolean
   daily_token_grant?: number | null
   token_grant_expiry_days?: number
+  storage_limit_bytes?: number | null
+}
+
+export interface SiteSettings {
+  default_storage_limit_mb: string
+  default_daily_token_grant: string
+  default_token_grant_expiry_days: string
+  smtp_host: string
+  smtp_port: string
+  smtp_user: string
+  smtp_password: string
+  smtp_from: string
+  smtp_use_tls: string
 }
 
 export interface TokenWindowStats {

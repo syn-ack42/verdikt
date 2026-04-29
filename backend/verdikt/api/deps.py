@@ -15,7 +15,7 @@ from sqlalchemy.pool import NullPool
 
 from verdikt.core.config import AppConfig
 from verdikt.core.user_models import AuthenticatedUser
-from verdikt.storage.auth_orm import AuthBase, UserRow
+from verdikt.storage.auth_orm import AuthBase, SiteSettingsRow, UserRow
 from verdikt.storage.files import EncryptedStorageBackend, StorageBackend
 from verdikt.storage.orm import Base
 
@@ -92,6 +92,16 @@ def _migrate_auth_db(engine: Engine) -> None:
         if "oauth_db_key_enc" not in user_cols:
             conn.execute(_text("ALTER TABLE users ADD COLUMN oauth_db_key_enc TEXT"))
             conn.commit()
+        if "email_confirmed" not in user_cols:
+            # Existing users are treated as confirmed
+            conn.execute(_text("ALTER TABLE users ADD COLUMN email_confirmed INTEGER NOT NULL DEFAULT 1"))
+            conn.commit()
+        if "force_password_change" not in user_cols:
+            conn.execute(_text("ALTER TABLE users ADD COLUMN force_password_change INTEGER NOT NULL DEFAULT 0"))
+            conn.commit()
+        if "storage_limit_bytes" not in user_cols:
+            conn.execute(_text("ALTER TABLE users ADD COLUMN storage_limit_bytes INTEGER"))
+            conn.commit()
 
 
 def get_auth_session() -> Generator[Session, None, None]:
@@ -135,6 +145,42 @@ def _make_user_engine(db_path: str, db_key: str) -> Engine:
             poolclass=NullPool,
         )
     return engine
+
+
+def rekey_user_db(user_id: str, old_key: str, new_key: str) -> None:
+    """Re-encrypt a user's SQLCipher DB with a new key and invalidate the cached engine."""
+    config = get_config()
+    db_path = str(config.user_db_path(user_id))
+    try:
+        from sqlcipher3 import dbapi2 as sqlcipher  # type: ignore
+        conn = sqlcipher.connect(db_path, check_same_thread=False)
+        conn.execute(f'PRAGMA key="{old_key}"')
+        conn.execute(f'PRAGMA rekey="{new_key}"')
+        conn.close()
+    except ImportError:
+        pass  # plain SQLite mode — no rekey needed
+    _user_engines.pop(user_id, None)
+
+
+def _get_user_storage_limit(user_id: str) -> int | None:
+    """Return storage limit in bytes for a user (None = unlimited).
+
+    Checks per-user override first, then site default (default_storage_limit_mb),
+    then falls back to 10 MB.
+    """
+    with Session(get_auth_engine()) as s:
+        user = s.get(UserRow, user_id)
+        if user is None:
+            return None
+        if user.storage_limit_bytes is not None:
+            return user.storage_limit_bytes
+        row = s.get(SiteSettingsRow, "default_storage_limit_mb")
+        if row and row.value:
+            try:
+                return int(row.value) * 1024 * 1024
+            except ValueError:
+                pass
+        return 10 * 1024 * 1024  # hard-coded fallback: 10 MB
 
 
 def get_user_engine(user: AuthenticatedUser) -> Engine:
@@ -266,7 +312,8 @@ def get_storage(
 ) -> Generator[StorageBackend, None, None]:
     config = get_config()
     key = _derive_file_key(user.db_key)
-    backend = EncryptedStorageBackend(config.user_files_path(user.id), key, session)
+    storage_limit = _get_user_storage_limit(user.id)
+    backend = EncryptedStorageBackend(config.user_files_path(user.id), key, session, storage_limit_bytes=storage_limit)
     if user.id not in _files_migrated:
         _files_migrated.add(user.id)
         n = backend.migrate_plaintext_files()

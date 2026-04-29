@@ -3,9 +3,10 @@ import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { User } from '../api/types'
+import PasswordStrengthMeter, { scorePassword } from '../components/PasswordStrengthMeter'
 
 type GrantModal = { userId: string; email: string }
-type LimitsModal = { userId: string; email: string; currentGrant: number | null; currentExpiry: number }
+type LimitsModal = { userId: string; email: string; currentGrant: number | null; currentExpiry: number; currentStorage: number | null }
 
 export default function AdminUsers() {
   const { user: me } = useOutletContext<{ user: User }>()
@@ -20,11 +21,15 @@ export default function AdminUsers() {
   const [limitsModal, setLimitsModal] = useState<LimitsModal | null>(null)
   const [limitsGrant, setLimitsGrant] = useState('')
   const [limitsExpiry, setLimitsExpiry] = useState('7')
+  const [limitsStorage, setLimitsStorage] = useState('')
+  const [showAddUser, setShowAddUser] = useState(false)
+  const [addEmail, setAddEmail] = useState('')
+  const [addPassword, setAddPassword] = useState('')
+  const [addError, setAddError] = useState<string | null>(null)
 
   if (!me.is_admin) return <div style={{ padding: 24 }}>Access denied.</div>
 
   const { data: users, isLoading } = useQuery({ queryKey: ['admin-users'], queryFn: () => api.admin.listUsers() })
-
   const refetch = () => qc.invalidateQueries({ queryKey: ['admin-users'] })
 
   const block = useMutation({ mutationFn: (id: string) => api.admin.blockUser(id), onSuccess: refetch })
@@ -45,20 +50,42 @@ export default function AdminUsers() {
     onSuccess: () => { refetch(); setLimitsModal(null) },
   })
 
+  const addUser = useMutation({
+    mutationFn: () => api.admin.createUser(addEmail, addPassword),
+    onSuccess: () => { refetch(); setShowAddUser(false); setAddEmail(''); setAddPassword(''); setAddError(null) },
+    onError: (err: any) => setAddError(err.message ?? 'Failed to create user'),
+  })
+
+  const { score: addScore } = scorePassword(addPassword)
+
   const btnStyle = (color?: string): React.CSSProperties => ({
     padding: '4px 10px', fontSize: 12, borderRadius: 4,
     border: '1px solid var(--border)', background: 'none',
     cursor: 'pointer', color: color ?? 'var(--text)',
   })
 
+  const inputStyle: React.CSSProperties = {
+    display: 'block', width: '100%', padding: '7px 10px', borderRadius: 4,
+    border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)',
+    fontSize: 14, boxSizing: 'border-box', marginBottom: 10,
+  }
+
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: 'clamp(12px, 4vw, 24px)' }}>
+    <div style={{ maxWidth: 960, margin: '0 auto', padding: 'clamp(12px, 4vw, 24px)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7de0', padding: 0 }}>
           ← Projects
         </button>
         <h2 style={{ margin: 0, flex: 1 }}>Users</h2>
         {users && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{users.length} total</span>}
+        <button onClick={() => setShowAddUser(true)}
+          style={{ padding: '6px 14px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: '#2e7d32' }}>
+          + Add User
+        </button>
+        <button onClick={() => navigate('/admin/settings')}
+          style={{ padding: '6px 14px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+          Settings
+        </button>
         <button onClick={() => navigate('/admin/models')}
           style={{ padding: '6px 14px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
           Models
@@ -81,15 +108,18 @@ export default function AdminUsers() {
                     {u.email}
                     {u.id === me.id && <span style={{ marginLeft: 8, fontSize: 11, color: '#6b7de0' }}>you</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                    {u.created_at?.slice(0, 10)}
-                    {u.is_founding_admin && <span style={{ marginLeft: 8, background: 'rgba(107,125,224,0.15)', color: '#6b7de0', fontSize: 10, padding: '1px 5px', borderRadius: 3 }}>founder</span>}
-                    {u.is_admin && !u.is_founding_admin && <span style={{ marginLeft: 8, background: 'rgba(107,125,224,0.15)', color: '#6b7de0', fontSize: 10, padding: '1px 5px', borderRadius: 3 }}>admin</span>}
-                    {u.is_blocked && <span style={{ marginLeft: 6, background: 'rgba(192,0,0,0.1)', color: '#c00', fontSize: 10, padding: '1px 5px', borderRadius: 3 }}>blocked</span>}
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                    <span>{u.created_at?.slice(0, 10)}</span>
+                    {u.is_founding_admin && <span style={{ background: 'rgba(107,125,224,0.15)', color: '#6b7de0', fontSize: 10, padding: '1px 5px', borderRadius: 3 }}>founder</span>}
+                    {u.is_admin && !u.is_founding_admin && <span style={{ background: 'rgba(107,125,224,0.15)', color: '#6b7de0', fontSize: 10, padding: '1px 5px', borderRadius: 3 }}>admin</span>}
+                    {u.is_blocked && <span style={{ background: 'rgba(192,0,0,0.1)', color: '#c00', fontSize: 10, padding: '1px 5px', borderRadius: 3 }}>blocked</span>}
+                    {!u.email_confirmed && <span style={{ background: 'rgba(192,120,0,0.15)', color: '#c07000', fontSize: 10, padding: '1px 5px', borderRadius: 3 }}>unconfirmed</span>}
+                    {u.force_password_change && <span style={{ background: 'rgba(192,0,0,0.1)', color: '#c00', fontSize: 10, padding: '1px 5px', borderRadius: 3 }}>must set password</span>}
                     {u.daily_token_grant != null && (
-                      <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--text-muted)' }}>
-                        {u.daily_token_grant.toLocaleString()} tokens/day
-                      </span>
+                      <span style={{ fontSize: 11 }}>{u.daily_token_grant.toLocaleString()} tokens/day</span>
+                    )}
+                    {u.storage_limit_bytes != null && (
+                      <span style={{ fontSize: 11 }}>{(u.storage_limit_bytes / (1024 * 1024)).toFixed(0)} MB storage</span>
                     )}
                   </div>
                 </div>
@@ -99,7 +129,12 @@ export default function AdminUsers() {
                     style={btnStyle('#2e7d32')}
                   >Grant tokens</button>
                   <button
-                    onClick={() => { setLimitsModal({ userId: u.id, email: u.email, currentGrant: u.daily_token_grant ?? null, currentExpiry: u.token_grant_expiry_days ?? 7 }); setLimitsGrant(u.daily_token_grant != null ? String(u.daily_token_grant) : ''); setLimitsExpiry(String(u.token_grant_expiry_days ?? 7)) }}
+                    onClick={() => {
+                      setLimitsModal({ userId: u.id, email: u.email, currentGrant: u.daily_token_grant ?? null, currentExpiry: u.token_grant_expiry_days ?? 7, currentStorage: u.storage_limit_bytes ?? null })
+                      setLimitsGrant(u.daily_token_grant != null ? String(u.daily_token_grant) : '')
+                      setLimitsExpiry(String(u.token_grant_expiry_days ?? 7))
+                      setLimitsStorage(u.storage_limit_bytes != null ? String(Math.round(u.storage_limit_bytes / (1024 * 1024))) : '')
+                    }}
                     style={btnStyle()}
                   >Limits</button>
                   {u.id !== me.id && !u.is_founding_admin && (
@@ -130,6 +165,34 @@ export default function AdminUsers() {
         </div>
       )}
 
+      {/* Add user modal */}
+      {showAddUser && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 24 }}
+          onClick={e => { if (e.target === e.currentTarget) setShowAddUser(false) }}>
+          <div style={{ background: 'var(--modal-bg)', borderRadius: 8, padding: 24, width: 'min(420px, 100%)', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>Add user</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-muted)' }}>
+              The user will be required to change their password on first login.
+              No confirmation email is sent.
+            </p>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Email</label>
+            <input type="email" value={addEmail} onChange={e => setAddEmail(e.target.value)} autoFocus style={inputStyle} />
+            <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Temporary password</label>
+            <input type="password" value={addPassword} onChange={e => setAddPassword(e.target.value)} style={{ ...inputStyle, marginBottom: 4 }} />
+            <PasswordStrengthMeter password={addPassword} style={{ marginBottom: 10 }} />
+            {addError && <p style={{ color: '#c00', fontSize: 12, marginBottom: 8 }}>{addError}</p>}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => addUser.mutate()}
+                disabled={addUser.isPending || !addEmail || addScore < 2}
+                style={{ padding: '7px 16px', borderRadius: 4, border: 'none', fontSize: 14, cursor: 'pointer', background: '#6b7de0', color: '#fff' }}
+              >{addUser.isPending ? 'Creating…' : 'Create'}</button>
+              <button onClick={() => { setShowAddUser(false); setAddError(null) }} style={{ padding: '7px 14px', borderRadius: 4, fontSize: 14 }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Grant tokens modal */}
       {grantModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 24 }}
@@ -138,14 +201,11 @@ export default function AdminUsers() {
             <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>Grant tokens</h3>
             <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-muted)' }}>{grantModal.email}</p>
             <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Amount</label>
-            <input type="number" min={1} value={grantAmount} onChange={e => setGrantAmount(e.target.value)}
-              style={{ display: 'block', width: '100%', padding: '7px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14, boxSizing: 'border-box', marginBottom: 10 }} />
+            <input type="number" min={1} value={grantAmount} onChange={e => setGrantAmount(e.target.value)} style={inputStyle} />
             <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Expires at (leave blank = never)</label>
-            <input type="datetime-local" value={grantExpiry} onChange={e => setGrantExpiry(e.target.value)}
-              style={{ display: 'block', width: '100%', padding: '7px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14, boxSizing: 'border-box', marginBottom: 10 }} />
+            <input type="datetime-local" value={grantExpiry} onChange={e => setGrantExpiry(e.target.value)} style={inputStyle} />
             <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Note (optional)</label>
-            <input type="text" value={grantNote} onChange={e => setGrantNote(e.target.value)}
-              style={{ display: 'block', width: '100%', padding: '7px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14, boxSizing: 'border-box', marginBottom: 16 }} />
+            <input type="text" value={grantNote} onChange={e => setGrantNote(e.target.value)} style={inputStyle} />
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={() => createGrant.mutate({ id: grantModal.userId, body: { amount: parseInt(grantAmount) || 0, expires_at: grantExpiry ? new Date(grantExpiry).toISOString() : null, note: grantNote || undefined } })}
@@ -159,23 +219,31 @@ export default function AdminUsers() {
         </div>
       )}
 
-      {/* Token limits modal */}
+      {/* Token + storage limits modal */}
       {limitsModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 24 }}
           onClick={e => { if (e.target === e.currentTarget) setLimitsModal(null) }}>
-          <div style={{ background: 'var(--modal-bg)', borderRadius: 8, padding: 24, width: 'min(380px, 100%)', border: '1px solid var(--border)' }}>
-            <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>Daily token limit</h3>
+          <div style={{ background: 'var(--modal-bg)', borderRadius: 8, padding: 24, width: 'min(400px, 100%)', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>User limits</h3>
             <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-muted)' }}>{limitsModal.email}</p>
-            <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Daily grant (leave blank = unlimited)</label>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Daily token grant (leave blank = use site default)</label>
             <input type="number" min={0} value={limitsGrant} onChange={e => setLimitsGrant(e.target.value)}
-              placeholder="unlimited"
-              style={{ display: 'block', width: '100%', padding: '7px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14, boxSizing: 'border-box', marginBottom: 10 }} />
-            <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Grant expiry (days)</label>
-            <input type="number" min={1} value={limitsExpiry} onChange={e => setLimitsExpiry(e.target.value)}
-              style={{ display: 'block', width: '100%', padding: '7px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14, boxSizing: 'border-box', marginBottom: 16 }} />
+              placeholder="site default" style={inputStyle} />
+            <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Token grant expiry (days)</label>
+            <input type="number" min={1} value={limitsExpiry} onChange={e => setLimitsExpiry(e.target.value)} style={inputStyle} />
+            <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Storage limit (MB, leave blank = site default)</label>
+            <input type="number" min={0} value={limitsStorage} onChange={e => setLimitsStorage(e.target.value)}
+              placeholder="site default" style={inputStyle} />
             <div style={{ display: 'flex', gap: 8 }}>
               <button
-                onClick={() => updateLimits.mutate({ id: limitsModal.userId, body: { daily_token_grant: limitsGrant ? parseInt(limitsGrant) : null, token_grant_expiry_days: parseInt(limitsExpiry) || 7 } })}
+                onClick={() => updateLimits.mutate({
+                  id: limitsModal.userId,
+                  body: {
+                    daily_token_grant: limitsGrant ? parseInt(limitsGrant) : null,
+                    token_grant_expiry_days: parseInt(limitsExpiry) || 7,
+                    storage_limit_bytes: limitsStorage ? parseInt(limitsStorage) * 1024 * 1024 : null,
+                  },
+                })}
                 disabled={updateLimits.isPending}
                 style={{ padding: '7px 16px', borderRadius: 4, border: 'none', fontSize: 14, cursor: 'pointer', background: '#6b7de0', color: '#fff' }}
               >{updateLimits.isPending ? 'Saving…' : 'Save'}</button>

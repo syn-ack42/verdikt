@@ -36,6 +36,7 @@ dependencies = [
     "python-jose[cryptography]>=3.3",
     "sqlcipher3>=0.5",
     "email-validator>=2.1",
+    "zxcvbn>=4.4.28",
 ]
 
 [project.scripts]

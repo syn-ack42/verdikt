@@ -8,14 +8,43 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from verdikt.storage.auth_orm import TokenGrantRow, TokenUsageRow, UserRow
+from verdikt.storage.auth_orm import SiteSettingsRow, TokenGrantRow, TokenUsageRow, UserRow
+
+
+def _get_effective_daily_grant(user: UserRow, session: Session) -> int | None:
+    """Return the daily token grant for a user, falling back to site default. None = unlimited."""
+    if user.daily_token_grant is not None:
+        return user.daily_token_grant
+    row = session.get(SiteSettingsRow, "default_daily_token_grant")
+    if row and row.value:
+        try:
+            return int(row.value)
+        except ValueError:
+            pass
+    return None  # unlimited
+
+
+def _get_effective_expiry_days(user: UserRow, session: Session) -> int:
+    expiry = getattr(user, "token_grant_expiry_days", None) or 7
+    if expiry:
+        return expiry
+    row = session.get(SiteSettingsRow, "default_token_grant_expiry_days")
+    if row and row.value:
+        try:
+            return int(row.value)
+        except ValueError:
+            pass
+    return 7
 
 
 def ensure_daily_grant(user_id: str, session: Session) -> None:
     """Lazily issue today's system daily grant if not yet issued today."""
     user = session.get(UserRow, user_id)
-    if user is None or user.daily_token_grant is None:
-        return  # unlimited or user gone
+    if user is None:
+        return
+    effective_grant = _get_effective_daily_grant(user, session)
+    if effective_grant is None:
+        return  # unlimited
 
     today = date.today()
     existing = (
@@ -30,13 +59,13 @@ def ensure_daily_grant(user_id: str, session: Session) -> None:
     if existing is not None and existing.granted_at.date() == today:
         return  # already issued today
 
-    now = datetime.now(timezone.utc)
     from datetime import timedelta
-    expiry_days = user.token_grant_expiry_days or 7
+    expiry_days = _get_effective_expiry_days(user, session)
+    now = datetime.now(timezone.utc)
     session.add(TokenGrantRow(
         id=str(uuid.uuid4()),
         user_id=user_id,
-        amount=user.daily_token_grant,
+        amount=effective_grant,
         granted_at=now,
         expires_at=now + timedelta(days=expiry_days),
         granted_by="system_daily",
@@ -46,9 +75,12 @@ def ensure_daily_grant(user_id: str, session: Session) -> None:
 
 
 def get_token_balance(user_id: str, session: Session) -> Optional[int]:
-    """Return remaining token balance, or None if the user has no grant limit."""
+    """Return remaining token balance, or None if the user has no grant limit (unlimited)."""
     user = session.get(UserRow, user_id)
-    if user is None or user.daily_token_grant is None:
+    if user is None:
+        return None
+    effective_grant = _get_effective_daily_grant(user, session)
+    if effective_grant is None:
         return None  # unlimited
 
     ensure_daily_grant(user_id, session)

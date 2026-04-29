@@ -22,9 +22,15 @@ class UserRow(AuthBase):
     is_founding_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    # Token budget settings (null daily_token_grant = unlimited)
+    # Email confirmation (True for admin-created users and OAuth users; False until confirmed for self-registered)
+    email_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Forced password change on first login (set for admin-created users)
+    force_password_change: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Token budget settings (null daily_token_grant = use site default or unlimited)
     daily_token_grant: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     token_grant_expiry_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
+    # Per-user storage limit in bytes (null = use site default)
+    storage_limit_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # OAuth identity
     oauth_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     oauth_provider_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -54,6 +60,23 @@ class TokenGrantRow(AuthBase):
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     granted_by: Mapped[str] = mapped_column(String, nullable=False)  # "system_daily" | admin_user_id
     note: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class EmailConfirmationRow(AuthBase):
+    __tablename__ = "email_confirmations"
+
+    token: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SiteSettingsRow(AuthBase):
+    """Key-value store for site-wide configuration (SMTP, default limits, etc.)."""
+    __tablename__ = "site_settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class ModelCatalogRow(AuthBase):

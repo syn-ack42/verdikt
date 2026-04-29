@@ -5,15 +5,29 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 
+from argon2 import PasswordHasher
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from verdikt.api.deps import get_auth_session, get_config, require_admin
 from verdikt.core.user_models import AuthenticatedUser
-from verdikt.storage.auth_orm import ModelCatalogRow, TokenGrantRow, UserRow
+from verdikt.storage.auth_orm import ModelCatalogRow, SiteSettingsRow, TokenGrantRow, UserRow
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+_ph = PasswordHasher()
+
+_DEFAULT_SETTINGS: dict[str, str] = {
+    "default_storage_limit_mb": "10",
+    "default_daily_token_grant": "",          # empty = unlimited
+    "default_token_grant_expiry_days": "7",
+    "smtp_host": "",
+    "smtp_port": "587",
+    "smtp_user": "",
+    "smtp_password": "",
+    "smtp_from": "",
+    "smtp_use_tls": "true",
+}
 
 
 def _user_dict(u: UserRow) -> dict:
@@ -24,10 +38,15 @@ def _user_dict(u: UserRow) -> dict:
         "is_admin": u.is_admin,
         "is_founding_admin": getattr(u, "is_founding_admin", False),
         "is_blocked": u.is_blocked,
+        "email_confirmed": getattr(u, "email_confirmed", True),
+        "force_password_change": getattr(u, "force_password_change", False),
         "daily_token_grant": getattr(u, "daily_token_grant", None),
         "token_grant_expiry_days": getattr(u, "token_grant_expiry_days", 7),
+        "storage_limit_bytes": getattr(u, "storage_limit_bytes", None),
     }
 
+
+# ── Users ──────────────────────────────────────────────────────────────────────
 
 @router.get("/users")
 def list_users(
@@ -35,6 +54,52 @@ def list_users(
     session: Annotated[Session, Depends(get_auth_session)],
 ):
     return [_user_dict(u) for u in session.query(UserRow).order_by(UserRow.created_at).all()]
+
+
+class AdminCreateUser(BaseModel):
+    email: EmailStr
+    password: str
+
+
+@router.post("/users", status_code=201)
+def create_user(
+    body: AdminCreateUser,
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    """Admin creates a user directly. No email confirmation; user must change password on first login."""
+    from argon2.low_level import Type, hash_secret_raw
+    import base64
+    from sqlalchemy.exc import IntegrityError
+
+    kdf_salt = uuid.uuid4().hex + uuid.uuid4().hex
+    argon2_hash = _ph.hash(body.password)
+    # Derive the db_key so the user's DB can be bootstrapped on first login
+    raw = hash_secret_raw(
+        secret=body.password.encode(),
+        salt=bytes.fromhex(kdf_salt),
+        time_cost=2, memory_cost=65536, parallelism=2, hash_len=32, type=Type.ID,
+    )
+    _ = base64.b64encode(raw).decode()  # validated but not needed here
+
+    user = UserRow(
+        id=str(uuid.uuid4()),
+        email=body.email,
+        argon2_hash=argon2_hash,
+        kdf_salt=kdf_salt,
+        is_admin=False,
+        is_founding_admin=False,
+        is_blocked=False,
+        email_confirmed=True,
+        force_password_change=True,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(user)
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="Email already registered")
+    return _user_dict(user)
 
 
 @router.post("/users/{user_id}/block")
@@ -81,12 +146,10 @@ def delete_user(
     session.delete(user)
     session.commit()
 
-    # Remove user data directory
     config = get_config()
     user_dir = config.user_data_path(user_id)
     if user_dir.exists():
         shutil.rmtree(user_dir)
-
     return {"ok": True}
 
 
@@ -125,6 +188,7 @@ def demote_user(
 class UserLimitsUpdate(BaseModel):
     daily_token_grant: Optional[int] = None
     token_grant_expiry_days: Optional[int] = None
+    storage_limit_bytes: Optional[int] = None
 
 
 @router.patch("/users/{user_id}/limits")
@@ -141,6 +205,8 @@ def update_user_limits(
         user.daily_token_grant = body.daily_token_grant if body.daily_token_grant > 0 else None
     if body.token_grant_expiry_days is not None:
         user.token_grant_expiry_days = body.token_grant_expiry_days
+    if body.storage_limit_bytes is not None:
+        user.storage_limit_bytes = body.storage_limit_bytes if body.storage_limit_bytes > 0 else None
     session.commit()
     return _user_dict(user)
 
@@ -185,6 +251,63 @@ def create_grant(
     }
 
 
+# ── Site settings ──────────────────────────────────────────────────────────────
+
+def _get_all_settings(session: Session) -> dict[str, str]:
+    settings = dict(_DEFAULT_SETTINGS)
+    for row in session.query(SiteSettingsRow).all():
+        settings[row.key] = row.value or ""
+    return settings
+
+
+@router.get("/settings")
+def get_settings(
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    return _get_all_settings(session)
+
+
+@router.put("/settings")
+def update_settings(
+    body: dict,
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    allowed = set(_DEFAULT_SETTINGS.keys())
+    for key, value in body.items():
+        if key not in allowed:
+            continue
+        row = session.get(SiteSettingsRow, key)
+        if row is None:
+            session.add(SiteSettingsRow(key=key, value=str(value) if value else ""))
+        else:
+            row.value = str(value) if value else ""
+    session.commit()
+    return _get_all_settings(session)
+
+
+@router.post("/settings/test-smtp")
+def test_smtp(
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    from verdikt.api.email import get_smtp_config, send_email
+    cfg = get_smtp_config(session)
+    if not cfg.get("host") or not cfg.get("from"):
+        raise HTTPException(status_code=400, detail="SMTP is not configured. Set host and from address first.")
+    sent = send_email(
+        session,
+        to=cfg["from"],
+        subject="Verdikt SMTP test",
+        body_html="<p>SMTP is working correctly.</p>",
+        body_text="SMTP is working correctly.",
+    )
+    if not sent:
+        raise HTTPException(status_code=502, detail="Failed to send test email. Check server logs for details.")
+    return {"ok": True}
+
+
 # ── Model catalog ─────────────────────────────────────────────────────────────
 
 def _model_dict(m: ModelCatalogRow) -> dict:
@@ -210,12 +333,9 @@ def sync_models(
     _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
     session: Annotated[Session, Depends(get_auth_session)],
 ) -> list[dict]:
-    """Pull available models from Ollama and upsert into the model catalog."""
     import ollama as _ollama
-
     config = get_config()
     client = _ollama.Client(host=config.inference.ollama_base_url)
-
     try:
         response = client.list()
     except Exception as exc:
@@ -225,8 +345,6 @@ def sync_models(
     for model in response.models:
         name = model.model or model.name
         details = model.details
-
-        # Fetch extra info (context_length, capabilities live in modelinfo / show response)
         context_length: int | None = None
         has_vision = False
         try:
@@ -236,50 +354,37 @@ def sync_models(
                 if "context_length" in key and isinstance(val, int):
                     context_length = val
                     break
-            # Newer Ollama versions expose a capabilities list
             caps = getattr(info, "capabilities", None) or []
             if "vision" in caps:
                 has_vision = True
         except Exception:
             pass
 
-        # Detect vision capability from model families (available in list() details)
         families: list[str] = []
         if details:
             families = [f.lower() for f in (getattr(details, "families", None) or [])]
         if "clip" in families:
             has_vision = True
 
-        # Auto-classify type and domain for new models
         name_lower = name.lower()
         if "embed" in name_lower:
-            auto_type = "embedding"
-            auto_domain = "text"   # all current Ollama embedding models are text-only
+            auto_type, auto_domain = "embedding", "text"
         elif has_vision:
-            auto_type = "llm"
-            auto_domain = "any"    # vision LLMs handle both text and image input
+            auto_type, auto_domain = "llm", "any"
         else:
-            auto_type = "llm"
-            auto_domain = "text"   # text-only LLMs shouldn't appear in image project pickers
+            auto_type, auto_domain = "llm", "text"
 
         existing = session.get(ModelCatalogRow, name)
         if existing is None:
             session.add(ModelCatalogRow(
-                id=name,
-                source="ollama",
-                type=auto_type,
-                domain=auto_domain,
-                enabled=False,
-                display_name=name,
-                description="[vision]" if has_vision else "",
+                id=name, source="ollama", type=auto_type, domain=auto_domain, enabled=False,
+                display_name=name, description="[vision]" if has_vision else "",
                 parameter_size=getattr(details, "parameter_size", None) if details else None,
-                context_length=context_length,
-                size_bytes=model.size,
+                context_length=context_length, size_bytes=model.size,
                 quantization=getattr(details, "quantization_level", None) if details else None,
                 synced_at=now,
             ))
         else:
-            # Update metadata; preserve admin edits to enabled/type/domain/description
             existing.parameter_size = getattr(details, "parameter_size", None) if details else None
             existing.context_length = context_length
             existing.size_bytes = model.size
@@ -315,7 +420,6 @@ def create_model(
     _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
     session: Annotated[Session, Depends(get_auth_session)],
 ) -> dict:
-    """Manually register a model (e.g. a sentence-transformer embedding model)."""
     existing = session.get(ModelCatalogRow, body.id)
     if existing is not None:
         existing.type = body.type
@@ -326,13 +430,8 @@ def create_model(
         session.commit()
         return _model_dict(existing)
     row = ModelCatalogRow(
-        id=body.id,
-        source=body.source,
-        type=body.type,
-        domain=body.domain,
-        enabled=False,
-        display_name=body.display_name,
-        description=body.description,
+        id=body.id, source=body.source, type=body.type, domain=body.domain,
+        enabled=False, display_name=body.display_name, description=body.description,
     )
     session.add(row)
     session.commit()
@@ -361,7 +460,7 @@ def update_model(
     if body.enabled is not None:
         row.enabled = body.enabled
         if not body.enabled:
-            row.is_default = False  # disabled models cannot be the default
+            row.is_default = False
     if body.type is not None:
         row.type = body.type
     if body.domain is not None:
@@ -374,8 +473,6 @@ def update_model(
         if body.is_default:
             effective_domain = body.domain or row.domain
             effective_type = body.type or row.type
-            # Clear any existing default that overlaps with the effective domain.
-            # A model with domain="any" conflicts with any specific domain, and vice-versa.
             overlapping = [effective_domain, "any"] if effective_domain != "any" else ["any"]
             session.query(ModelCatalogRow).filter(
                 ModelCatalogRow.type == effective_type,
