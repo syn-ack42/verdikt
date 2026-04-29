@@ -35,6 +35,13 @@ export default function ProjectSettingsDialog({ project, ratings, onClose }: Pro
     queryKey: ['model-defaults'],
     queryFn: () => api.models.defaults(),
   })
+  const { data: projectDefaults } = useQuery({
+    queryKey: ['projects', 'defaults'],
+    queryFn: () => api.projects.defaults(),
+  })
+
+  const rangeMin = projectDefaults?.chunk_size_min_lower ?? 0
+  const rangeMax = projectDefaults?.chunk_size_max_upper ?? 1000
   const { data: llmModels } = useQuery({
     queryKey: ['models', 'llm', project.domain],
     queryFn: () => api.models.list('llm', project.domain),
@@ -140,13 +147,13 @@ export default function ProjectSettingsDialog({ project, ratings, onClose }: Pro
                   <label style={{ display: 'block', marginBottom: 4, fontSize: 13, fontWeight: 600 }}>Chunk size (min / max words)</label>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input
-                      type="number" min={100} value={chunkMin}
+                      type="number" min={rangeMin} max={rangeMax} value={chunkMin}
                       onChange={e => setChunkMin(Number(e.target.value))}
                       style={{ ...inputStyle, width: 80 }}
                     />
                     <span style={{ color: 'var(--text-muted)' }}>–</span>
                     <input
-                      type="number" min={100} value={chunkMax}
+                      type="number" min={rangeMin} max={rangeMax} value={chunkMax}
                       onChange={e => setChunkMax(Number(e.target.value))}
                       style={{ ...inputStyle, width: 80 }}
                     />

@@ -309,6 +309,14 @@ export interface CrystalliseStatus {
   tokens_completion: number
 }
 
+export interface ProjectDefaults {
+  default_crystallisation_threshold: number
+  default_chunk_min_size: number
+  default_chunk_max_size: number
+  chunk_size_min_lower: number
+  chunk_size_max_upper: number
+}
+
 export type PluginIngestEvent =
   | { total: number }
   | { work: string; status: 'added' | 'updated' | 'unchanged'; added: number; updated: number; skipped: number }

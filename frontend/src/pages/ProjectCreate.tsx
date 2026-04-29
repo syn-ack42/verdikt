@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
@@ -42,7 +42,9 @@ export default function ProjectCreate() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [domain, setDomain] = useState<Domain>('text')
-  const [threshold, setThreshold] = useState(50)
+  const [threshold, setThreshold] = useState<number | null>(null)
+  const [chunkMin, setChunkMin] = useState<number | null>(null)
+  const [chunkMax, setChunkMax] = useState<number | null>(null)
   const [dims, setDims] = useState<RatingDimension[]>(DEFAULT_DIMS.text)
   const [llmModel, setLlmModel] = useState<string>('')
   const [embModel, setEmbModel] = useState<string>('')
@@ -53,6 +55,19 @@ export default function ProjectCreate() {
     setEmbModel('')
     setLlmModel('')
   }
+
+  const { data: projectDefaults } = useQuery({
+    queryKey: ['projects', 'defaults'],
+    queryFn: () => api.projects.defaults(),
+  })
+
+  useEffect(() => {
+    if (projectDefaults && threshold === null) {
+      setThreshold(projectDefaults.default_crystallisation_threshold)
+      setChunkMin(projectDefaults.default_chunk_min_size)
+      setChunkMax(projectDefaults.default_chunk_max_size)
+    }
+  }, [projectDefaults, threshold])
 
   const { data: domainAvailability } = useQuery({
     queryKey: ['models', 'domain-availability'],
@@ -73,13 +88,20 @@ export default function ProjectCreate() {
 
   const defaultLlm = modelDefaults?.llm_by_domain?.[domain] ?? null
 
+  const rangeMin = projectDefaults?.chunk_size_min_lower ?? 0
+  const rangeMax = projectDefaults?.chunk_size_max_upper ?? 1000
+
   const create = useMutation({
     mutationFn: () => api.projects.create({
       name,
       description: description || undefined,
       domain,
       rating_dimensions: dims,
-      crystallisation_threshold: threshold,
+      crystallisation_threshold: threshold ?? projectDefaults?.default_crystallisation_threshold,
+      ...(domain !== 'image' ? {
+        chunk_min_size: chunkMin ?? projectDefaults?.default_chunk_min_size,
+        chunk_max_size: chunkMax ?? projectDefaults?.default_chunk_max_size,
+      } : {}),
       llm_model: llmModel || defaultLlm || undefined,
       embedding_model: embModel || undefined,
     }),
@@ -143,17 +165,43 @@ export default function ProjectCreate() {
           </div>
         </div>
 
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', marginBottom: 4 }}>
-            Crystallisation threshold (ratings needed)
-          </label>
-          <input
-            type="number"
-            min={1}
-            value={threshold}
-            onChange={e => setThreshold(Number(e.target.value))}
-            style={{ width: '5ch' }}
-          />
+        <div style={{ marginBottom: 16, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: 4 }}>
+              Crystallisation threshold (ratings needed)
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={threshold ?? ''}
+              onChange={e => setThreshold(Number(e.target.value))}
+              style={{ width: '6ch' }}
+            />
+          </div>
+          {domain !== 'image' && (
+            <div>
+              <label style={{ display: 'block', marginBottom: 4 }}>Chunk size (min / max words)</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="number"
+                  min={rangeMin}
+                  max={rangeMax}
+                  value={chunkMin ?? ''}
+                  onChange={e => setChunkMin(Number(e.target.value))}
+                  style={{ width: '6ch' }}
+                />
+                <span style={{ color: 'var(--text-muted)' }}>–</span>
+                <input
+                  type="number"
+                  min={rangeMin}
+                  max={rangeMax}
+                  value={chunkMax ?? ''}
+                  onChange={e => setChunkMax(Number(e.target.value))}
+                  style={{ width: '6ch' }}
+                />
+              </div>
+            </div>
+          )}
         </div>
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'block', marginBottom: 4 }}>Language model</label>

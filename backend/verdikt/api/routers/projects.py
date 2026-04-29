@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from typing import Annotated
 
-from verdikt.api.deps import get_current_user, get_session
+from verdikt.api.deps import get_config, get_current_user, get_session
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.core.models import Domain, Project, RatingDimension
 from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteMaterialStore, SQLiteProfileStore, SQLiteProjectStore, SQLiteRatingStore
@@ -14,14 +14,38 @@ from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteMaterialStore, SQLite
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
+@router.get("/defaults")
+def project_defaults() -> dict:
+    """Return configured defaults and allowed chunk-size range for the project create/settings UI."""
+    cfg = get_config()
+    return {
+        "default_crystallisation_threshold": cfg.default_crystallisation_threshold,
+        "default_chunk_min_size": cfg.default_chunk_min_size,
+        "default_chunk_max_size": cfg.default_chunk_max_size,
+        "chunk_size_min_lower": cfg.chunk_size_min_lower,
+        "chunk_size_max_upper": cfg.chunk_size_max_upper,
+    }
+
+
+def _validate_chunk_sizes(min_size: int | None, max_size: int | None) -> None:
+    cfg = get_config()
+    lo, hi = cfg.chunk_size_min_lower, cfg.chunk_size_max_upper
+    if min_size is not None and not (lo <= min_size <= hi):
+        raise HTTPException(status_code=422, detail=f"chunk_min_size must be between {lo} and {hi}")
+    if max_size is not None and not (lo <= max_size <= hi):
+        raise HTTPException(status_code=422, detail=f"chunk_max_size must be between {lo} and {hi}")
+    if min_size is not None and max_size is not None and min_size > max_size:
+        raise HTTPException(status_code=422, detail="chunk_min_size must not exceed chunk_max_size")
+
+
 class ProjectCreate(BaseModel):
     name: str
     description: str | None = None
     domain: str = "text"
     rating_dimensions: list[dict] = []
-    chunk_min_size: int = 600
-    chunk_max_size: int = 800
-    crystallisation_threshold: int = 50
+    chunk_min_size: int | None = None
+    chunk_max_size: int | None = None
+    crystallisation_threshold: int | None = None
     min_profile_confidence: float = 0.9
     llm_model: str | None = None
     embedding_model: str | None = None
@@ -67,15 +91,20 @@ def create_project(
     body: ProjectCreate,
     session: Session = Depends(get_session),
 ) -> dict:
+    cfg = get_config()
+    chunk_min = body.chunk_min_size if body.chunk_min_size is not None else cfg.default_chunk_min_size
+    chunk_max = body.chunk_max_size if body.chunk_max_size is not None else cfg.default_chunk_max_size
+    threshold = body.crystallisation_threshold if body.crystallisation_threshold is not None else cfg.default_crystallisation_threshold
+    _validate_chunk_sizes(chunk_min, chunk_max)
     dims = [RatingDimension(**d) for d in body.rating_dimensions]
     proj = Project(
         name=body.name,
         description=body.description,
         domain=Domain(body.domain),
         rating_dimensions=dims,
-        chunk_min_size=body.chunk_min_size,
-        chunk_max_size=body.chunk_max_size,
-        crystallisation_threshold=body.crystallisation_threshold,
+        chunk_min_size=chunk_min,
+        chunk_max_size=chunk_max,
+        crystallisation_threshold=threshold,
         min_profile_confidence=body.min_profile_confidence,
         llm_model=body.llm_model,
         embedding_model=body.embedding_model,
@@ -128,6 +157,10 @@ def update_project(
         values["description"] = body.description
     if body.rating_dimensions is not None:
         values["rating_dimensions"] = json.dumps(body.rating_dimensions)
+    if body.chunk_min_size is not None or body.chunk_max_size is not None:
+        new_min = body.chunk_min_size if body.chunk_min_size is not None else proj.chunk_min_size
+        new_max = body.chunk_max_size if body.chunk_max_size is not None else proj.chunk_max_size
+        _validate_chunk_sizes(new_min, new_max)
     if body.chunk_min_size is not None:
         values["chunk_min_size"] = body.chunk_min_size
     if body.chunk_max_size is not None:

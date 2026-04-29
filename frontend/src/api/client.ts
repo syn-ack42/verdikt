@@ -1,6 +1,6 @@
 import type {
   AIRatingStatus, CrystalliseStatus, IngestResult, MaterialItemWithStats, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
-  PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, RatedChunkEntry, Rating, SiteSettings, StorageListing,
+  PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, ProjectDefaults, RatedChunkEntry, Rating, SiteSettings, StorageListing,
   TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkChunk, WorkDetail,
 } from './types'
 
@@ -110,6 +110,7 @@ export const api = {
     },
   },
   projects: {
+    defaults: () => req<ProjectDefaults>('GET', '/projects/defaults'),
     list: () => req<Project[]>('GET', '/projects'),
     get: (id: string) => req<Project>('GET', `/projects/${id}`),
     create: (body: Partial<Project>) => req<Project>('POST', '/projects', body),

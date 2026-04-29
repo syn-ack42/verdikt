@@ -137,6 +137,9 @@ def start_ai_rating(
                         _status[project_id]["chunks_rated"] = (
                             _status[project_id].get("chunks_rated", 0) + 1
                         )
+                        if judge.usage:
+                            _status[project_id]["tokens_prompt"] = sum(p for p, _ in judge.usage)
+                            _status[project_id]["tokens_completion"] = sum(c for _, c in judge.usage)
                     elif etype == "batch_done":
                         _status[project_id]["batches_completed"] = event.get("batch", 0)
                         _status[project_id]["last_batch_avg"] = event.get("avg")

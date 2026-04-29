@@ -33,6 +33,12 @@ class AppConfig(BaseSettings):
     smtp_password: Optional[str] = Field(default=None)
     smtp_from: Optional[str] = Field(default=None)
     smtp_use_tls: bool = Field(default=True)
+    # Project creation defaults and chunk-size range constraints
+    default_crystallisation_threshold: int = Field(default=10)
+    default_chunk_min_size: int = Field(default=600)
+    default_chunk_max_size: int = Field(default=800)
+    chunk_size_min_lower: int = Field(default=0)    # minimum allowed value for chunk_min_size
+    chunk_size_max_upper: int = Field(default=1000) # maximum allowed value for chunk_max_size
     # OAuth providers (env: VERDIKT_GOOGLE_CLIENT_ID, VERDIKT_GITHUB_CLIENT_ID, etc.)
     google_client_id: Optional[str] = Field(default=None)
     google_client_secret: Optional[str] = Field(default=None)
