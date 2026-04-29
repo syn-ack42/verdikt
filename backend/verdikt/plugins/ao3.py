@@ -57,6 +57,7 @@ _USER_AGENT = (
 
 _ENV_SAMPLE_RATE = float(os.environ.get("VERDIKT_AO3_SAMPLE_RATE", "0.20"))
 _ENV_SAMPLE_STDDEV = float(os.environ.get("VERDIKT_AO3_SAMPLE_STDDEV", "1.5"))
+_ENV_REQUEST_DELAY = max(3.0, float(os.environ.get("VERDIKT_AO3_REQUEST_DELAY", "5.0")))
 
 
 class LoginError(RuntimeError):
@@ -167,12 +168,6 @@ class AO3Plugin(PluginBase):
                     "default": [],
                     "description": "Direct links to individual works — always fetched, no limit",
                 },
-                "request_delay": {
-                    "type": "number",
-                    "title": "Delay between requests (s)",
-                    "default": 5.0,
-                    "minimum": 3.0,
-                },
             },
             "required": [],
         }
@@ -199,8 +194,7 @@ class AO3Plugin(PluginBase):
         return entries
 
     def _delay(self) -> None:
-        delay = max(3.0, float(self._config.get("request_delay", 5.0)))
-        time.sleep(delay)
+        time.sleep(_ENV_REQUEST_DELAY)
 
     @staticmethod
     def _is_login_redirect(resp) -> bool:
