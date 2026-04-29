@@ -614,6 +614,73 @@ def get_work_detail(
     }
 
 
+@router.get("/{work_ref}/chunks")
+def get_work_chunks(
+    project_id: str,
+    work_ref: str,
+    session: Session = Depends(get_session),
+) -> list[dict]:
+    """Return all chunks for a work with any associated ratings."""
+    import base64
+    proj = _get_project_or_404(project_id, session)
+    mat_store = SQLiteMaterialStore(session)
+
+    if work_ref.isdigit():
+        item = mat_store.get_by_seq(proj.id, int(work_ref))
+    else:
+        item = mat_store.get_by_source_path(proj.id, work_ref)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Work not found")
+
+    chunk_store = SQLiteChunkStore(session)
+    rating_store = SQLiteRatingStore(session)
+
+    chunks = sorted(chunk_store.list_by_material(item.id), key=lambda c: c.position)
+    chunk_count = len(chunks)
+
+    # Build rating index: chunk_id → best rating (prefer human over AI)
+    all_ratings = [r for r in rating_store.list_by_project(project_id) if not r.skipped and r.material_item_id == item.id]
+    rating_by_chunk: dict[str, object] = {}
+    for r in all_ratings:
+        existing = rating_by_chunk.get(r.chunk_id)
+        if existing is None or (existing.is_ai and not r.is_ai):
+            rating_by_chunk[r.chunk_id] = r
+
+    result = []
+    for chunk in chunks:
+        if isinstance(chunk.content, bytes):
+            content = base64.b64encode(chunk.content).decode()
+            domain = "image"
+        else:
+            content = chunk.content
+            domain = "text"
+
+        r = rating_by_chunk.get(chunk.id)
+        rating_dict = None
+        if r is not None:
+            avg = (sum(r.dimension_scores.values()) / len(r.dimension_scores)) if r.dimension_scores else None
+            rating_dict = {
+                "rating_id": r.id,
+                "dimension_scores": r.dimension_scores,
+                "avg_score": round(avg, 2) if avg is not None else None,
+                "is_ai": r.is_ai,
+                "explanations": r.explanations,
+                "rated_at": r.rated_at.isoformat(),
+            }
+
+        result.append({
+            "chunk_id": chunk.id,
+            "material_item_id": item.id,
+            "position": chunk.position,
+            "chunk_count": chunk_count,
+            "content": content,
+            "domain": domain,
+            "rating": rating_dict,
+        })
+
+    return result
+
+
 @router.delete("/{work_ref}", status_code=204)
 def delete_work(
     project_id: str,

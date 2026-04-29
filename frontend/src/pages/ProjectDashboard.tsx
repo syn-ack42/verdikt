@@ -869,6 +869,7 @@ export default function ProjectDashboard() {
         <WorkDetailModal
           projectId={projectId!}
           workRef={detailWorkRef}
+          dimensions={project.rating_dimensions}
           onClose={() => setDetailWorkRef(null)}
           onRemove={ref => { removeWork.mutate(String(ref)); setDetailWorkRef(null) }}
         />

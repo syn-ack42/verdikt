@@ -236,6 +236,25 @@ export interface WorkDetail extends MaterialItem {
   storage_path: string | null
 }
 
+export interface ChunkRating {
+  rating_id: string
+  dimension_scores: Record<string, number>
+  avg_score: number | null
+  is_ai: boolean
+  explanations: Record<string, string>
+  rated_at: string
+}
+
+export interface WorkChunk {
+  chunk_id: string
+  material_item_id: string
+  position: number
+  chunk_count: number
+  content: string | null
+  domain: 'text' | 'image'
+  rating: ChunkRating | null
+}
+
 export interface RatedChunkEntry {
   rating_id: string
   chunk_id: string

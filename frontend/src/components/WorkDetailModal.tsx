@@ -1,18 +1,249 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
+import RatingSlider from './RatingSlider'
+import { useIsMobile } from '../hooks/useIsMobile'
+import type { RatingDimension, WorkChunk } from '../api/types'
 
 interface Props {
   projectId: string
   workRef: string | number
+  dimensions: RatingDimension[]
   onClose: () => void
   onRemove?: (workRef: string | number) => void
 }
 
-export default function WorkDetailModal({ projectId, workRef, onClose, onRemove }: Props) {
+function scoreColor(avg: number | null): string {
+  if (avg == null) return 'var(--text-muted)'
+  if (avg >= 4) return '#2e7d32'
+  if (avg >= 3) return '#6b7de0'
+  if (avg >= 2) return '#b45309'
+  return '#c00'
+}
+
+interface RatingEditorProps {
+  chunk: WorkChunk
+  dimensions: RatingDimension[]
+  projectId: string
+  onDone: () => void
+}
+
+function RatingEditor({ chunk, dimensions, projectId, onDone }: RatingEditorProps) {
+  const isMobile = useIsMobile()
+  const qc = useQueryClient()
+  const [scores, setScores] = useState<Record<string, number>>(
+    chunk.rating ? { ...chunk.rating.dimension_scores } : {}
+  )
+  const [activeIdx, setActiveIdx] = useState(0)
+  const [expandedExpl, setExpandedExpl] = useState(false)
+
+  const isEdit = chunk.rating !== null
+  const allScored = dimensions.length > 0 && dimensions.every(d => scores[d.name] !== undefined)
+
+  const updateRating = useMutation({
+    mutationFn: () => api.ratings.updateRating(projectId, chunk.rating!.rating_id, scores),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['work-chunks', projectId] })
+      qc.invalidateQueries({ queryKey: ['rated-chunks', projectId] })
+      onDone()
+    },
+  })
+
+  const createRating = useMutation({
+    mutationFn: () => api.ratings.submit(projectId, {
+      chunk_id: chunk.chunk_id,
+      material_item_id: chunk.material_item_id,
+      dimension_scores: scores,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['work-chunks', projectId] })
+      qc.invalidateQueries({ queryKey: ['rated-chunks', projectId] })
+      onDone()
+    },
+  })
+
+  const isPending = updateRating.isPending || createRating.isPending
+  const error = updateRating.error || createRating.error
+  const hasExpl = chunk.rating && Object.keys(chunk.rating.explanations).length > 0
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '12px 0 0' }}>
+      {hasExpl && (
+        <div
+          onClick={() => setExpandedExpl(v => !v)}
+          style={{ borderRadius: 6, background: 'var(--surface, rgba(128,128,128,0.06))', padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--text-muted)' }}
+        >
+          {expandedExpl ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {Object.entries(chunk.rating!.explanations).map(([k, v]) => (
+                <div key={k}><span style={{ fontWeight: 600, color: 'var(--text)' }}>{k}:</span> {v}</div>
+              ))}
+              <span style={{ fontSize: 11, marginTop: 2 }}>▴ collapse</span>
+            </div>
+          ) : (
+            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ marginRight: 6, fontSize: 11 }}>▾</span>
+              {Object.entries(chunk.rating!.explanations).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 4 }}>
+        {dimensions.map((dim, i) => (
+          <RatingSlider
+            key={dim.name}
+            name={dim.name}
+            score={scores[dim.name]}
+            active={activeIdx === i}
+            onScore={v => setScores(s => ({ ...s, [dim.name]: v }))}
+            onFocus={() => setActiveIdx(i)}
+          />
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button
+          onClick={() => isEdit ? updateRating.mutate() : createRating.mutate()}
+          disabled={!allScored || isPending}
+          style={{
+            padding: '6px 18px', borderRadius: 4, border: 'none', fontSize: 13,
+            cursor: allScored && !isPending ? 'pointer' : 'default',
+            background: allScored ? '#6b7de0' : 'var(--border)',
+            color: allScored ? '#fff' : 'var(--text-muted)',
+          }}
+        >
+          {isPending ? 'Saving…' : isEdit ? 'Save' : 'Add rating'}
+        </button>
+        <button
+          onClick={onDone}
+          style={{ padding: '6px 12px', borderRadius: 4, fontSize: 13, background: 'none', border: '1px solid var(--border)', cursor: 'pointer' }}
+        >
+          Cancel
+        </button>
+        {error && <span style={{ fontSize: 12, color: '#c00' }}>{String(error)}</span>}
+      </div>
+    </div>
+  )
+}
+
+function ChunkBlock({
+  chunk,
+  dimensions,
+  projectId,
+}: {
+  chunk: WorkChunk
+  dimensions: RatingDimension[]
+  projectId: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const r = chunk.rating
+  const pos = chunk.position + 1
+  const total = chunk.chunk_count
+
+  return (
+    <div style={{
+      border: '1px solid var(--border)',
+      borderRadius: 8,
+      overflow: 'hidden',
+    }}>
+      {/* Chunk header bar */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '6px 12px',
+        background: 'var(--surface, rgba(128,128,128,0.06))',
+        borderBottom: '1px solid var(--border)',
+        gap: 8,
+      }}>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
+          Chunk {pos} of {total}
+        </span>
+
+        {/* Rating badge / unrated button */}
+        {r ? (
+          <button
+            onClick={() => setEditing(v => !v)}
+            title="Edit rating"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'none', border: '1px solid var(--border)',
+              borderRadius: 20, padding: '2px 10px', cursor: 'pointer',
+              fontSize: 12,
+            }}
+          >
+            {r.is_ai ? (
+              <span style={{ background: 'rgba(180,83,9,0.15)', color: '#b45309', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>AI</span>
+            ) : (
+              <span style={{ background: 'rgba(46,125,50,0.12)', color: '#2e7d32', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>Human</span>
+            )}
+            {r.avg_score != null && (
+              <span style={{ fontWeight: 700, color: scoreColor(r.avg_score) }}>{r.avg_score.toFixed(1)}</span>
+            )}
+            {dimensions.map(d => (
+              <span key={d.name} style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {d.name[0].toUpperCase()}: <span style={{ color: scoreColor(r.dimension_scores[d.name] ?? null), fontWeight: 600 }}>
+                  {r.dimension_scores[d.name] != null ? r.dimension_scores[d.name].toFixed(1) : '—'}
+                </span>
+              </span>
+            ))}
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>✎</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => setEditing(v => !v)}
+            style={{
+              background: 'none', border: '1px dashed var(--border)',
+              borderRadius: 20, padding: '2px 10px', cursor: 'pointer',
+              fontSize: 12, color: 'var(--text-muted)',
+            }}
+          >
+            + rate
+          </button>
+        )}
+      </div>
+
+      {/* Chunk content */}
+      <div style={{ padding: '10px 14px' }}>
+        {chunk.domain === 'image' && chunk.content ? (
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <img
+              src={`data:image/jpeg;base64,${chunk.content}`}
+              alt={`Chunk ${pos}`}
+              style={{ maxWidth: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 4 }}
+            />
+          </div>
+        ) : (
+          <div style={{ fontSize: 14, lineHeight: 1.75, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'Georgia, serif' }}>
+            {chunk.content ?? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>(no content)</span>}
+          </div>
+        )}
+
+        {editing && (
+          <RatingEditor
+            chunk={chunk}
+            dimensions={dimensions}
+            projectId={projectId}
+            onDone={() => setEditing(false)}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default function WorkDetailModal({ projectId, workRef, dimensions, onClose, onRemove }: Props) {
   const { data: work, isLoading, error } = useQuery({
     queryKey: ['work-detail', projectId, workRef],
     queryFn: () => api.works.detail(projectId, String(workRef)),
   })
+
+  const { data: chunks, isLoading: chunksLoading } = useQuery({
+    queryKey: ['work-chunks', projectId, workRef],
+    queryFn: () => api.works.chunks(projectId, String(workRef)),
+    enabled: !!work,
+  })
+
+  const hasChunks = chunks && chunks.length > 0
 
   return (
     <div
@@ -21,7 +252,7 @@ export default function WorkDetailModal({ projectId, workRef, onClose, onRemove 
     >
       <div style={{
         background: 'var(--modal-bg)', color: 'var(--text)',
-        borderRadius: 10, width: 'min(780px, 94vw)', maxHeight: '90vh',
+        borderRadius: 10, width: 'min(820px, 94vw)', maxHeight: '90vh',
         display: 'flex', flexDirection: 'column',
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)', overflow: 'hidden',
         border: '1px solid var(--border)',
@@ -45,89 +276,103 @@ export default function WorkDetailModal({ projectId, workRef, onClose, onRemove 
           {work && (
             <>
               <div style={{ overflowX: 'auto' }}>
-              <table style={{ fontSize: 13, borderCollapse: 'collapse', width: '100%' }}>
-                <tbody>
-                  <MetaRow label="Source">{work.source_plugin}</MetaRow>
-                  <MetaRow label="Status">
-                    <span style={{
-                      background: work.pipeline_phase === 'clustered' ? 'var(--badge-green-bg)' : 'var(--badge-yellow-bg)',
-                      color: work.pipeline_phase === 'clustered' ? 'var(--badge-green-text)' : 'var(--badge-yellow-text)',
-                      padding: '1px 6px', borderRadius: 3, fontSize: 11,
-                    }}>
-                      {work.pipeline_phase === 'clustered' ? 'processed' : work.pipeline_phase}
-                    </span>
-                  </MetaRow>
-                  <MetaRow label="Ingested">{work.ingested_at.slice(0, 10)}</MetaRow>
-                  {work.content_hash && (
-                    <MetaRow label="Hash">
-                      <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{work.content_hash.slice(0, 16)}…</span>
-                    </MetaRow>
-                  )}
-
-                  {/* AO3-specific */}
-                  {work.source_plugin === 'ao3' && work.plugin_metadata.work_id != null && (
-                    <MetaRow label="Work ID">{String(work.plugin_metadata.work_id)}</MetaRow>
-                  )}
-                  {work.source_plugin === 'ao3' && work.plugin_metadata.source_updated_at != null && (
-                    <MetaRow label="Last updated">{String(work.plugin_metadata.source_updated_at).slice(0, 10)}</MetaRow>
-                  )}
-                  {work.source_plugin === 'ao3' && work.url && (
-                    <MetaRow label="URL">
-                      <a href={work.url} target="_blank" rel="noopener noreferrer"
-                        style={{ color: '#6b7de0', wordBreak: 'break-all' }}>
-                        {work.url}
-                      </a>
-                    </MetaRow>
-                  )}
-
-                  {/* filedrop-specific */}
-                  {work.source_plugin === 'filedrop' && (
-                    <MetaRow label="File">
-                      <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                        {work.storage_path ?? work.source_path}
+                <table style={{ fontSize: 13, borderCollapse: 'collapse', width: '100%' }}>
+                  <tbody>
+                    <MetaRow label="Source">{work.source_plugin}</MetaRow>
+                    <MetaRow label="Status">
+                      <span style={{
+                        background: work.pipeline_phase === 'clustered' ? 'var(--badge-green-bg)' : 'var(--badge-yellow-bg)',
+                        color: work.pipeline_phase === 'clustered' ? 'var(--badge-green-text)' : 'var(--badge-yellow-text)',
+                        padding: '1px 6px', borderRadius: 3, fontSize: 11,
+                      }}>
+                        {work.pipeline_phase === 'clustered' ? 'processed' : work.pipeline_phase}
                       </span>
-                      {work.storage_path && (
-                        <a href={api.storage.downloadUrl(work.storage_path)} download
-                          style={{ marginLeft: 10, fontSize: 12, padding: '2px 8px', background: '#6b7de0', color: '#fff', borderRadius: 4, textDecoration: 'none' }}>
-                          Download
-                        </a>
-                      )}
                     </MetaRow>
-                  )}
-
-                  {/* Generic fallback for unknown plugins */}
-                  {work.source_plugin !== 'ao3' && work.source_plugin !== 'filedrop' &&
-                    Object.entries(work.plugin_metadata).map(([k, v]) => v != null && v !== '' ? (
-                      <MetaRow key={k} label={k}>
-                        <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{String(v)}</span>
+                    <MetaRow label="Ingested">{work.ingested_at.slice(0, 10)}</MetaRow>
+                    {work.content_hash && (
+                      <MetaRow label="Hash">
+                        <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{work.content_hash.slice(0, 16)}…</span>
                       </MetaRow>
-                    ) : null)
-                  }
-                </tbody>
-              </table>
+                    )}
+
+                    {work.source_plugin === 'ao3' && work.plugin_metadata.work_id != null && (
+                      <MetaRow label="Work ID">{String(work.plugin_metadata.work_id)}</MetaRow>
+                    )}
+                    {work.source_plugin === 'ao3' && work.plugin_metadata.source_updated_at != null && (
+                      <MetaRow label="Last updated">{String(work.plugin_metadata.source_updated_at).slice(0, 10)}</MetaRow>
+                    )}
+                    {work.source_plugin === 'ao3' && work.url && (
+                      <MetaRow label="URL">
+                        <a href={work.url} target="_blank" rel="noopener noreferrer"
+                          style={{ color: '#6b7de0', wordBreak: 'break-all' }}>
+                          {work.url}
+                        </a>
+                      </MetaRow>
+                    )}
+
+                    {work.source_plugin === 'filedrop' && (
+                      <MetaRow label="File">
+                        <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                          {work.storage_path ?? work.source_path}
+                        </span>
+                        {work.storage_path && (
+                          <a href={api.storage.downloadUrl(work.storage_path)} download
+                            style={{ marginLeft: 10, fontSize: 12, padding: '2px 8px', background: '#6b7de0', color: '#fff', borderRadius: 4, textDecoration: 'none' }}>
+                            Download
+                          </a>
+                        )}
+                      </MetaRow>
+                    )}
+
+                    {work.source_plugin !== 'ao3' && work.source_plugin !== 'filedrop' &&
+                      Object.entries(work.plugin_metadata).map(([k, v]) => v != null && v !== '' ? (
+                        <MetaRow key={k} label={k}>
+                          <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{String(v)}</span>
+                        </MetaRow>
+                      ) : null)
+                    }
+                  </tbody>
+                </table>
               </div>
 
-              {/* Full content */}
+              {/* Chunks section */}
               <div>
-                <h4 style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {work.content_is_image ? 'Image' : 'Full Content'}
+                <h4 style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  {hasChunks ? `Chunks (${chunks.length})` : work.content_is_image ? 'Image' : 'Content'}
                 </h4>
-                {work.content_is_image && work.content ? (
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
-                    <img src={`data:image/jpeg;base64,${work.content}`} alt={work.work_title ?? 'image'} style={{ maxWidth: '100%', maxHeight: 'clamp(200px, 40vh, 480px)', objectFit: 'contain', borderRadius: 4 }} />
+
+                {chunksLoading && <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading chunks…</p>}
+
+                {hasChunks ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {chunks.map(chunk => (
+                      <ChunkBlock
+                        key={chunk.chunk_id}
+                        chunk={chunk}
+                        dimensions={dimensions}
+                        projectId={projectId}
+                      />
+                    ))}
                   </div>
-                ) : work.content ? (
-                  <div style={{
-                    background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
-                    padding: '12px 16px', maxHeight: 'clamp(180px, 35vh, 400px)', overflowY: 'auto',
-                    fontSize: 14, lineHeight: 1.75, whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word', overflowWrap: 'anywhere',
-                    fontFamily: 'Georgia, serif',
-                  }}>
-                    {work.content}
-                  </div>
-                ) : (
-                  <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>(No content)</p>
+                ) : !chunksLoading && (
+                  /* Fallback: show raw content when no chunks exist yet */
+                  work.content_is_image && work.content ? (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
+                      <img src={`data:image/jpeg;base64,${work.content}`} alt={work.work_title ?? 'image'} style={{ maxWidth: '100%', maxHeight: 'clamp(200px, 40vh, 480px)', objectFit: 'contain', borderRadius: 4 }} />
+                    </div>
+                  ) : work.content ? (
+                    <div style={{
+                      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
+                      padding: '12px 16px', maxHeight: 'clamp(180px, 35vh, 400px)', overflowY: 'auto',
+                      fontSize: 14, lineHeight: 1.75, whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word', overflowWrap: 'anywhere',
+                      fontFamily: 'Georgia, serif',
+                    }}>
+                      {work.content}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>(No content)</p>
+                  )
                 )}
               </div>
             </>

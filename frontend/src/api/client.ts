@@ -1,7 +1,7 @@
 import type {
   AIRatingStatus, CrystalliseStatus, IngestResult, MaterialItemWithStats, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
   PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, RatedChunkEntry, Rating, SiteSettings, StorageListing,
-  TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkDetail,
+  TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkChunk, WorkDetail,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? `${import.meta.env.BASE_URL}api`
@@ -131,6 +131,8 @@ export const api = {
       req<IngestResult>('POST', `/projects/${projectId}/works/ingest`, { storage_paths: storagePaths }),
     detail: (projectId: string, ref: string) =>
       req<WorkDetail>('GET', `/projects/${projectId}/works/${encodeURIComponent(ref)}/detail`),
+    chunks: (projectId: string, ref: string) =>
+      req<WorkChunk[]>('GET', `/projects/${projectId}/works/${encodeURIComponent(ref)}/chunks`),
     delete: (projectId: string, ref: string) =>
       req<void>('DELETE', `/projects/${projectId}/works/${encodeURIComponent(ref)}`),
     getPluginConfig: (projectId: string) =>
