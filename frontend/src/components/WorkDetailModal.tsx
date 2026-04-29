@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
-import RatingEditModal from './RatingEditModal'
-import type { RatingDimension, WorkChunk } from '../api/types'
+import RatedChunksModal from './RatedChunksModal'
+import type { RatedChunkEntry, RatingDimension, WorkChunk, WorkDetail } from '../api/types'
 
 interface Props {
   projectId: string
@@ -20,12 +20,34 @@ function scoreColor(avg: number | null): string {
   return '#c00'
 }
 
+function toRatedChunkEntry(chunk: WorkChunk, work: WorkDetail): RatedChunkEntry {
+  return {
+    rating_id: chunk.rating?.rating_id ?? '',
+    chunk_id: chunk.chunk_id,
+    chunk_position: chunk.position,
+    chunk_count: chunk.chunk_count,
+    chunk_content: chunk.content,
+    chunk_domain: chunk.domain,
+    material_item_id: chunk.material_item_id,
+    work_seq: work.project_seq,
+    work_title: work.work_title,
+    author: work.author,
+    dimension_scores: chunk.rating?.dimension_scores ?? {},
+    avg_score: chunk.rating?.avg_score ?? null,
+    is_ai: chunk.rating?.is_ai ?? false,
+    explanations: chunk.rating?.explanations ?? {},
+    rated_at: chunk.rating?.rated_at ?? '',
+  }
+}
+
 function ChunkBlock({
   chunk,
+  work,
   dimensions,
   projectId,
 }: {
   chunk: WorkChunk
+  work: WorkDetail
   dimensions: RatingDimension[]
   projectId: string
 }) {
@@ -33,7 +55,6 @@ function ChunkBlock({
   const r = chunk.rating
   const pos = chunk.position + 1
   const total = chunk.chunk_count
-  const label = `Chunk ${pos} of ${total}`
 
   return (
     <>
@@ -46,7 +67,9 @@ function ChunkBlock({
           borderBottom: '1px solid var(--border)',
           gap: 8,
         }}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{label}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
+            Chunk {pos} of {total}
+          </span>
 
           {r ? (
             <button
@@ -96,7 +119,7 @@ function ChunkBlock({
             <div style={{ display: 'flex', justifyContent: 'center' }}>
               <img
                 src={`data:image/jpeg;base64,${chunk.content}`}
-                alt={label}
+                alt={`Chunk ${pos}`}
                 style={{ maxWidth: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 4 }}
               />
             </div>
@@ -109,11 +132,10 @@ function ChunkBlock({
       </div>
 
       {editOpen && (
-        <RatingEditModal
+        <RatedChunksModal
           projectId={projectId}
-          chunk={chunk}
-          chunkLabel={label}
           dimensions={dimensions}
+          initialEditing={toRatedChunkEntry(chunk, work)}
           onClose={() => setEditOpen(false)}
         />
       )}
@@ -239,6 +261,7 @@ export default function WorkDetailModal({ projectId, workRef, dimensions, onClos
                       <ChunkBlock
                         key={chunk.chunk_id}
                         chunk={chunk}
+                        work={work}
                         dimensions={dimensions}
                         projectId={projectId}
                       />

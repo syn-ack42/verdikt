@@ -11,6 +11,8 @@ interface Props {
   filterWorkTitle?: string
   dimensions: { name: string; description: string; weight: number }[]
   onClose: () => void
+  /** When set, open directly in edit/create mode for this entry (skips the list). */
+  initialEditing?: RatedChunkEntry
 }
 
 function scoreColor(avg: number | null): string {
@@ -21,12 +23,12 @@ function scoreColor(avg: number | null): string {
   return '#c00'
 }
 
-export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkTitle, dimensions, onClose }: Props) {
+export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkTitle, dimensions, onClose, initialEditing }: Props) {
   const isMobile = useIsMobile()
   const qc = useQueryClient()
-  const [editing, setEditing] = useState<RatedChunkEntry | null>(null)
+  const [editing, setEditing] = useState<RatedChunkEntry | null>(initialEditing ?? null)
   const [expandedExpl, setExpandedExpl] = useState<string | null>(null)
-  const [scores, setScores] = useState<Record<string, number>>({})
+  const [scores, setScores] = useState<Record<string, number>>(initialEditing?.dimension_scores ?? {})
   const [activeIdx, setActiveIdx] = useState(0)
   const [sortBy, setSortBy] = useState<string>('chunk_position')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -38,14 +40,23 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
     queryFn: () => api.ratings.ratedChunks(projectId, filterWorkSeq),
   })
 
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['rated-chunks', projectId] })
+    qc.invalidateQueries({ queryKey: ['ratings', projectId] })
+    qc.invalidateQueries({ queryKey: ['work-chunks', projectId] })
+    qc.invalidateQueries({ queryKey: ['works', projectId] })
+  }
+
   const updateRating = useMutation({
     mutationFn: ({ ratingId, scores }: { ratingId: string; scores: Record<string, number> }) =>
       api.ratings.updateRating(projectId, ratingId, scores),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['rated-chunks', projectId] })
-      qc.invalidateQueries({ queryKey: ['ratings', projectId] })
-      setEditing(null)
-    },
+    onSuccess: () => { invalidate(); initialEditing ? onClose() : setEditing(null) },
+  })
+
+  const createRating = useMutation({
+    mutationFn: ({ chunkId, materialItemId, scores }: { chunkId: string; materialItemId: string; scores: Record<string, number> }) =>
+      api.ratings.submit(projectId, { chunk_id: chunkId, material_item_id: materialItemId, dimension_scores: scores }),
+    onSuccess: () => { invalidate(); initialEditing ? onClose() : setEditing(null) },
   })
 
   const openEdit = (entry: RatedChunkEntry) => {
@@ -53,6 +64,10 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
     setScores({ ...entry.dimension_scores })
     setActiveIdx(0)
   }
+
+  const isNewRating = editing?.rating_id === ''
+  const isPending = updateRating.isPending || createRating.isPending
+  const saveError = updateRating.error || createRating.error
 
   const allScored = dimensions.length > 0 && dimensions.every(d => scores[d.name] !== undefined)
 
@@ -94,12 +109,12 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
         {/* Header */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {editing && (
+            {editing && !initialEditing && (
               <button onClick={() => setEditing(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, padding: 0 }}>
                 ← Back
               </button>
             )}
-            <h3 style={{ margin: 0, fontSize: 16 }}>{editing ? 'Edit Rating' : title}</h3>
+            <h3 style={{ margin: 0, fontSize: 16 }}>{editing ? (isNewRating ? 'Rate Chunk' : 'Edit Rating') : title}</h3>
             {!editing && entries && (
               <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
                 {entries.length} rated{sortedEntries.length > PAGE_SIZE && ` · page ${page + 1} of ${Math.ceil(sortedEntries.length / PAGE_SIZE)}`}
@@ -171,21 +186,27 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
-                  onClick={() => updateRating.mutate({ ratingId: editing.rating_id, scores })}
-                  disabled={!allScored || updateRating.isPending}
+                  onClick={() => {
+                    if (isNewRating) {
+                      createRating.mutate({ chunkId: editing.chunk_id, materialItemId: editing.material_item_id, scores })
+                    } else {
+                      updateRating.mutate({ ratingId: editing.rating_id, scores })
+                    }
+                  }}
+                  disabled={!allScored || isPending}
                   style={{
                     padding: '7px 20px', borderRadius: 4, border: 'none', cursor: allScored ? 'pointer' : 'default',
                     background: allScored ? '#6b7de0' : 'var(--border)', color: allScored ? '#fff' : 'var(--text-muted)',
                   }}
                 >
-                  {updateRating.isPending ? 'Saving…' : 'Save'}
+                  {isPending ? 'Saving…' : isNewRating ? 'Add rating' : 'Save'}
                 </button>
-                <button onClick={() => setEditing(null)} style={{ padding: '7px 14px', borderRadius: 4 }}>
+                <button onClick={() => initialEditing ? onClose() : setEditing(null)} style={{ padding: '7px 14px', borderRadius: 4 }}>
                   Cancel
                 </button>
-                {updateRating.error && (
+                {saveError && (
                   <span style={{ fontSize: 13, color: '#c00', alignSelf: 'center' }}>
-                    {String(updateRating.error)}
+                    {String(saveError)}
                   </span>
                 )}
               </div>
