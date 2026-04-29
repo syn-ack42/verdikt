@@ -122,7 +122,8 @@ export default function ProjectDashboard() {
     ws.sort((a, b) => {
       let av: number | string | null = null
       let bv: number | string | null = null
-      if (sortBy === 'name') { av = (a.work_title ?? '').toLowerCase(); bv = (b.work_title ?? '').toLowerCase() }
+      if (sortBy === 'seq') { av = a.project_seq ?? 0; bv = b.project_seq ?? 0 }
+      else if (sortBy === 'name') { av = (a.work_title ?? '').toLowerCase(); bv = (b.work_title ?? '').toLowerCase() }
       else if (sortBy === 'ingested_at') { av = a.ingested_at; bv = b.ingested_at }
       else if (sortBy === 'pipeline_phase') { av = a.pipeline_phase; bv = b.pipeline_phase }
       else if (sortBy === 'human_rated') { av = a.human_rated ?? 0; bv = b.human_rated ?? 0 }
@@ -709,8 +710,8 @@ export default function ProjectDashboard() {
             </colgroup>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', height: 100 }}>
-                <th onClick={() => handleSort(null)} style={{ ...thSort, paddingLeft: 4 }}>
-                  #{sortIndicator(null)}
+                <th onClick={() => handleSort('seq')} style={{ ...thSort, paddingLeft: 4 }}>
+                  #{sortIndicator('seq')}
                 </th>
                 <th onClick={() => handleSort('name')} style={thSort}>
                   Work{sortIndicator('name')}
