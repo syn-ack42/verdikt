@@ -150,6 +150,7 @@ def _make_user_engine(db_path: str, db_key: str) -> Engine:
 def rekey_user_db(user_id: str, old_key: str, new_key: str) -> None:
     """Re-encrypt a user's SQLCipher DB with a new key and invalidate the cached engine."""
     config = get_config()
+    config.ensure_user_dirs(user_id)
     db_path = str(config.user_db_path(user_id))
     try:
         from sqlcipher3 import dbapi2 as sqlcipher  # type: ignore
