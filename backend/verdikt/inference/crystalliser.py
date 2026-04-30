@@ -103,8 +103,11 @@ class ProfileCrystalliser:
             if on_tokens:
                 on_tokens(total_prompt, total_completion)
             raw = rdata["response"]
-            parsed = json.loads(raw)
-            summary = parsed.get("summary", "").strip() or "Unable to generate summary."
+            try:
+                parsed = json.loads(raw)
+                summary = parsed.get("summary", "").strip() or "Unable to generate summary."
+            except (json.JSONDecodeError, ValueError):
+                summary = raw.strip() or "Unable to generate summary."
 
             dimensions.append(DimensionProfile(
                 name=dim.name,
@@ -134,8 +137,11 @@ class ProfileCrystalliser:
         if on_tokens:
             on_tokens(total_prompt, total_completion)
         overall_raw = ordata["response"]
-        overall_parsed = json.loads(overall_raw)
-        overall_summary = overall_parsed.get("summary", "").strip() or "Unable to generate summary."
+        try:
+            overall_parsed = json.loads(overall_raw)
+            overall_summary = overall_parsed.get("summary", "").strip() or "Unable to generate summary."
+        except (json.JSONDecodeError, ValueError):
+            overall_summary = overall_raw.strip() or "Unable to generate summary."
 
         non_skipped = [r for r in ratings if not r.skipped]
         profile = PreferenceProfile(

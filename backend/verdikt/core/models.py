@@ -88,7 +88,7 @@ class Project(BaseModel):
     rating_dimensions: list[RatingDimension] = Field(default_factory=list)
     chunk_min_size: int = 600   # domain-native units: words for text, seconds for audio, etc.
     chunk_max_size: int = 800
-    crystallisation_threshold: int = 50
+    crystallisation_threshold: int = 10
     min_profile_confidence: float = 0.9
     llm_model: Optional[str] = None        # overrides global config.inference.ollama_model when set
     embedding_model: Optional[str] = None  # overrides global config.inference.embedding_model when set

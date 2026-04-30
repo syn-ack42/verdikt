@@ -25,9 +25,9 @@ def _get_effective_daily_grant(user: UserRow, session: Session) -> int | None:
 
 
 def _get_effective_expiry_days(user: UserRow, session: Session) -> int:
-    expiry = getattr(user, "token_grant_expiry_days", None) or 7
-    if expiry:
-        return expiry
+    per_user = getattr(user, "token_grant_expiry_days", None)
+    if per_user is not None and per_user > 0:
+        return per_user
     row = session.get(SiteSettingsRow, "default_token_grant_expiry_days")
     if row and row.value:
         try:

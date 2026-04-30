@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from verdikt.api.deps import get_auth_session, get_config, require_admin
 from verdikt.core.user_models import AuthenticatedUser
-from verdikt.storage.auth_orm import ModelCatalogRow, SiteSettingsRow, TokenGrantRow, UserRow
+from verdikt.storage.auth_orm import ModelCatalogRow, SiteSettingsRow, TokenGrantRow, TokenUsageRow, UserRow
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 _ph = PasswordHasher()
@@ -144,6 +144,8 @@ def delete_user(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     session.delete(user)
+    session.query(TokenUsageRow).filter(TokenUsageRow.user_id == user_id).delete()
+    session.query(TokenGrantRow).filter(TokenGrantRow.user_id == user_id).delete()
     session.commit()
 
     config = get_config()

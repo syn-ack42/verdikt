@@ -7,15 +7,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_auth_session, get_config, get_current_user, require_admin
+from verdikt.api.deps import get_auth_session, get_config, get_current_user, get_session, require_admin
 from verdikt.api.token_budget import get_token_balance
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.storage.auth_orm import TokenUsageRow, UserRow
+from verdikt.storage.sqlite import SQLiteProjectStore
 
 router = APIRouter(prefix="/api", tags=["usage"])
 
 
-def _usage_summary(user_id: str, session: Session) -> dict:
+def _usage_summary(user_id: str, session: Session, user_session: Session | None = None) -> dict:
     now = datetime.now(timezone.utc)
 
     def _window(since: datetime | None) -> dict:
@@ -44,9 +45,16 @@ def _usage_summary(user_id: str, session: Session) -> dict:
         TokenUsageRow.project_id.isnot(None),
     ).group_by(TokenUsageRow.project_id).all()
 
+    project_names: dict[str, str] = {}
+    if user_session is not None:
+        store = SQLiteProjectStore(user_session)
+        for proj in store.list_all():
+            project_names[proj.id] = proj.name
+
     by_project = [
         {
             "project_id": r[0],
+            "project_name": project_names.get(r[0]),
             "all_time": {
                 "prompt": int(r[1] or 0),
                 "completion": int(r[2] or 0),
@@ -71,8 +79,9 @@ def _usage_summary(user_id: str, session: Session) -> dict:
 def get_my_usage(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_auth_session)],
+    user_session: Annotated[Session, Depends(get_session)],
 ) -> dict:
-    return _usage_summary(user.id, session)
+    return _usage_summary(user.id, session, user_session)
 
 
 @router.get("/admin/users/{user_id}/usage")
