@@ -309,7 +309,6 @@ export default function Help() {
     if (activeId === 'data-privacy') return <SectionDataPrivacy />
     if (activeId.startsWith('plugin-')) {
       const pluginName = activeId.slice('plugin-'.length)
-      const plugin = plugins?.find(p => p.name === pluginName)
       return <PluginHelpSection pluginName={pluginName} />
     }
     return null
