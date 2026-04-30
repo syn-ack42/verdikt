@@ -361,6 +361,44 @@ The rating UI automatically renders image chunks as `<img>` elements. The LLM ju
 
 ---
 
+## Help page
+
+Every plugin can ship its own user-facing help page. Verdikt displays it in the **Help** section of the UI under the plugin's name.
+
+### How it works
+
+1. Create a Markdown file next to your plugin module (e.g. `myplugin_help.md`).
+2. Override the `help_markdown()` classmethod on your plugin class to return its contents:
+
+```python
+@classmethod
+def help_markdown(cls) -> str:
+    from pathlib import Path
+    return (Path(__file__).parent / "myplugin_help.md").read_text(encoding="utf-8")
+```
+
+The default implementation (on `PluginBase`) returns an empty string, which results in no help section being shown for your plugin.
+
+### What to write
+
+The help file should document what your plugin does from a **user's perspective**:
+
+- What content it fetches and how to configure it
+- Any credentials or API keys required
+- How to keep content up to date
+- Supported file types or formats (if applicable)
+- Rate limits, ToS notes, or other things users should know
+
+**Do not** repeat technical implementation details that belong in this developer guide.
+
+The Markdown renderer in the UI supports headings (`#`, `##`, `###`), paragraphs, **bold**, *italic*, `inline code`, fenced code blocks, unordered and ordered lists, blockquotes (`> `), tables (`|`), horizontal rules (`---`), and links (`[text](url)`).
+
+### Keeping it up to date
+
+Because the Markdown file lives inside your plugin package, updating the help page is a normal package release — no changes to Verdikt core are required.
+
+---
+
 ## Packaging checklist
 
 - [ ] `plugin_name` is set as a class attribute and matches the `entry_points` key

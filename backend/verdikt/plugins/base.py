@@ -49,6 +49,15 @@ class PluginBase(ABC):
         """
         return None
 
+    @classmethod
+    def help_markdown(cls) -> str:
+        """Return user-facing help text for this plugin as a Markdown string.
+
+        Displayed in the UI under Help › Plugins. Override to provide content;
+        the default returns an empty string (no help section shown).
+        """
+        return ""
+
     def get_new_work_ids(self, existing: set[str]) -> list[str]:
         """Return work IDs that should be ingested but are not yet in existing.
 

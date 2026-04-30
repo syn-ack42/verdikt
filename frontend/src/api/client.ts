@@ -155,6 +155,7 @@ export const api = {
   },
   plugins: {
     list: (domain?: string) => req<PluginInfo[]>('GET', `/plugins${domain ? `?domain=${domain}` : ''}`),
+    help: (pluginName: string) => req<{ markdown: string }>('GET', `/plugins/${encodeURIComponent(pluginName)}/help`),
   },
   pipeline: {
     run: (projectId: string) => req<PipelineResult>('POST', `/projects/${projectId}/pipeline/run`),

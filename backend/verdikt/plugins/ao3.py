@@ -172,6 +172,11 @@ class AO3Plugin(PluginBase):
             "required": [],
         }
 
+    @classmethod
+    def help_markdown(cls) -> str:
+        from pathlib import Path as _Path
+        return (_Path(__file__).parent / "ao3_help.md").read_text(encoding="utf-8")
+
     def _has_credentials(self) -> bool:
         return bool(self._config.get("username", "").strip() and self._config.get("password", "").strip())
 

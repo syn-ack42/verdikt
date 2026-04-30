@@ -71,6 +71,8 @@ Open `http://localhost:5173`. You will be redirected to the registration page on
 8. Once the dashboard shows enough ratings, open **Profile** and click **Crystallise**
 9. Start AI Rating from the dashboard to score remaining chunks automatically; then use **Confirm AI ratings** mode to review them and build profile confidence
 
+For contextual help at any time, open the **Help** page from the settings menu (☰) in the top right.
+
 ### Rating keyboard shortcuts
 
 | Key | Action |
@@ -182,25 +184,69 @@ All configuration is via environment variables (prefix `VERDIKT_`):
 | `VERDIKT_INFERENCE__OLLAMA_MODEL` | `llama3.1:8b` | Fallback LLM when no catalog default is set for a domain |
 | `VERDIKT_INFERENCE__EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Fallback sentence-transformers embedding model for text projects |
 | `VERDIKT_INFERENCE__CLIP_MODEL` | `openai/clip-vit-base-patch32` | CLIP model for image embedding (HuggingFace model ID) |
+| `VERDIKT_GOOGLE_CLIENT_ID` | *(empty)* | Google OAuth client ID; leave unset to disable Google login |
+| `VERDIKT_GOOGLE_CLIENT_SECRET` | *(empty)* | Google OAuth client secret |
+| `VERDIKT_GITHUB_CLIENT_ID` | *(empty)* | GitHub OAuth App client ID; leave unset to disable GitHub login |
+| `VERDIKT_GITHUB_CLIENT_SECRET` | *(empty)* | GitHub OAuth App client secret |
+| `VERDIKT_OAUTH_REDIRECT_BASE` | `http://localhost:8765` | Base URL used in OAuth callback URIs |
 
 LLM and embedding model defaults are primarily managed through the Admin › Models catalog. The environment variables above serve as global fallbacks when no catalog default has been configured.
 
+## Token usage and budget
+
+LLM calls (AI rating, profile crystallisation, recommendation) consume tokens. Admins can apply limits to prevent runaway usage on shared servers.
+
+### Viewing usage
+
+Open **Token Usage** from the settings menu (☰). The page shows your current balance, daily / weekly / monthly / all-time totals, and a per-project breakdown.
+
+### Admin grant management
+
+In **Admin › Users**, select a user and:
+
+- **Set daily limit** — controls the token grant issued each day (`null` = unlimited)
+- **Issue a one-time grant** — add tokens that expire on a chosen date or never
+- **Set expiry days** — how many days each daily grant stays valid before it expires
+
+When a user's balance reaches zero, they receive HTTP 402 on the next LLM-dependent request. Issue a grant or increase their daily limit to restore access.
+
 ## Admin
 
-The first registered user is automatically an admin. Admins have access to two management pages:
+The first registered user is automatically an admin. Admins have access to:
 
 ### Users (`/admin/users`)
 
 - View all accounts with registration date and status
-- Block / unblock users
+- Block / unblock users — blocked users cannot log in
 - Delete users (removes their account and all data)
+- Promote / demote admin status — the founding admin (first registered user) cannot be demoted
+- Manage token usage limits and issue one-time token grants
 
 ### Models (`/admin/models`)
 
 - Sync the local Ollama model catalog
+- Manually add sentence-transformer embedding models (these are not discoverable via Ollama sync)
 - Enable/disable models for user selection
 - Set per-domain LLM defaults
 - Edit model type, domain classification, display name, and description
+
+## OAuth login
+
+Verdikt supports sign-in via Google and GitHub. Set the following environment variables to enable each provider:
+
+| Variable | Description |
+|---|---|
+| `VERDIKT_GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `VERDIKT_GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `VERDIKT_GITHUB_CLIENT_ID` | GitHub OAuth App client ID |
+| `VERDIKT_GITHUB_CLIENT_SECRET` | GitHub OAuth App client secret |
+| `VERDIKT_OAUTH_REDIRECT_BASE` | Base URL for OAuth callbacks (default: `http://localhost:8765`) |
+
+When at least one provider is configured, the login page shows the corresponding "Sign in with …" buttons alongside the password form. OAuth users have no password and use an encrypted DB key that is wrapped with a server-side HKDF key derived from the JWT secret.
+
+To set up a Google OAuth client: go to the [Google Cloud Console](https://console.cloud.google.com/), create an OAuth 2.0 client, and add `<VERDIKT_OAUTH_REDIRECT_BASE>/api/auth/oauth/google/callback` as an authorised redirect URI.
+
+For GitHub: create an OAuth App in GitHub Settings › Developer settings; set the callback URL to `<VERDIKT_OAUTH_REDIRECT_BASE>/api/auth/oauth/github/callback`.
 
 ## CLI reference
 

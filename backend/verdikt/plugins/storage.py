@@ -76,6 +76,11 @@ class StoragePlugin(PluginBase):
             },
         }
 
+    @classmethod
+    def help_markdown(cls) -> str:
+        from pathlib import Path as _Path
+        return (_Path(__file__).parent / "storage_help.md").read_text(encoding="utf-8")
+
     # ------------------------------------------------------------------
     # Path helpers (filesystem mode)
     # ------------------------------------------------------------------

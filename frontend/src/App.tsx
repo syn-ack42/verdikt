@@ -12,6 +12,7 @@ import AdminModels from './pages/AdminModels'
 import AdminSettings from './pages/AdminSettings'
 import UserSettings from './pages/UserSettings'
 import Usage from './pages/Usage'
+import Help from './pages/Help'
 import ProtectedRoute from './components/ProtectedRoute'
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="/admin/settings" element={<AdminSettings />} />
         <Route path="/settings/password" element={<UserSettings />} />
         <Route path="/usage" element={<Usage />} />
+        <Route path="/help" element={<Help />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
