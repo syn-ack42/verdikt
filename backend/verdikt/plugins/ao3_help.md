@@ -1,6 +1,6 @@
 # AO3
 
-Fetch fan fiction from [Archive of Our Own](https://archiveofourown.org). Works are fetched in full and a representative sample of paragraphs is stored to keep database size manageable.
+Fetch fan fiction from [Archive of Our Own](https://archiveofourown.org). Works are fetched in full, but only a representative sample of paragraphs is retained. The primary reason is respect for authors: AO3 creators retain full copyright over their work and have not consented to having it stored wholesale in a third-party database. Verdikt keeps just enough to learn your preferences, not a copy of the work. A secondary benefit is that smaller excerpts also keep your database compact.
 
 ## Setting up a search
 
@@ -20,7 +20,7 @@ Credentials are stored encrypted in your project's plugin config. They are never
 
 ## Content sampling
 
-AO3 works can be very long. By default the plugin keeps about 20% of paragraphs, sampled with a Gaussian distribution centred on the middle of the work. This means the beginning and end of a work are sampled more lightly than the core. The sampling is deterministic per work ID so re-fetching the same work always produces the same excerpt.
+AO3 works can be very long. By default the plugin keeps about 20% of paragraphs, sampled with a Gaussian distribution centred on the middle of the work — enough to learn preferences, not enough to serve as a substitute for reading the original. The beginning and end of a work are sampled more lightly than the core. Sampling is deterministic per work ID so re-fetching the same work always produces the same excerpt.
 
 Two environment variables tune sampling server-wide:
 

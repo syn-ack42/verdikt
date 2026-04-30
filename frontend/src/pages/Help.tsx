@@ -22,7 +22,7 @@ function SectionOverview() {
     <div>
       <h2 style={{ margin: '0 0 16px', fontSize: 20, fontWeight: 700 }}>How Verdikt works</h2>
       <p style={{ lineHeight: 1.7, marginBottom: 16 }}>
-        Verdikt learns your preferences by asking you to rate small content samples, then uses a local AI model to build a structured preference profile — entirely on your machine. No data leaves your computer.
+        Verdikt learns your preferences by asking you to rate small content samples, then uses an AI model to build a structured preference profile. Your ratings, files, and preference data stay within the Verdikt instance you are connected to and are not shared with any third party. You can run Verdikt privately on your own machine or server, or use a hosted instance operated by someone you trust.
       </p>
 
       <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>The workflow</h3>
@@ -198,7 +198,7 @@ function SectionDataPrivacy() {
     <div>
       <h2 style={{ margin: '0 0 16px', fontSize: 20, fontWeight: 700 }}>Data & Privacy</h2>
       <p style={{ lineHeight: 1.7, marginBottom: 12 }}>
-        Verdikt is local-first. Your preference data, ratings, and files never leave your machine unless you explicitly export them.
+        Your preference data, ratings, and uploaded files stay within the Verdikt instance you are using and are not shared with any third party. You can run Verdikt entirely on your own machine for maximum privacy, or use a hosted instance — in either case the data boundary is the server, not an external cloud.
       </p>
 
       <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>Per-user encryption</h3>
@@ -208,7 +208,7 @@ function SectionDataPrivacy() {
       <p style={{ lineHeight: 1.7 }}>Uploaded files are stored as opaque encrypted blobs (AES-256-GCM). On disk they have UUID names with no extension or readable metadata. Only your database maps them back to filenames and paths. A server administrator cannot read your files or determine what you have uploaded.</p>
 
       <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>AI inference</h3>
-      <p style={{ lineHeight: 1.7 }}>All LLM calls go to a locally-running Ollama instance (or a URL you configure). No content is sent to any cloud service unless you explicitly configure a remote Ollama endpoint.</p>
+      <p style={{ lineHeight: 1.7 }}>All LLM calls go to an Ollama instance running on the same server as Verdikt. No content leaves the server to any external cloud service. Support for remote model providers is not yet available; when it is, such models will be clearly labelled and privacy-first providers will be preferred.</p>
 
       <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>Data location</h3>
       <table style={{ borderCollapse: 'collapse', fontSize: 13, marginTop: 8, width: '100%' }}>
