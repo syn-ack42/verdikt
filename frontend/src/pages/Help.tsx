@@ -250,7 +250,7 @@ function SectionDataPrivacy() {
 
 // ── Plugin help section ─────────────────────────────────────────────────────
 
-function PluginHelpSection({ pluginName, title }: { pluginName: string; title: string }) {
+function PluginHelpSection({ pluginName }: { pluginName: string }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['plugin-help', pluginName],
     queryFn: () => api.plugins.help(pluginName),
@@ -277,8 +277,6 @@ export default function Help() {
     id: `plugin-${p.name}`,
     label: p.title,
   }))
-
-  const allSections = [...CORE_SECTIONS, ...pluginSections]
 
   const sidebarStyle: React.CSSProperties = {
     width: 180,
@@ -312,7 +310,7 @@ export default function Help() {
     if (activeId.startsWith('plugin-')) {
       const pluginName = activeId.slice('plugin-'.length)
       const plugin = plugins?.find(p => p.name === pluginName)
-      return <PluginHelpSection pluginName={pluginName} title={plugin?.title ?? pluginName} />
+      return <PluginHelpSection pluginName={pluginName} />
     }
     return null
   }
