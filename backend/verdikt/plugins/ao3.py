@@ -5,7 +5,7 @@ Fetches works from Archive of Our Own. Always retrieves the full work
 a Gaussian-sampled subset of paragraphs to reduce storage.
 
 Sampling:
-  VERDIKT_AO3_SAMPLE_RATE   — fraction of paragraphs to keep (default 0.20, min 2 paragraphs)
+  VERDIKT_AO3_SAMPLE_RATE   — fraction of paragraphs to keep (default 0.10, min 2 paragraphs)
   VERDIKT_AO3_SAMPLE_STDDEV — controls how tightly sampling is concentrated around the work's
                               midpoint. The value is the number of standard deviations that span
                               from the centre to the edge of the work; higher = broader spread,
@@ -55,7 +55,7 @@ _USER_AGENT = (
     "Verdikt/0.3"
 )
 
-_ENV_SAMPLE_RATE = float(os.environ.get("VERDIKT_AO3_SAMPLE_RATE", "0.20"))
+_ENV_SAMPLE_RATE = float(os.environ.get("VERDIKT_AO3_SAMPLE_RATE", "0.10"))
 _ENV_SAMPLE_STDDEV = float(os.environ.get("VERDIKT_AO3_SAMPLE_STDDEV", "1.5"))
 _ENV_REQUEST_DELAY = max(3.0, float(os.environ.get("VERDIKT_AO3_REQUEST_DELAY", "5.0")))
 

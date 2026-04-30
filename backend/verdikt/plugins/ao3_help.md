@@ -20,13 +20,13 @@ Credentials are stored encrypted in your project's plugin config. They are never
 
 ## Content sampling
 
-AO3 works can be very long. By default the plugin keeps about 20% of paragraphs, sampled with a Gaussian distribution centred on the middle of the work — enough to learn preferences, not enough to serve as a substitute for reading the original. The beginning and end of a work are sampled more lightly than the core. Sampling is deterministic per work ID so re-fetching the same work always produces the same excerpt.
+AO3 works can be very long. By default the plugin keeps about 10% of paragraphs, sampled with a Gaussian distribution centred on the middle of the work — enough to learn preferences, not enough to serve as a substitute for reading the original. The beginning and end of a work are sampled more lightly than the core. Sampling is deterministic per work ID so re-fetching the same work always produces the same excerpt.
 
 Two environment variables tune sampling server-wide:
 
 | Variable | Default | Effect |
 |---|---|---|
-| `VERDIKT_AO3_SAMPLE_RATE` | `0.20` | Fraction of paragraphs to retain (0.05–1.0) |
+| `VERDIKT_AO3_SAMPLE_RATE` | `0.10` | Fraction of paragraphs to retain (0.05–1.0) |
 | `VERDIKT_AO3_SAMPLE_STDDEV` | `1.5` | Spread of the Gaussian; higher = more even coverage |
 
 ## Rate limiting
