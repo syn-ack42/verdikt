@@ -156,6 +156,14 @@ Files are stored encrypted at rest using AES-256-GCM. On disk each file is an op
 
 The storage root is configurable via `VERDIKT_DATA_DIR` (defaults to `/var/lib/verdikt`). User spaces can be placed on a separate volume with `VERDIKT_USERS_DIR`.
 
+### What is not sealed at rest
+
+The embedding database (ChromaDB) does not support encryption and remains unencrypted on disk. It contains only numerical vectors and opaque internal IDs — no filenames, no text content, no usernames. Reconstructing readable content from raw embedding vectors requires reversing the neural network that produced them; this is not a realistic attack for the models Verdikt uses.
+
+For deployments where even this residual exposure is unacceptable, full-disk encryption at the OS level (e.g. LUKS on Linux) covers the ChromaDB directory alongside everything else.
+
+Verdikt does not log content, filenames, URLs, or email addresses. Log output contains only counts, status codes, UUIDs, and error messages.
+
 ## Project settings
 
 Each project has independently configurable:

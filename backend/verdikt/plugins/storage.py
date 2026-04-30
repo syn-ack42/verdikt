@@ -162,7 +162,7 @@ class StoragePlugin(PluginBase):
             try:
                 raw = file_path.read_bytes()
             except Exception as exc:
-                log.warning("storage: skipping %s — %s", file_path.name, exc)
+                log.warning("storage: skipping %s file — %s", ext, exc)
                 return None
             content_type = _IMAGE_EXT_TO_CONTENT_TYPE.get(ext, ContentType.JPEG)
             return MaterialItem(
@@ -183,7 +183,7 @@ class StoragePlugin(PluginBase):
         try:
             text = extractor._extract_text(file_path)
         except Exception as exc:
-            log.warning("storage: skipping %s — %s", file_path.name, exc)
+            log.warning("storage: skipping %s file — %s", ext, exc)
             return None
         if not text or not text.strip():
             return None

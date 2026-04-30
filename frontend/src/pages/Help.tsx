@@ -208,7 +208,18 @@ function SectionDataPrivacy() {
       <p style={{ lineHeight: 1.7 }}>Uploaded files are stored as opaque encrypted blobs (AES-256-GCM). On disk they have UUID names with no extension or readable metadata. Only your database maps them back to filenames and paths. A server administrator cannot read your files or determine what you have uploaded.</p>
 
       <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>AI inference</h3>
-      <p style={{ lineHeight: 1.7 }}>All LLM calls go to an Ollama instance running on the same server as Verdikt. No content leaves the server to any external cloud service. Support for remote model providers is not yet available; when it is, such models will be clearly labelled and privacy-first providers will be preferred.</p>
+      <p style={{ lineHeight: 1.7 }}>All LLM calls go to an Ollama instance running on the same server as Verdikt. Content is necessarily passed to the model for processing, but it never leaves the server. No content is sent to any external cloud service. Support for remote model providers is not yet available; when it is, such models will be clearly labelled and privacy-first providers will be preferred.</p>
+
+      <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>What is not sealed at rest</h3>
+      <p style={{ lineHeight: 1.7 }}>
+        The embedding database (ChromaDB) does not support encryption and remains unencrypted on disk. It contains only numerical vectors and opaque internal IDs — no filenames, no text, no usernames. Reconstructing readable content from raw embedding vectors requires reversing the neural network that produced them; this is not a realistic attack for the models Verdikt uses.
+      </p>
+      <p style={{ lineHeight: 1.7, marginTop: 8 }}>
+        For deployments where even this exposure is unacceptable, full-disk encryption at the OS level (e.g. LUKS on Linux) is the appropriate control.
+      </p>
+      <p style={{ lineHeight: 1.7, marginTop: 8 }}>
+        Verdikt does not log content, filenames, URLs, or email addresses. Log output contains only counts, status codes, UUIDs, and error messages.
+      </p>
 
       <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>Data location</h3>
       <table style={{ borderCollapse: 'collapse', fontSize: 13, marginTop: 8, width: '100%' }}>

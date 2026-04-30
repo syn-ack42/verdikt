@@ -44,7 +44,7 @@ def send_email(session: Session, to: str, subject: str, body_html: str, body_tex
     """Send an email. Returns True on success, False if SMTP is not configured or sending fails."""
     cfg = get_smtp_config(session)
     if not cfg.get("host") or not cfg.get("from"):
-        log.warning("SMTP not configured — skipping email to %s (subject: %s)", to, subject)
+        log.warning("SMTP not configured — skipping email delivery")
         return False
 
     msg = MIMEMultipart("alternative")
@@ -65,8 +65,8 @@ def send_email(session: Session, to: str, subject: str, body_html: str, body_tex
             server.login(cfg["user"], cfg["password"])
         server.sendmail(cfg["from"], [to], msg.as_string())
         server.quit()
-        log.info("Email sent to %s (subject: %s)", to, subject)
+        log.info("Email sent successfully")
         return True
     except Exception as exc:
-        log.error("Failed to send email to %s: %s", to, exc)
+        log.error("Failed to send email: %s", exc)
         return False

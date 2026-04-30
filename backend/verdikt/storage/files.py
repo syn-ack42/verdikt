@@ -446,10 +446,10 @@ class EncryptedStorageBackend(StorageBackend):
                 while parent != self._root and not any(parent.iterdir()):
                     parent.rmdir()
                     parent = parent.parent
-                log.info("encrypted legacy file: %s", rel)
+                log.info("encrypted legacy file (migrated)")
                 migrated += 1
             except Exception as exc:
-                log.warning("failed to encrypt legacy file %s: %s", old_path, exc)
+                log.warning("failed to encrypt legacy file: %s", exc)
         return migrated
 
 

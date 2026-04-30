@@ -245,7 +245,7 @@ class AO3Plugin(PluginBase):
             )
         token = token_input["value"]
 
-        log.info("ao3: POST %s (login user=%r)", sign_in_url, self._config.get("username"))
+        log.info("ao3: POST %s (login)", sign_in_url)
         login_resp = self._session.post(
             sign_in_url,
             data={
@@ -258,12 +258,12 @@ class AO3Plugin(PluginBase):
             allow_redirects=True,
             headers={"Referer": sign_in_url},
         )
-        log.info("ao3: POST %s -> %s (final url: %s)", sign_in_url, login_resp.status_code, login_resp.url)
+        log.info("ao3: POST %s -> %s", sign_in_url, login_resp.status_code)
         if "/users/login" in login_resp.url:
             raise LoginError("AO3 login failed — check username and password")
 
         self._logged_in = True
-        log.info("ao3: login successful for user %r", self._config.get("username"))
+        log.info("ao3: login successful")
 
     @staticmethod
     def _parse_status_date(li_tag) -> datetime | None:
@@ -290,16 +290,14 @@ class AO3Plugin(PluginBase):
             qs["page"] = [str(page)]
             paged_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
 
-            log.info("ao3: GET %s", paged_url)
+            log.debug("ao3: GET search page %d", page)
             resp = self._get(paged_url, timeout=30, headers={"Referer": AO3_BASE})
-            log.info("ao3: GET %s -> %s", paged_url, resp.status_code)
+            log.debug("ao3: GET search page %d -> %s", page, resp.status_code)
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "html.parser")
 
             items = soup.find_all("li", id=re.compile(r"^work_\d+$"))
             log.debug("ao3: search page %d found %d work items", page, len(items))
-            if items:
-                log.debug("ao3: first <li> snippet: %s", str(items[0])[:400])
             if not items:
                 break
 
@@ -309,12 +307,7 @@ class AO3Plugin(PluginBase):
                     wid = m.group(1)
                     date = self._parse_status_date(li)
                     if date is None:
-                        comments = [str(c) for c in li.find_all(string=lambda t: isinstance(t, Comment))]
-                        datetime_p = li.find("p", class_="datetime")
-                        log.debug(
-                            "ao3: no date for work_%s — comments=%r datetime_p=%r li_tail=%s",
-                            wid, comments, str(datetime_p) if datetime_p else None, str(li)[-300:],
-                        )
+                        log.debug("ao3: no date found for work_%s", wid)
                     else:
                         log.debug("ao3: search work_id=%s date=%s", wid, date)
                     results[wid] = date
@@ -344,9 +337,9 @@ class AO3Plugin(PluginBase):
 
     def _get_work_updated_at(self, work_id: str) -> datetime | None:
         url = f"{AO3_BASE}/works/{work_id}?view_adult=true"
-        log.info("ao3: GET %s", url)
+        log.debug("ao3: GET work %s (date check)", work_id)
         resp = self._get(url, timeout=30, headers={"Referer": AO3_BASE})
-        log.info("ao3: GET %s -> %s", url, resp.status_code)
+        log.debug("ao3: GET work %s -> %s", work_id, resp.status_code)
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
@@ -358,9 +351,9 @@ class AO3Plugin(PluginBase):
 
     def _fetch_work(self, work_id: str, source_updated_at: datetime | None = None) -> MaterialItem | None:
         url = f"{AO3_BASE}/works/{work_id}?view_full_work=true&view_adult=true"
-        log.info("ao3: GET %s", url)
+        log.debug("ao3: GET work %s (full)", work_id)
         resp = self._get(url, timeout=60, headers={"Referer": AO3_BASE})
-        log.info("ao3: GET %s -> %s", url, resp.status_code)
+        log.debug("ao3: GET work %s -> %s", work_id, resp.status_code)
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
