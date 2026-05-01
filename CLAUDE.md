@@ -155,6 +155,32 @@ The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.y
 5. ✅ Auth (JWT + Argon2id) + per-user SQLCipher encryption + project export/import + AI accuracy confidence + background AI preview + active learning + admin UI
 6. ✅ Image domain support — CLIP embedder, vision LLM judging, identity chunker, domain-filtered plugins, per-domain model catalog with admin-managed defaults
 7. ✅ Token usage tracking + budget grants, admin promote/demote, OAuth (Google/GitHub), sentence-transformer catalog
+8. ✅ `ImmichPlugin` + remote content protocol + chunk descriptions from LLM judge + Immich writeback (star ratings + `#verdikt:` descriptions)
+
+## Remote content protocol
+
+Plugins that source remote content (e.g. Immich) can store only a reference at ingest time and fetch bytes lazily:
+
+- `MaterialItem.content_is_remote: bool = False` — signals that `content=b""` is intentional
+- `PluginBase.supports_remote_content() -> bool` — classmethod; return `True` to opt in
+- `PluginBase.fetch_content(source_path: str) -> bytes` — called by the pipeline chunk phase and the AI rater when `content` is empty and `content_is_remote` is set
+- Three storage modes (plugin config `thumbnail_size`): `preview` (fetch once, ~200 KB), `thumbnail` (fetch once, ~30 KB), `none` (always-fetch, zero DB storage)
+- For `preview`/`thumbnail`: bytes persisted to `ChunkRow.content` during pipeline; all downstream reads hit DB only
+- For `none`: `ChunkRow.content` stays empty; rating router, AI rater each call `fetch_content()` on demand
+
+## Chunk descriptions
+
+The LLM judge (`inference/judge.py`) emits a 4th return value: a neutral factual description of the chunk (1–2 sentences, no evaluative language). Return signature: `(scores, overall, explanations, description)`. Stored in `ChunkRow.description` (nullable TEXT). Written by AI rater and live preview endpoint; surfaced as a caption in the rating interface and work detail modal.
+
+## Writeback protocol
+
+Plugins that can push data back to the source implement:
+
+- `PluginBase.supports_writeback() -> bool` — classmethod; return `True` to opt in
+- `PluginBase.writeback(project_id, session, options: dict) -> dict` — options keys: `write_ratings: bool`, `write_descriptions: bool`; returns `{"updated": N, "skipped": N, "errors": [...]}`
+- `POST /api/projects/{id}/works/plugins/{name}/writeback` — calls `plugin.writeback()`; requires auth
+- `GET /api/plugins` response includes `supports_writeback: bool` per plugin
+- Frontend shows a **Write back** button on the project dashboard when any configured plugin has `supports_writeback=True`
 
 ## Branch conventions
 
