@@ -2,9 +2,11 @@ interface JsonSchemaPropertyDef {
   type?: string
   format?: string
   title?: string
+  description?: string
   minimum?: number
   maximum?: number
   default?: unknown
+  enum?: string[]
 }
 
 interface JsonSchemaProperty {
@@ -15,6 +17,7 @@ interface JsonSchemaProperty {
   default?: unknown
   minimum?: number
   maximum?: number
+  enum?: string[]
   items?: {
     type?: string
     format?: string
@@ -40,6 +43,17 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 4,
   background: 'var(--bg)',
   color: 'var(--text)',
+}
+
+const selectStyle: React.CSSProperties = {
+  ...inputStyle,
+  cursor: 'pointer',
+}
+
+// Return the "for type=X" constraint from a description string, or null.
+function showWhenType(description?: string): string | null {
+  const m = description?.match(/\(for type=(\w+)\)/i)
+  return m ? m[1] : null
 }
 
 // Array of plain strings/URLs
@@ -72,16 +86,19 @@ function StringArrayField({
   )
 }
 
-// Array of objects — renders each property as an inline field in the row
+// Array of objects — each property gets a visible label, enum fields become <select>,
+// and fields with "(for type=X)" in their description are conditionally shown.
 function ObjectArrayField({
   prop, value, onChange,
 }: { prop: JsonSchemaProperty; value: unknown; onChange: (v: unknown) => void }) {
   const items = Array.isArray(value) ? (value as Record<string, unknown>[]) : []
   const properties = prop.items!.properties!
 
+  // Field with enum = discriminator (e.g. "type")
+  const discriminatorKey = Object.keys(properties).find(k => (properties[k].enum?.length ?? 0) > 0) ?? null
+
   const set = (idx: number, key: string, v: unknown) => {
-    const next = items.map((item, i) => i === idx ? { ...item, [key]: v } : item)
-    onChange(next)
+    onChange(items.map((item, i) => i === idx ? { ...item, [key]: v } : item))
   }
   const remove = (idx: number) => onChange(items.filter((_, i) => i !== idx))
 
@@ -89,9 +106,10 @@ function ObjectArrayField({
     const prev = items[items.length - 1]
     const newItem: Record<string, unknown> = {}
     for (const [key, schema] of Object.entries(properties)) {
-      // URL fields always start empty; other fields inherit from previous row or use schema default
       if (schema.format === 'uri') {
         newItem[key] = ''
+      } else if (schema.enum) {
+        newItem[key] = prev?.[key] ?? schema.default ?? schema.enum[0] ?? ''
       } else {
         newItem[key] = prev?.[key] ?? schema.default ?? (schema.type === 'integer' || schema.type === 'number' ? 0 : '')
       }
@@ -100,36 +118,60 @@ function ObjectArrayField({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      {items.map((item, i) => (
-        <div key={i} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          {Object.entries(properties).map(([key, schema]) => {
-            const isUrl = schema.format === 'uri'
-            const isNum = schema.type === 'integer' || schema.type === 'number'
-            const currentVal = item[key] ?? schema.default ?? ''
-            return (
-              <input
-                key={key}
-                type={isUrl ? 'url' : isNum ? 'number' : 'text'}
-                value={String(currentVal)}
-                min={schema.minimum}
-                max={schema.maximum}
-                title={schema.title ?? key}
-                placeholder={schema.title ?? key}
-                onChange={e => {
-                  const v = isNum ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value
-                  set(i, key, v)
-                }}
-                style={{ flex: isUrl ? 1 : undefined, width: isNum ? 72 : undefined, ...inputStyle }}
-              />
-            )
-          })}
-          <button type="button" onClick={() => remove(i)} style={{ color: '#c00', border: 'none', background: 'none', cursor: 'pointer', flexShrink: 0 }}>×</button>
-        </div>
-      ))}
-      {/* Column labels on hover — shown as placeholder text in inputs above */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {items.map((item, i) => {
+        const discriminatorValue = discriminatorKey ? String(item[discriminatorKey] ?? '') : null
+
+        // Hide fields whose description specifies a type constraint that doesn't match
+        const visible = Object.entries(properties).filter(([, schema]) => {
+          const constraint = showWhenType(schema.description)
+          return !constraint || discriminatorValue === constraint
+        })
+
+        return (
+          <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap', padding: '8px 10px', background: 'var(--surface, rgba(128,128,128,0.04))', borderRadius: 6, border: '1px solid var(--border)' }}>
+            {visible.map(([key, schema]) => {
+              const isEnum = (schema.enum?.length ?? 0) > 0
+              const isNum = schema.type === 'integer' || schema.type === 'number'
+              const currentVal = item[key] ?? schema.default ?? (isEnum ? schema.enum![0] : '')
+
+              return (
+                <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: (!isEnum && !isNum) ? 1 : undefined, minWidth: isNum ? 80 : undefined }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', userSelect: 'none' }}>
+                    {schema.title ?? key}
+                  </span>
+                  {isEnum ? (
+                    <select
+                      value={String(currentVal)}
+                      onChange={e => set(i, key, e.target.value)}
+                      style={{ ...selectStyle, minWidth: 100 }}
+                    >
+                      {schema.enum!.map(opt => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type={isNum ? 'number' : 'text'}
+                      value={String(currentVal)}
+                      min={schema.minimum}
+                      max={schema.maximum}
+                      onChange={e => {
+                        const v = isNum ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value
+                        set(i, key, v)
+                      }}
+                      style={{ ...inputStyle, width: isNum ? 80 : undefined }}
+                    />
+                  )}
+                </div>
+              )
+            })}
+            <button type="button" onClick={() => remove(i)} style={{ color: '#c00', border: 'none', background: 'none', cursor: 'pointer', paddingBottom: 3, flexShrink: 0 }}>×</button>
+          </div>
+        )
+      })}
       <button type="button" onClick={add} style={{ alignSelf: 'flex-start', fontSize: 12, color: '#6b7de0', border: 'none', background: 'none', cursor: 'pointer' }}>
-        + Add
+        + Add source
       </button>
     </div>
   )
@@ -158,6 +200,7 @@ export default function PluginConfigEditor({ schema, value, onChange, errors }: 
         const currentVal = value[key] ?? prop.default ?? ''
         const error = errors?.[key]
         const type = Array.isArray(prop.type) ? prop.type[0] : prop.type
+        const isEnum = (prop.enum?.length ?? 0) > 0
 
         return (
           <div key={key}>
@@ -169,6 +212,25 @@ export default function PluginConfigEditor({ schema, value, onChange, errors }: 
             )}
             {type === 'array' ? (
               <ArrayField prop={prop} value={currentVal} onChange={v => update(key, v)} />
+            ) : isEnum ? (
+              <select
+                value={String(currentVal)}
+                onChange={e => update(key, e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '6px 8px',
+                  border: `1px solid ${error ? '#f59e0b' : 'var(--border)'}`,
+                  borderRadius: 4,
+                  boxSizing: 'border-box',
+                  background: 'var(--bg)',
+                  color: 'var(--text)',
+                  cursor: 'pointer',
+                }}
+              >
+                {prop.enum!.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
             ) : (
               <input
                 type={
