@@ -33,6 +33,7 @@ def list_plugins(
             "title": schema.get("title", name),
             "description": schema.get("description", ""),
             "config_schema": schema,
+            "supports_writeback": cls.supports_writeback(),
         })
     return result
 

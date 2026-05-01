@@ -1,7 +1,7 @@
 import type {
   AIRatingStatus, CrystalliseStatus, IngestResult, MaterialItemWithStats, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
   PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, ProjectDefaults, RatedChunkEntry, Rating, SiteSettings, StorageListing,
-  TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkChunk, WorkDetail,
+  TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkChunk, WorkDetail, WritebackResult,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? `${import.meta.env.BASE_URL}api`
@@ -152,6 +152,8 @@ export const api = {
       req<UpdatePluginStatus>('GET', `/projects/${projectId}/works/update-plugin/status`),
     updatePluginStream: (projectId: string, onEvent: (e: UpdatePluginEvent) => void) =>
       streamFetch(`/projects/${projectId}/works/update-plugin/stream`, { method: 'POST' }, onEvent as (e: unknown) => void),
+    writeback: (projectId: string, pluginName: string, opts: { write_ratings: boolean; write_descriptions: boolean }) =>
+      req<WritebackResult>('POST', `/projects/${projectId}/works/plugins/${encodeURIComponent(pluginName)}/writeback`, opts),
   },
   plugins: {
     list: (domain?: string) => req<PluginInfo[]>('GET', `/plugins${domain ? `?domain=${domain}` : ''}`),

@@ -47,6 +47,7 @@ class MaterialItemRow(Base):
     pipeline_phase: Mapped[str] = mapped_column(String, nullable=False)
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     plugin_metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    content_is_remote: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
 
 
 class ChunkRow(Base):
@@ -61,6 +62,7 @@ class ChunkRow(Base):
     size: Mapped[int] = mapped_column(Integer, nullable=False)
     cluster_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

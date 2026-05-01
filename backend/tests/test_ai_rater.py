@@ -62,7 +62,7 @@ def _make_stores(chunks: list[Chunk], ratings: list[Rating], ai_ratings: list[Ra
 
 def _make_judge(score: float = 4.0) -> LLMJudge:
     judge = MagicMock(spec=LLMJudge)
-    judge.score_chunk.return_value = ({"Prose": score}, score, {})
+    judge.score_chunk.return_value = ({"Prose": score}, score, {}, None)
     return judge
 
 
@@ -132,7 +132,7 @@ def test_stop_condition_triggers_after_declining_batches():
         batch_idx = call_count // 10
         s = scores_seq[min(batch_idx, len(scores_seq) - 1)]
         call_count += 1
-        return ({"Prose": s}, s, {})
+        return ({"Prose": s}, s, {}, None)
 
     judge = MagicMock(spec=LLMJudge)
     judge.score_chunk.side_effect = _score
@@ -195,7 +195,7 @@ def test_user_stop_respected():
         call_count[0] += 1
         if call_count[0] >= 5:
             stop_flag.append(True)
-        return ({"Prose": 4.0}, 4.0)
+        return ({"Prose": 4.0}, 4.0, {}, None)
 
     judge.score_chunk.side_effect = _score
 
@@ -238,7 +238,7 @@ def test_image_project_skips_text_embedding():
     rating_store.get_all_rated_chunk_ids.return_value = set()
 
     judge = MagicMock(spec=LLMJudge)
-    judge.score_chunk.return_value = ({"Composition": 4.0}, 4.0, {})
+    judge.score_chunk.return_value = ({"Composition": 4.0}, 4.0, {}, None)
 
     rater = AIRater(vs, emb, judge, chunk_store, rating_store, mat_store)
     _collect_events(rater, project, profile, batch_size=10)
@@ -259,7 +259,7 @@ def test_image_project_still_rates_chunks():
     rating_store.get_all_rated_chunk_ids.return_value = set()
 
     judge = MagicMock(spec=LLMJudge)
-    judge.score_chunk.return_value = ({"Composition": 3.5}, 3.5, {})
+    judge.score_chunk.return_value = ({"Composition": 3.5}, 3.5, {}, None)
 
     rater = AIRater(vs, emb, judge, chunk_store, rating_store, mat_store)
     _collect_events(rater, project, profile, batch_size=10)

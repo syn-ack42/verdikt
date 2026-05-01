@@ -32,11 +32,11 @@ class LLMJudge:
         chunk_content: str | bytes,
         profile: PreferenceProfile,
         project: Project,
-    ) -> tuple[dict[str, float], float, dict[str, str]]:
+    ) -> tuple[dict[str, float], float, dict[str, str], str | None]:
         """Score a chunk against a preference profile.
 
         chunk_content may be a text string or raw image bytes.
-        Returns (dimension_scores, weighted_overall_score, explanations).
+        Returns (dimension_scores, weighted_overall_score, explanations, description).
         """
         weights = {d.name: d.weight for d in project.rating_dimensions}
         typical = {d.name: d.typical_score for d in profile.dimensions}
@@ -49,30 +49,38 @@ class LLMJudge:
 
         is_image = isinstance(chunk_content, bytes)
         content_label = "image" if is_image else "passage"
-
-        prompt = (
-            f"You are evaluating an {content_label} for a person with specific preferences.\n\n"
-            f"Preferences:\n{profile.overall_summary}\n\n"
-            f"Dimension preferences:\n{dim_lines}\n\n"
-            f"For each dimension, respond with a JSON object only (no prose, no markdown):\n"
-            f"{{{dim_keys}: {{\"score\": <int 1-5>, \"explanation\": \"<one sentence>\"}}, ...}}"
+        description_hint = (
+            "1-2 sentence neutral description of what the image shows (subject, mood, composition) — no evaluation"
+            if is_image else
+            "1-2 sentence neutral description of what the passage covers (topic, scene, voice) — no evaluation"
         )
-        if not is_image:
+
+        if is_image:
+            prompt = (
+                f"You are evaluating an {content_label} for a person with specific preferences.\n\n"
+                f"Preferences:\n{profile.overall_summary}\n\n"
+                f"Dimension preferences:\n{dim_lines}\n\n"
+                f"Respond with a JSON object only (no prose, no markdown):\n"
+                f"{{{dim_keys}: {{\"score\": <int 1-5>, \"explanation\": \"<one sentence>\"}}, "
+                f"..., \"description\": \"<{description_hint}>\"}}"
+            )
+        else:
             prompt = (
                 f"You are evaluating a {content_label} for a person with specific preferences.\n\n"
                 f"Preferences:\n{profile.overall_summary}\n\n"
                 f"Dimension preferences:\n{dim_lines}\n\n"
                 f"{content_label.capitalize()} to evaluate:\n{_truncate(chunk_content)}\n\n"
-                f"For each dimension, respond with a JSON object only (no prose, no markdown):\n"
-                f"{{{dim_keys}: {{\"score\": <int 1-5>, \"explanation\": \"<one sentence>\"}}, ...}}"
+                f"Respond with a JSON object only (no prose, no markdown):\n"
+                f"{{{dim_keys}: {{\"score\": <int 1-5>, \"explanation\": \"<one sentence>\"}}, "
+                f"..., \"description\": \"<{description_hint}>\"}}"
             )
 
         image_b64 = base64.b64encode(chunk_content).decode() if is_image else None
         raw, prompt_tokens, completion_tokens = self._call_ollama(prompt, image_b64)
         self.usage.append((prompt_tokens, completion_tokens))
-        scores, explanations = self._parse_response(raw, typical)
+        scores, explanations, description = self._parse_response(raw, typical)
         overall = self._weighted_average(scores, weights)
-        return scores, overall, explanations
+        return scores, overall, explanations, description
 
     @staticmethod
     def _extract_json(raw: str) -> dict | None:
@@ -141,13 +149,13 @@ class LLMJudge:
             data.get("eval_count", 0),
         )
 
-    def _parse_response(self, raw: str, typical: dict[str, float]) -> tuple[dict[str, float], dict[str, str]]:
+    def _parse_response(self, raw: str, typical: dict[str, float]) -> tuple[dict[str, float], dict[str, str], str | None]:
         scores: dict[str, float] = {}
         explanations: dict[str, str] = {}
         data = self._extract_json(raw)
         if data is None:
             log.warning("LLMJudge: failed to parse JSON response, using typical scores")
-            return dict(typical), {}
+            return dict(typical), {}, None
 
         for dim_name, fallback in typical.items():
             entry = data.get(dim_name)
@@ -166,7 +174,10 @@ class LLMJudge:
             if isinstance(expl, str) and expl.strip():
                 explanations[dim_name] = expl.strip()
 
-        return scores, explanations
+        description_raw = data.get("description")
+        description = description_raw.strip() if isinstance(description_raw, str) and description_raw.strip() else None
+
+        return scores, explanations, description
 
     @staticmethod
     def _weighted_average(scores: dict[str, float], weights: dict[str, float]) -> float:

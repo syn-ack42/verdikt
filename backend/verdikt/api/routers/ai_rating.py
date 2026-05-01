@@ -240,8 +240,9 @@ def ai_preview_rating(
     ollama_base_url, llm_model = resolve_llm_model(proj, config)
     judge = LLMJudge(ollama_base_url, llm_model)
 
+    chunk_store = SQLiteChunkStore(session)
     try:
-        scores, _, explanations = judge.score_chunk(chunk.content, profile, proj)
+        scores, _, explanations, description = judge.score_chunk(chunk.content, profile, proj)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"AI rating failed: {exc}")
 
@@ -258,6 +259,8 @@ def ai_preview_rating(
         explanations=explanations,
     )
     rating_store.save(rating)
+    if description:
+        chunk_store.update_description(body.chunk_id, description)
     session.commit()
 
     return {

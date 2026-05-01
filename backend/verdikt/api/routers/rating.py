@@ -83,6 +83,7 @@ def next_chunk(
             "domain": chunk_domain,
             "position": chunk.position,
             "cluster_id": chunk.cluster_id,
+            "description": chunk.description,
         },
         "material_item": {
             "id": material_item.id if material_item else None,
@@ -212,6 +213,7 @@ def list_rated_chunks(
             "chunk_count": chunk_count_cache.get(mid, 0),
             "chunk_content": chunk_content,
             "chunk_domain": chunk_domain,
+            "chunk_description": chunk.description,
             "material_item_id": mid,
             "work_seq": mat.project_seq if mat else None,
             "work_title": mat.work_title if mat else None,

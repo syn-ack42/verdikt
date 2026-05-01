@@ -128,6 +128,11 @@ function ChunkBlock({
               {chunk.content ?? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>(no content)</span>}
             </div>
           )}
+          {chunk.description && (
+            <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.5 }}>
+              {chunk.description}
+            </div>
+          )}
         </div>
       </div>
 

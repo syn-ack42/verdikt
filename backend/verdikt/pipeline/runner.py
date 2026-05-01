@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from math import isqrt
@@ -9,6 +10,8 @@ from verdikt.core.models import Chunk, PipelinePhase
 from verdikt.inference.base import EmbedderBase
 from verdikt.pipeline.chunker import ChunkerBase
 from verdikt.storage.base import ChunkStore, MaterialStore, VectorStore
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -39,12 +42,14 @@ class PipelineRunner:
         vector_store: VectorStore,
         embedder: EmbedderBase,
         chunker: ChunkerBase,
+        content_fetchers: dict | None = None,
     ) -> None:
         self._materials = material_store
         self._chunks = chunk_store
         self._vectors = vector_store
         self._embedder = embedder
         self._chunker = chunker
+        self._content_fetchers: dict = content_fetchers or {}
 
     def run(self, project_id: str) -> PipelineResult:
         result = PipelineResult(project_id=project_id)
@@ -91,7 +96,26 @@ class PipelineRunner:
         yield {"type": "start", "total": total}
         chunks_created = 0
         for i, item in enumerate(items):
-            chunk_contents = self._chunker.chunk(item.content)
+            content = item.content
+            if item.content_is_remote and not content:
+                fetcher = self._content_fetchers.get(item.source_plugin)
+                if fetcher is None:
+                    log.warning(
+                        "pipeline: no content fetcher for remote plugin %r — skipping item %s",
+                        item.source_plugin, item.id,
+                    )
+                    self._materials.update_phase(item.id, PipelinePhase.CHUNKED)
+                    yield {"type": "progress", "current": i + 1, "total": total}
+                    continue
+                try:
+                    content = fetcher.fetch_content(item.source_path or "")
+                except Exception:
+                    log.exception("pipeline: fetch_content failed for item %s — skipping", item.id)
+                    self._materials.update_phase(item.id, PipelinePhase.CHUNKED)
+                    yield {"type": "progress", "current": i + 1, "total": total}
+                    continue
+
+            chunk_contents = self._chunker.chunk(content)
             chunks = [
                 Chunk(
                     material_item_id=item.id,

@@ -67,6 +67,9 @@ class MaterialItem(BaseModel):
     # Plugin-specific metadata — arbitrary JSON, keyed by the plugin (e.g. {"source_updated_at": "2024-03-15"})
     plugin_metadata: dict = Field(default_factory=dict)
 
+    # Remote content — True when the plugin stores only a reference; bytes are fetched lazily
+    content_is_remote: bool = False
+
     # Pipeline state — managed by the pipeline
     pipeline_phase: PipelinePhase = PipelinePhase.INGESTED
     ingested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -108,6 +111,7 @@ class Chunk(BaseModel):
     size: int                   # domain-native units (words, frames, etc.)
     cluster_id: Optional[int] = None
     embedding_model: Optional[str] = None
+    description: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

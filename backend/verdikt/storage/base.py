@@ -79,6 +79,9 @@ class ChunkStore(ABC):
     @abstractmethod
     def delete_by_material(self, material_item_id: str) -> None: ...
 
+    @abstractmethod
+    def update_description(self, chunk_id: str, description: str) -> None: ...
+
 
 class VectorStore(ABC):
     @abstractmethod

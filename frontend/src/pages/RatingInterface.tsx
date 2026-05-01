@@ -248,6 +248,12 @@ export default function RatingInterface() {
         }
       </div>
 
+      {chunk.description && (
+        <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.5 }}>
+          {chunk.description}
+        </div>
+      )}
+
       {mode === 'confirm_ai' && data?.ai_explanations && Object.keys(data.ai_explanations).length > 0 && (
         <div
           onClick={() => setExplExpanded(v => !v)}

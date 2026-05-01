@@ -208,6 +208,7 @@ class SQLiteMaterialStore(MaterialStore):
             pipeline_phase=item.pipeline_phase if isinstance(item.pipeline_phase, str) else item.pipeline_phase.value,
             ingested_at=item.ingested_at,
             plugin_metadata_json=json.dumps(item.plugin_metadata),
+            content_is_remote=item.content_is_remote,
         )
 
     @staticmethod
@@ -230,6 +231,7 @@ class SQLiteMaterialStore(MaterialStore):
             pipeline_phase=r.pipeline_phase,
             ingested_at=r.ingested_at,
             plugin_metadata=json.loads(r.plugin_metadata_json or "{}"),
+            content_is_remote=getattr(r, "content_is_remote", False) or False,
         )
 
 
@@ -290,8 +292,15 @@ class SQLiteChunkStore(ChunkStore):
             size=c.size,
             cluster_id=c.cluster_id,
             embedding_model=c.embedding_model,
+            description=c.description,
             created_at=c.created_at,
         )
+
+    def update_description(self, chunk_id: str, description: str) -> None:
+        self._s.execute(
+            update(ChunkRow).where(ChunkRow.id == chunk_id).values(description=description)
+        )
+        self._s.flush()
 
     @staticmethod
     def _from_row(r: ChunkRow) -> Chunk:
@@ -305,6 +314,7 @@ class SQLiteChunkStore(ChunkStore):
             size=r.size,
             cluster_id=r.cluster_id,
             embedding_model=r.embedding_model,
+            description=getattr(r, "description", None),
             created_at=r.created_at,
         )
 

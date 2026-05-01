@@ -21,8 +21,9 @@ def _make_chunker(proj):
     return TextChunker(min_words=proj.chunk_min_size, max_words=proj.chunk_max_size)
 from verdikt.pipeline.flows import run_pipeline_flow
 from verdikt.pipeline.runner import PipelineRunner
+from verdikt.plugins.registry import get_plugin
 from verdikt.storage.chroma import ChromaVectorStore
-from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteMaterialStore, SQLiteProjectStore
+from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteMaterialStore, SQLitePluginConfigStore, SQLiteProjectStore
 
 router = APIRouter(prefix="/api/projects/{project_id}/pipeline", tags=["pipeline"])
 
@@ -32,6 +33,23 @@ def _get_project_or_404(project_id: str, session: Session):
     if proj is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return proj
+
+
+def _build_content_fetchers(project_id: str, session) -> dict:
+    """Build a {plugin_name: plugin_instance} dict for plugins that support remote content."""
+    fetchers: dict = {}
+    try:
+        cfg_store = SQLitePluginConfigStore(session)
+        for cfg in cfg_store.list_by_project(project_id):
+            try:
+                cls = get_plugin(cfg.plugin_name)
+            except KeyError:
+                continue
+            if cls.supports_remote_content():
+                fetchers[cfg.plugin_name] = cls(cfg.config)
+    except Exception:
+        pass
+    return fetchers
 
 
 @router.post("/run")
@@ -50,6 +68,7 @@ def run_pipeline(
         vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
         embedder=resolve_embedder(proj, config),
         chunker=_make_chunker(proj),
+        content_fetchers=_build_content_fetchers(proj.id, session),
     )
     result = run_pipeline_flow(project_id=proj.id, runner=runner)
     session.commit()
@@ -90,6 +109,7 @@ def run_pipeline_stream(
         vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
         embedder=resolve_embedder(proj, config),
         chunker=_make_chunker(proj),
+        content_fetchers=_build_content_fetchers(proj.id, session),
     )
 
     def event_stream() -> Generator[str, None, None]:

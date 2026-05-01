@@ -246,6 +246,17 @@ def _migrate_user_db(engine: Engine) -> None:
             conn.commit()
             log.info("migration: added score_sum to preference_profiles")
 
+        if "content_is_remote" not in existing:
+            conn.execute(_text("ALTER TABLE material_items ADD COLUMN content_is_remote BOOLEAN NOT NULL DEFAULT 0"))
+            conn.commit()
+            log.info("migration: added content_is_remote to material_items")
+
+        chunk_cols = {row[1] for row in conn.execute(_text("PRAGMA table_info(chunks)"))}
+        if "description" not in chunk_cols:
+            conn.execute(_text("ALTER TABLE chunks ADD COLUMN description TEXT"))
+            conn.commit()
+            log.info("migration: added description to chunks")
+
         if "work_id" in existing:
             rows = conn.execute(_text(
                 "SELECT id, work_id, plugin_metadata_json FROM material_items "

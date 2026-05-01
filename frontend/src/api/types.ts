@@ -124,6 +124,7 @@ export interface ChunkInfo {
   domain: 'text' | 'image'
   position: number
   cluster_id: number | null
+  description?: string | null
 }
 
 export interface MaterialItemInfo {
@@ -200,6 +201,7 @@ export interface PluginInfo {
   title: string
   description: string
   config_schema: Record<string, unknown>
+  supports_writeback?: boolean
 }
 
 export interface PluginConfig {
@@ -252,7 +254,14 @@ export interface WorkChunk {
   chunk_count: number
   content: string | null
   domain: 'text' | 'image'
+  description?: string | null
   rating: ChunkRating | null
+}
+
+export interface WritebackResult {
+  updated: number
+  skipped: number
+  errors: string[]
 }
 
 export interface RatedChunkEntry {

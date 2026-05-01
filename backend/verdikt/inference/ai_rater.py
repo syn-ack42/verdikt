@@ -77,8 +77,10 @@ class AIRater:
             if chunk is None:
                 continue
             try:
-                scores, _, _expl = self._judge.score_chunk(chunk.content, profile, project)
+                scores, _, _expl, description = self._judge.score_chunk(chunk.content, profile, project)
                 self._ratings.update_ai_scores(existing_rating.id, scores)
+                if description:
+                    self._chunks.update_description(chunk.id, description)
             except Exception:
                 log.exception("ai_rater: failed to re-score chunk %s", existing_rating.chunk_id)
             yield {"type": "rescore", "chunk_id": existing_rating.chunk_id, "current": i + 1, "total": total_unconfirmed}
@@ -164,7 +166,7 @@ class AIRater:
                     continue
 
                 try:
-                    scores, overall, explanations = self._judge.score_chunk(chunk.content, profile, project)
+                    scores, overall, explanations, description = self._judge.score_chunk(chunk.content, profile, project)
                 except Exception:
                     log.exception("ai_rater: judge failed for chunk %s", chunk_id)
                     continue
@@ -179,6 +181,8 @@ class AIRater:
                     rated_at=datetime.now(timezone.utc),
                 )
                 self._ratings.save(rating)
+                if description:
+                    self._chunks.update_description(chunk_id, description)
                 rated_ids.add(chunk_id)
                 total_rated += 1
                 batch_scores.append(overall)

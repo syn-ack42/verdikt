@@ -6,6 +6,7 @@ import ProjectSettingsDialog from '../components/ProjectSettingsDialog'
 import PluginIngestDialog from '../components/PluginIngestDialog'
 import WorkDetailModal from '../components/WorkDetailModal'
 import RatedChunksModal from '../components/RatedChunksModal'
+import WritebackModal from '../components/WritebackModal'
 import { useIsMobile } from '../hooks/useIsMobile'
 import type { AIRatingStatus, MaterialItemWithStats, PipelineStreamEvent, PluginIngestEvent, UpdatePluginEvent } from '../api/types'
 
@@ -82,6 +83,7 @@ export default function ProjectDashboard() {
   const qc = useQueryClient()
   const [showSettings, setShowSettings] = useState(false)
   const [showPluginIngest, setShowPluginIngest] = useState(false)
+  const [showWriteback, setShowWriteback] = useState(false)
   const [detailWorkRef, setDetailWorkRef] = useState<string | number | null>(null)
   const [ratedChunksFilter, setRatedChunksFilter] = useState<{ workSeq?: number; title?: string } | null>(null)
 
@@ -199,6 +201,28 @@ export default function ProjectDashboard() {
       qc.invalidateQueries({ queryKey: ['ratings', projectId] })
     },
   })
+
+  const { data: pluginConfigMap } = useQuery({
+    queryKey: ['plugin-config', projectId],
+    queryFn: () => api.works.getPluginConfig(projectId!),
+    enabled: !!projectId,
+  })
+
+  const { data: pluginList } = useQuery({
+    queryKey: ['plugins', project?.domain],
+    queryFn: () => api.plugins.list(project?.domain),
+    enabled: !!project,
+  })
+
+  // First configured plugin that supports writeback
+  const writebackPlugin = useMemo(() => {
+    if (!pluginConfigMap || !pluginList) return null
+    for (const name of Object.keys(pluginConfigMap)) {
+      const info = pluginList.find(p => p.name === name)
+      if (info?.supports_writeback) return info
+    }
+    return null
+  }, [pluginConfigMap, pluginList])
 
   // Check server for background update status; only poll while a job is actually running
   const { data: updateStatus, refetch: refetchUpdateStatus } = useQuery({
@@ -426,6 +450,14 @@ export default function ProjectDashboard() {
         >
           {ingestRunning ? 'Ingesting…' : 'Ingest'}
         </button>
+        {writebackPlugin && (
+          <button
+            onClick={() => setShowWriteback(true)}
+            style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}
+          >
+            Write back
+          </button>
+        )}
         <button
           onClick={runUpdate}
           disabled={updateRunning || serverRunning}
@@ -924,6 +956,15 @@ export default function ProjectDashboard() {
           filterWorkTitle={ratedChunksFilter.title}
           dimensions={project.rating_dimensions}
           onClose={() => setRatedChunksFilter(null)}
+        />
+      )}
+
+      {showWriteback && writebackPlugin && (
+        <WritebackModal
+          projectId={projectId!}
+          pluginName={writebackPlugin.name}
+          pluginTitle={writebackPlugin.title}
+          onClose={() => setShowWriteback(false)}
         />
       )}
     </div>

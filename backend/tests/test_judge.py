@@ -51,7 +51,7 @@ def test_weighted_score_calculation(judge, project, profile):
         "Pacing": {"score": 3, "explanation": "Steady pace."},
     }
     with patch("verdikt.inference.judge.httpx.post", return_value=_mock_response(payload)):
-        scores, overall, _ = judge.score_chunk("Some text.", profile, project)
+        scores, overall, _, _desc = judge.score_chunk("Some text.", profile, project)
 
     assert scores == {"Prose": 5.0, "Pacing": 3.0}
     # Weighted: (5 * 2 + 3 * 1) / 3 = 13/3 ≈ 4.333
@@ -87,7 +87,7 @@ def test_json_parse_error_falls_back_to_typical(judge, project, profile):
     resp.json.return_value = {"response": "not json at all"}
     resp.raise_for_status = MagicMock()
     with patch("verdikt.inference.judge.httpx.post", return_value=resp):
-        scores, overall, _ = judge.score_chunk("Text", profile, project)
+        scores, overall, _, _desc = judge.score_chunk("Text", profile, project)
 
     assert scores["Prose"] == pytest.approx(4.2)
     assert scores["Pacing"] == pytest.approx(3.5)
@@ -96,7 +96,7 @@ def test_json_parse_error_falls_back_to_typical(judge, project, profile):
 def test_missing_dimension_key_falls_back_to_typical(judge, project, profile):
     payload = {"Prose": {"score": 5, "explanation": "great"}}  # Pacing missing
     with patch("verdikt.inference.judge.httpx.post", return_value=_mock_response(payload)):
-        scores, overall, _ = judge.score_chunk("Text", profile, project)
+        scores, overall, _, _desc = judge.score_chunk("Text", profile, project)
 
     assert scores["Prose"] == 5.0
     assert scores["Pacing"] == pytest.approx(3.5)
@@ -108,7 +108,7 @@ def test_score_clamped_to_1_5(judge, project, profile):
         "Pacing": {"score": -1, "explanation": "negative"},
     }
     with patch("verdikt.inference.judge.httpx.post", return_value=_mock_response(payload)):
-        scores, _overall, _ = judge.score_chunk("Text", profile, project)
+        scores, _overall, _, _desc = judge.score_chunk("Text", profile, project)
 
     assert scores["Prose"] == 5.0
     assert scores["Pacing"] == 1.0
@@ -120,7 +120,7 @@ def test_explanations_extracted(judge, project, profile):
         "Pacing": {"score": 3, "explanation": "Unhurried but steady."},
     }
     with patch("verdikt.inference.judge.httpx.post", return_value=_mock_response(payload)):
-        _, _, explanations = judge.score_chunk("Some text.", profile, project)
+        _, _, explanations, _desc = judge.score_chunk("Some text.", profile, project)
 
     assert explanations["Prose"] == "Vivid and precise."
     assert explanations["Pacing"] == "Unhurried but steady."
@@ -131,7 +131,7 @@ def test_explanations_empty_on_parse_error(judge, project, profile):
     resp.json.return_value = {"response": "not json"}
     resp.raise_for_status = MagicMock()
     with patch("verdikt.inference.judge.httpx.post", return_value=resp):
-        _, _, explanations = judge.score_chunk("Text", profile, project)
+        _, _, explanations, _desc = judge.score_chunk("Text", profile, project)
 
     assert explanations == {}
 
@@ -139,7 +139,7 @@ def test_explanations_empty_on_parse_error(judge, project, profile):
 def test_explanations_partial_when_dimension_missing(judge, project, profile):
     payload = {"Prose": {"score": 4, "explanation": "Good prose."}}  # Pacing missing
     with patch("verdikt.inference.judge.httpx.post", return_value=_mock_response(payload)):
-        _, _, explanations = judge.score_chunk("Text", profile, project)
+        _, _, explanations, _desc = judge.score_chunk("Text", profile, project)
 
     assert explanations["Prose"] == "Good prose."
     assert "Pacing" not in explanations

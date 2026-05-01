@@ -77,3 +77,34 @@ class PluginBase(ABC):
         for item in self.fetch(project_id):
             if item.plugin_metadata.get("work_id") in ids:
                 yield item
+
+    @classmethod
+    def supports_remote_content(cls) -> bool:
+        """True if this plugin stores only references at ingest and fetches bytes on demand.
+
+        When True, MaterialItems may be ingested with content=b"" and content_is_remote=True.
+        The plugin must implement fetch_content().
+        """
+        return False
+
+    def fetch_content(self, source_path: str) -> bytes:
+        """Fetch the raw bytes for a remote item on demand.
+
+        Called during the pipeline chunk phase (or on every display access for "none"
+        storage mode). Only required when supports_remote_content() returns True.
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not implement fetch_content()")
+
+    @classmethod
+    def supports_writeback(cls) -> bool:
+        """True if this plugin can write Verdikt-generated data back to the source system."""
+        return False
+
+    def writeback(self, project_id: str, session: object, options: dict) -> dict:
+        """Write ratings and/or descriptions back to the source system.
+
+        options: {"write_ratings": bool, "write_descriptions": bool}
+        Returns: {"updated": int, "skipped": int, "errors": list[str]}
+        Only required when supports_writeback() returns True.
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not implement writeback()")
