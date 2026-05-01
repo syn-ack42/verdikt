@@ -86,7 +86,8 @@ class ImmichPlugin(PluginBase):
                             "type": {
                                 "type": "string",
                                 "enum": ["album", "search", "all"],
-                                "title": "Source type",
+                                "title": "Type",
+                                "description": "album — one specific album  ·  search — photos matching a query  ·  all — entire library",
                             },
                             "album_id": {
                                 "type": "string",
@@ -96,7 +97,7 @@ class ImmichPlugin(PluginBase):
                             "query": {
                                 "type": "string",
                                 "title": "Search query",
-                                "description": "Text query for metadata search (for type=search)",
+                                "description": "Metadata search query, e.g. a person or place name (for type=search)",
                             },
                             "max_items": {
                                 "type": "integer",

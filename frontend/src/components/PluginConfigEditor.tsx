@@ -135,21 +135,29 @@ function ObjectArrayField({
               const isNum = schema.type === 'integer' || schema.type === 'number'
               const currentVal = item[key] ?? schema.default ?? (isEnum ? schema.enum![0] : '')
 
+              // Strip the "(for type=X)" clause from descriptions shown in the card
+              const displayDesc = schema.description?.replace(/\s*\(for type=\w+\)/i, '').trim() || null
+
               return (
                 <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: (!isEnum && !isNum) ? 1 : undefined, minWidth: isNum ? 80 : undefined }}>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)', userSelect: 'none' }}>
                     {schema.title ?? key}
                   </span>
                   {isEnum ? (
-                    <select
-                      value={String(currentVal)}
-                      onChange={e => set(i, key, e.target.value)}
-                      style={{ ...selectStyle, minWidth: 100 }}
-                    >
-                      {schema.enum!.map(opt => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
+                    <>
+                      <select
+                        value={String(currentVal)}
+                        onChange={e => set(i, key, e.target.value)}
+                        style={{ ...selectStyle, minWidth: 100 }}
+                      >
+                        {schema.enum!.map(opt => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                      {displayDesc && (
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.4 }}>{displayDesc}</span>
+                      )}
+                    </>
                   ) : (
                     <input
                       type={isNum ? 'number' : 'text'}
