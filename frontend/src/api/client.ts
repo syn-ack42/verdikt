@@ -1,7 +1,7 @@
 import type {
   AIRatingStatus, CrystalliseStatus, IngestResult, MaterialItemWithStats, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
   PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, ProjectDefaults, RatedChunkEntry, Rating, SiteSettings, StorageListing,
-  TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkChunk, WorkDetail, WritebackResult,
+  TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkChunk, WorkDetail, WritebackResult, WorksListResponse,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? `${import.meta.env.BASE_URL}api`
@@ -120,13 +120,14 @@ export const api = {
     importProject: (data: unknown) => req<{ project_id: string; materials_imported: number; ratings_imported: number; profiles_imported: number; note: string }>('POST', '/projects/import', data),
   },
   works: {
-    list: (projectId: string, phase?: string, sortBy?: string, sortDir?: 'asc' | 'desc') => {
+    list: (projectId: string, phase?: string, sortBy?: string, sortDir?: 'asc' | 'desc', limit = 50, offset = 0) => {
       const params = new URLSearchParams()
       if (phase) params.set('phase', phase)
       if (sortBy) params.set('sort_by', sortBy)
       if (sortDir) params.set('sort_dir', sortDir)
-      const qs = params.toString()
-      return req<MaterialItemWithStats[]>('GET', `/projects/${projectId}/works${qs ? `?${qs}` : ''}`)
+      params.set('limit', String(limit))
+      params.set('offset', String(offset))
+      return req<WorksListResponse>('GET', `/projects/${projectId}/works?${params}`)
     },
     ingest: (projectId: string, storagePaths: string[]) =>
       req<IngestResult>('POST', `/projects/${projectId}/works/ingest`, { storage_paths: storagePaths }),

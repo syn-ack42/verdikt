@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
@@ -110,7 +110,7 @@ export default function ProjectDashboard() {
   const [sortBy, setSortBy] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [worksPage, setWorksPage] = useState(0)
-  const WORKS_PAGE_SIZE = 25
+  const WORKS_PAGE_SIZE = 50
   const [expandedDescs, setExpandedDescs] = useState<Set<string>>(new Set())
   const toggleDesc = (id: string) => setExpandedDescs(prev => {
     const next = new Set(prev)
@@ -128,46 +128,14 @@ export default function ProjectDashboard() {
     queryFn: () => api.projects.get(projectId!),
   })
 
-  const { data: works } = useQuery({
-    queryKey: ['works', projectId],
-    queryFn: () => api.works.list(projectId!),
+  const { data: worksData, isFetching: worksFetching } = useQuery({
+    queryKey: ['works', projectId, sortBy, sortDir, worksPage],
+    queryFn: () => api.works.list(projectId!, undefined, sortBy ?? undefined, sortDir, WORKS_PAGE_SIZE, worksPage * WORKS_PAGE_SIZE),
     enabled: !!projectId,
+    placeholderData: (prev) => prev,
   })
-
-  const sortedWorks = useMemo(() => {
-    const ws: MaterialItemWithStats[] = works ? [...works] : []
-    if (!sortBy) return ws
-    ws.sort((a, b) => {
-      let av: number | string | null = null
-      let bv: number | string | null = null
-      if (sortBy === 'seq') { av = a.project_seq ?? 0; bv = b.project_seq ?? 0 }
-      else if (sortBy === 'name') { av = (a.work_title ?? '').toLowerCase(); bv = (b.work_title ?? '').toLowerCase() }
-      else if (sortBy === 'ingested_at') { av = a.ingested_at; bv = b.ingested_at }
-      else if (sortBy === 'pipeline_phase') { av = a.pipeline_phase; bv = b.pipeline_phase }
-      else if (sortBy === 'human_rated') { av = a.human_rated ?? 0; bv = b.human_rated ?? 0 }
-      else if (sortBy === 'ai_rated') { av = a.ai_rated ?? 0; bv = b.ai_rated ?? 0 }
-      else if (sortBy.startsWith('overall:')) {
-        const stat = sortBy.slice(8)
-        av = (a as any)[`overall_${stat}`] ?? null
-        bv = (b as any)[`overall_${stat}`] ?? null
-      } else if (sortBy.startsWith('dim:')) {
-        const [, dimName, stat] = sortBy.split(':')
-        av = a.dim_stats?.[dimName]?.[stat as 'avg' | 'max' | 'min'] ?? null
-        bv = b.dim_stats?.[dimName]?.[stat as 'avg' | 'max' | 'min'] ?? null
-      }
-      if (av == null && bv == null) return 0
-      if (av == null) return 1
-      if (bv == null) return -1
-      const cmp = av < bv ? -1 : av > bv ? 1 : 0
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-    return ws
-  }, [works, sortBy, sortDir])
-
-  const pagedWorks = useMemo(() => {
-    const start = worksPage * WORKS_PAGE_SIZE
-    return sortedWorks.slice(start, start + WORKS_PAGE_SIZE)
-  }, [sortedWorks, worksPage, WORKS_PAGE_SIZE])
+  const works = worksData?.items ?? []
+  const worksTotal = worksData?.total ?? 0
 
   const { data: aiRatingStatus, refetch: refetchAiStatus } = useQuery({
     queryKey: ['ai-rating-status', projectId],
@@ -347,9 +315,10 @@ export default function ProjectDashboard() {
   const pipelineDone = phaseProgress.length > 0 && !pipelineRunning && !pipelineError
 
   const handleSort = (col: string | null) => {
-    if (sortBy === col) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); return }
+    if (sortBy === col) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); setWorksPage(0); return }
     setSortBy(col)
     setSortDir(col === null ? 'asc' : 'desc')
+    setWorksPage(0)
   }
 
   const sortIndicator = (col: string | null) =>
@@ -382,7 +351,7 @@ export default function ProjectDashboard() {
 
       <div style={{ display: 'flex', gap: 24, marginBottom: 24 }}>
         <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, flex: 1 }}>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{works?.length ?? 0}</div>
+          <div style={{ fontSize: 28, fontWeight: 700 }}>{worksTotal}</div>
           <div style={{ color: 'var(--text-muted)' }}>Works</div>
         </div>
         {(() => {
@@ -673,7 +642,7 @@ export default function ProjectDashboard() {
             ))}
           </select>
           <button
-            onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+            onClick={() => { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); setWorksPage(0) }}
             style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: 'var(--text)', cursor: 'pointer' }}
           >
             {sortDir === 'asc' ? '▴ Asc' : '▾ Desc'}
@@ -696,7 +665,7 @@ export default function ProjectDashboard() {
       {isMobile ? (
         /* ── Mobile: card list ─────────────────────────────────────── */
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-          {pagedWorks.map(w => {
+          {works.map(w => {
             const hasRatings = w.overall_avg != null
             const openChunks = () => setRatedChunksFilter({ workSeq: w.project_seq ?? undefined, title: w.work_title ?? undefined })
             const openDetail = () => setDetailWorkRef(w.project_seq ?? w.id)
@@ -814,7 +783,7 @@ export default function ProjectDashboard() {
               </tr>
             </thead>
             <tbody>
-              {pagedWorks.map(w => {
+              {works.map(w => {
                 const hasRatings = w.overall_avg != null
                 const openChunks = () => setRatedChunksFilter({ workSeq: w.project_seq ?? undefined, title: w.work_title ?? undefined })
                 const openDetail = () => setDetailWorkRef(w.project_seq ?? w.id)
@@ -917,7 +886,7 @@ export default function ProjectDashboard() {
         </div>
       )}
 
-      {sortedWorks.length > WORKS_PAGE_SIZE && (
+      {worksTotal > WORKS_PAGE_SIZE && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, fontSize: 13, color: 'var(--text-muted)' }}>
           <button
             onClick={() => setWorksPage(p => Math.max(0, p - 1))}
@@ -925,12 +894,13 @@ export default function ProjectDashboard() {
             style={{ padding: '4px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: worksPage === 0 ? 'var(--text-muted)' : 'var(--text)', cursor: worksPage === 0 ? 'default' : 'pointer' }}
           >← Prev</button>
           <span>
-            {worksPage * WORKS_PAGE_SIZE + 1}–{Math.min((worksPage + 1) * WORKS_PAGE_SIZE, sortedWorks.length)} of {sortedWorks.length}
+            {worksPage * WORKS_PAGE_SIZE + 1}–{Math.min((worksPage + 1) * WORKS_PAGE_SIZE, worksTotal)} of {worksTotal}
+            {worksFetching && <span style={{ marginLeft: 8, opacity: 0.6 }}>loading…</span>}
           </span>
           <button
             onClick={() => setWorksPage(p => p + 1)}
-            disabled={(worksPage + 1) * WORKS_PAGE_SIZE >= sortedWorks.length}
-            style={{ padding: '4px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: (worksPage + 1) * WORKS_PAGE_SIZE >= sortedWorks.length ? 'var(--text-muted)' : 'var(--text)', cursor: (worksPage + 1) * WORKS_PAGE_SIZE >= sortedWorks.length ? 'default' : 'pointer' }}
+            disabled={(worksPage + 1) * WORKS_PAGE_SIZE >= worksTotal}
+            style={{ padding: '4px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: (worksPage + 1) * WORKS_PAGE_SIZE >= worksTotal ? 'var(--text-muted)' : 'var(--text)', cursor: (worksPage + 1) * WORKS_PAGE_SIZE >= worksTotal ? 'default' : 'pointer' }}
           >Next →</button>
         </div>
       )}

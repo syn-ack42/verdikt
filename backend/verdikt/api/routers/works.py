@@ -108,56 +108,148 @@ def _get_project_or_404(project_id: str, session: Session):
     return proj
 
 
+# Sort-field → SQL column expression (safe allowlist; user input never interpolated)
+_SORT_COLS: dict[str, str] = {
+    "seq":         "m.project_seq",
+    "name":        "LOWER(m.work_title)",
+    "ingested_at": "m.ingested_at",
+    "phase":       "m.pipeline_phase",
+    "human_rated": "COALESCE(rt.human_rated, 0)",
+    "ai_rated":    "COALESCE(rt.ai_rated, 0)",
+    "overall:avg": "rs.overall_avg",
+    "overall:max": "rs.overall_max",
+    "overall:min": "rs.overall_min",
+}
+
+
 @router.get("")
 def list_works(
     project_id: str,
     phase: str | None = None,
     sort_by: str | None = None,
     sort_dir: str = "asc",
+    limit: int = 50,
+    offset: int = 0,
     session: Session = Depends(get_session),
-) -> list[dict]:
-    import json as _json
+) -> dict:
+    from sqlalchemy import text as _text
     from verdikt.storage.orm import ChunkRow, RatingRow as _RatingRow
 
-    proj = _get_project_or_404(project_id, session)
-    phase_filter = PipelinePhase(phase) if phase else None
-    items = SQLiteMaterialStore(session).list_by_project(proj.id, phase=phase_filter)
+    _get_project_or_404(project_id, session)
+    pid = project_id
+    direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
 
-    # Build stats per work from DB
-    chunk_store = SQLiteChunkStore(session)
-    all_chunks = chunk_store.list_by_project(proj.id)
-    chunks_by_material: dict[str, list] = {}
-    for c in all_chunks:
-        chunks_by_material.setdefault(c.material_item_id, []).append(c)
+    # Determine sort column and whether this is a dim: sort
+    dim_name: str | None = None
+    if sort_by and sort_by.startswith("dim:"):
+        # dim:<DimName>:<stat>  — use per-dimension avg
+        parts = sort_by.split(":", 2)
+        dim_name = parts[1] if len(parts) >= 2 else None
+        order_col = "COALESCE(ds.dim_sort_val, 0)"
+    else:
+        order_col = _SORT_COLS.get(sort_by or "seq", "m.project_seq")
 
-    from verdikt.storage.sqlite import SQLiteRatingStore
-    all_ratings = SQLiteRatingStore(session).list_by_project(proj.id)
-    # Index ratings by chunk_id
-    ratings_by_chunk: dict[str, list] = {}
-    for r in all_ratings:
-        if not r.skipped:
-            ratings_by_chunk.setdefault(r.chunk_id, []).append(r)
+    # Build optional dim-sort subquery fragment
+    dim_join = ""
+    params: dict = {"pid": pid}
+    if dim_name:
+        dim_join = (
+            "LEFT JOIN ("
+            "  SELECT r.material_item_id, AVG(j.value) AS dim_sort_val"
+            "  FROM ratings r, json_each(r.dimension_scores) j"
+            "  WHERE r.project_id = :pid AND r.skipped = 0 AND j.key = :dim_name"
+            "  GROUP BY r.material_item_id"
+            ") ds ON m.id = ds.material_item_id"
+        )
+        params["dim_name"] = dim_name
 
-    def _work_stats(item) -> dict:
-        chunk_ids = {c.id for c in chunks_by_material.get(item.id, [])}
-        total_chunks = len(chunk_ids)
-        item_ratings = [r for cid in chunk_ids for r in ratings_by_chunk.get(cid, [])]
-        human_rated = sum(1 for r in item_ratings if not r.is_ai)
-        ai_rated = sum(1 for r in item_ratings if r.is_ai)
-        all_scores = [
-            sum(r.dimension_scores.values()) / len(r.dimension_scores)
-            for r in item_ratings if r.dimension_scores
-        ]
-        overall_avg = round(sum(all_scores) / len(all_scores), 3) if all_scores else None
-        overall_max = round(max(all_scores), 3) if all_scores else None
-        overall_min = round(min(all_scores), 3) if all_scores else None
+    phase_clause = ""
+    if phase:
+        phase_clause = "AND m.pipeline_phase = :phase"
+        params["phase"] = phase
 
-        # Per-dimension stats
+    base_sql = f"""
+        FROM material_items m
+        LEFT JOIN (
+            SELECT material_item_id, COUNT(*) AS chunk_count
+            FROM chunks WHERE project_id = :pid GROUP BY material_item_id
+        ) ch ON m.id = ch.material_item_id
+        LEFT JOIN (
+            SELECT material_item_id,
+                SUM(CASE WHEN is_ai=0 AND skipped=0 THEN 1 ELSE 0 END) AS human_rated,
+                SUM(CASE WHEN is_ai=1 AND skipped=0 THEN 1 ELSE 0 END) AS ai_rated
+            FROM ratings WHERE project_id = :pid GROUP BY material_item_id
+        ) rt ON m.id = rt.material_item_id
+        LEFT JOIN (
+            SELECT r.material_item_id,
+                AVG(j.value) AS overall_avg,
+                MAX(j.value) AS overall_max,
+                MIN(j.value) AS overall_min
+            FROM ratings r, json_each(r.dimension_scores) j
+            WHERE r.project_id = :pid AND r.skipped = 0
+            GROUP BY r.material_item_id
+        ) rs ON m.id = rs.material_item_id
+        {dim_join}
+        WHERE m.project_id = :pid {phase_clause}
+    """
+
+    total_row = session.execute(_text(f"SELECT COUNT(*) {base_sql}"), params).scalar_one()
+
+    select_sql = f"""
+        SELECT
+            m.id, m.project_seq, m.source_plugin, m.source_path, m.work_title,
+            m.author, m.url, m.domain, m.content_type, m.pipeline_phase,
+            m.content_hash, m.ingested_at, m.plugin_metadata_json,
+            COALESCE(ch.chunk_count, 0)  AS total_chunks,
+            COALESCE(rt.human_rated, 0)  AS human_rated,
+            COALESCE(rt.ai_rated,   0)   AS ai_rated,
+            rs.overall_avg, rs.overall_max, rs.overall_min
+        {base_sql}
+        ORDER BY {order_col} {direction}
+        LIMIT :limit OFFSET :offset
+    """
+    params["limit"] = limit
+    params["offset"] = offset
+    rows = session.execute(_text(select_sql), params).mappings().all()
+
+    if not rows:
+        return {"total": total_row, "items": []}
+
+    page_ids = [r["id"] for r in rows]
+
+    # Ratings for page items only — for dim_stats breakdown
+    rating_rows = (
+        session.query(_RatingRow)
+        .filter(_RatingRow.material_item_id.in_(page_ids), _RatingRow.skipped.is_(False))
+        .all()
+    )
+    # Chunk descriptions for page items only
+    desc_rows = (
+        session.query(ChunkRow.material_item_id, ChunkRow.position, ChunkRow.description)
+        .filter(ChunkRow.material_item_id.in_(page_ids), ChunkRow.description.isnot(None))
+        .order_by(ChunkRow.material_item_id, ChunkRow.position)
+        .all()
+    )
+
+    # Index by material_item_id
+    ratings_by_mat: dict[str, list] = {}
+    for rr in rating_rows:
+        ratings_by_mat.setdefault(rr.material_item_id, []).append(rr)
+
+    descs_by_mat: dict[str, list] = {}
+    for dr in desc_rows:
+        descs_by_mat.setdefault(dr.material_item_id, []).append(dr)
+
+    def _dim_stats(mat_id: str) -> dict:
         dim_data: dict[str, list[float]] = {}
-        for r in item_ratings:
-            for dim, score in r.dimension_scores.items():
-                dim_data.setdefault(dim, []).append(score)
-        dim_stats = {
+        for rr in ratings_by_mat.get(mat_id, []):
+            try:
+                scores = json.loads(rr.dimension_scores) if isinstance(rr.dimension_scores, str) else rr.dimension_scores
+            except Exception:
+                continue
+            for dim, score in scores.items():
+                dim_data.setdefault(dim, []).append(float(score))
+        return {
             dim: {
                 "avg": round(sum(vals) / len(vals), 3),
                 "max": round(max(vals), 3),
@@ -166,45 +258,44 @@ def list_works(
             for dim, vals in dim_data.items()
         }
 
-        # Chunk descriptions (AI-generated, ordered by position)
-        work_chunks_sorted = sorted(chunks_by_material.get(item.id, []), key=lambda c: c.position)
-        chunk_descriptions = [
-            {"position": c.position, "description": c.description}
-            for c in work_chunks_sorted if c.description
+    items = []
+    for r in rows:
+        mat_id = r["id"]
+        chunk_descs = [
+            {"position": dr.position, "description": dr.description}
+            for dr in descs_by_mat.get(mat_id, [])
         ]
-        first_description = chunk_descriptions[0]["description"] if chunk_descriptions else None
-
-        return {
-            "total_chunks": total_chunks,
-            "human_rated": human_rated,
-            "ai_rated": ai_rated,
-            "overall_avg": overall_avg,
-            "overall_max": overall_max,
-            "overall_min": overall_min,
-            "dim_stats": dim_stats,
-            "first_description": first_description,
-            "chunk_descriptions": chunk_descriptions,
+        try:
+            plugin_meta = json.loads(r["plugin_metadata_json"] or "{}")
+        except Exception:
+            plugin_meta = {}
+        item = {
+            "id": mat_id,
+            "project_seq": r["project_seq"],
+            "source_plugin": r["source_plugin"],
+            "source_path": r["source_path"],
+            "work_title": r["work_title"],
+            "author": r["author"],
+            "url": r["url"],
+            "domain": r["domain"],
+            "content_type": r["content_type"],
+            "pipeline_phase": r["pipeline_phase"],
+            "content_hash": r["content_hash"],
+            "ingested_at": r["ingested_at"],
+            "plugin_metadata": plugin_meta,
+            "total_chunks": r["total_chunks"],
+            "human_rated": r["human_rated"],
+            "ai_rated": r["ai_rated"],
+            "overall_avg": round(r["overall_avg"], 3) if r["overall_avg"] is not None else None,
+            "overall_max": round(r["overall_max"], 3) if r["overall_max"] is not None else None,
+            "overall_min": round(r["overall_min"], 3) if r["overall_min"] is not None else None,
+            "dim_stats": _dim_stats(mat_id),
+            "first_description": chunk_descs[0]["description"] if chunk_descs else None,
+            "chunk_descriptions": chunk_descs,
         }
+        items.append(item)
 
-    result = [{**_work_response(i), **_work_stats(i)} for i in items]
-
-    # Sorting
-    if sort_by:
-        reverse = sort_dir.lower() == "desc"
-        if sort_by in ("total_chunks", "human_rated", "ai_rated"):
-            result.sort(key=lambda w: w.get(sort_by) or 0, reverse=reverse)
-        elif sort_by in ("overall_avg", "overall_max", "overall_min"):
-            result.sort(key=lambda w: w.get(sort_by) or 0.0, reverse=reverse)
-        elif sort_by == "name":
-            result.sort(key=lambda w: (w.get("work_title") or "").lower(), reverse=reverse)
-        else:
-            # Try dimension stat
-            result.sort(
-                key=lambda w: (w.get("dim_stats") or {}).get(sort_by, {}).get("avg") or 0.0,
-                reverse=reverse,
-            )
-
-    return result
+    return {"total": total_row, "items": items}
 
 
 class IngestRequest(BaseModel):

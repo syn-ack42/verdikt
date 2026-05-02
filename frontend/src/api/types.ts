@@ -312,6 +312,11 @@ export interface WorkStats {
 
 export type MaterialItemWithStats = MaterialItem & WorkStats
 
+export interface WorksListResponse {
+  total: number
+  items: MaterialItemWithStats[]
+}
+
 export interface AIRatingStatus {
   running: boolean
   profile_version: number | null

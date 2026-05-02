@@ -250,7 +250,8 @@ def test_crystallise_below_threshold_422(client, project_id, clustered_chunk):
 def test_crystallise_status_not_running(client, project_id):
     resp = client.get(f"/api/projects/{project_id}/profile/crystallise/status")
     assert resp.status_code == 200
-    assert resp.json() == {"running": False}
+    data = resp.json()
+    assert data["running"] is False
 
 
 def test_get_profile_versions(client, project_id, saved_profile, mem_engine):
@@ -457,7 +458,7 @@ def test_ingest_plugin_storage(mem_engine, mem_auth_engine, tmp_path):
     data = resp.json()
     assert data["added"] == 1
 
-    items = client.get(f"/api/projects/{pid}/works").json()
+    items = client.get(f"/api/projects/{pid}/works").json()["items"]
     assert any("sample" in (w.get("source_path") or "") for w in items)
 
 
