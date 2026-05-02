@@ -7,7 +7,7 @@ import PluginIngestDialog from '../components/PluginIngestDialog'
 import WorkDetailModal from '../components/WorkDetailModal'
 import RatedChunksModal from '../components/RatedChunksModal'
 import { useIsMobile } from '../hooks/useIsMobile'
-import type { AIRatingStatus, MaterialItemWithStats, PipelineStreamEvent, PluginIngestEvent, UpdatePluginEvent } from '../api/types'
+import type { AIRatingStatus, PipelineStreamEvent, PluginIngestEvent, UpdatePluginEvent } from '../api/types'
 
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
