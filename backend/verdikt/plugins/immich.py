@@ -158,20 +158,25 @@ class ImmichPlugin(PluginBase):
 
     def estimate_count(self) -> int | None:
         total = 0
+        unknown = False
         for source in self._sources:
             src_type = source.get("type", "all")
             max_items = int(source.get("max_items") or _DEFAULT_MAX_ITEMS)
-            try:
-                if src_type == "album":
+            if src_type == "album":
+                try:
                     album_id = source.get("album_id", "")
                     data = self._get(f"/api/albums/{album_id}?withoutAssets=true").json()
                     total += min(data.get("assetCount", 0), max_items)
-                else:
-                    data = self._post("/api/search/metadata", {"type": "IMAGE", "page": 1, "size": 1}).json()
-                    count = data.get("assets", {}).get("total", 0)
-                    total += min(count, max_items)
-            except Exception:
-                pass
+                except Exception:
+                    unknown = True
+            else:
+                # search/all: Immich's metadata-search `total` field is unreliable
+                # when using size=1 (some versions return total=1). Cap at max_items
+                # and signal unknown so the UI shows N/? rather than N/1.
+                total += max_items
+                unknown = True
+        if unknown:
+            return None
         return total or None
 
     def get_updated_ats(self, work_ids: list[str]) -> dict:
@@ -345,13 +350,18 @@ class ImmichPlugin(PluginBase):
             return []
 
     def _search_assets(self, query: str, max_items: int) -> list[dict]:
+        return self._paginate_search({"type": "IMAGE", "query": query}, max_items)
+
+    def _all_assets(self, max_items: int) -> list[dict]:
+        return self._paginate_search({"type": "IMAGE"}, max_items)
+
+    def _paginate_search(self, body_base: dict, max_items: int) -> list[dict]:
         assets: list[dict] = []
         page = 1
         while len(assets) < max_items:
             try:
                 data = self._post("/api/search/metadata", {
-                    "type": "IMAGE",
-                    "query": query,
+                    **body_base,
                     "page": page,
                     "size": min(_PAGE_SIZE, max_items - len(assets)),
                 }).json()
@@ -362,14 +372,15 @@ class ImmichPlugin(PluginBase):
             if not items:
                 break
             assets.extend(items)
-            total = data.get("assets", {}).get("total", 0)
-            if len(assets) >= total or len(assets) >= max_items:
+            # Use nextPage (null when no more pages) as primary stop signal.
+            # Fall back to "got fewer items than requested" for older Immich versions
+            # that don't return nextPage. Do NOT rely on `total` — it defaults to 0
+            # when the field is missing, which would break pagination after page 1.
+            next_page = data.get("assets", {}).get("nextPage")
+            if next_page is None or len(items) < _PAGE_SIZE:
                 break
             page += 1
         return assets[:max_items]
-
-    def _all_assets(self, max_items: int) -> list[dict]:
-        return self._search_assets("", max_items)
 
     # ── Asset → MaterialItem ───────────────────────────────────────────────────
 
