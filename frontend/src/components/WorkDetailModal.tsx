@@ -46,16 +46,19 @@ function ChunkBlock({
   work,
   dimensions,
   projectId,
+  collapsed,
+  onToggleCollapse,
 }: {
   chunk: WorkChunk
   work: WorkDetail
   dimensions: RatingDimension[]
   projectId: string
+  collapsed: boolean
+  onToggleCollapse: () => void
 }) {
   const [editOpen, setEditOpen] = useState(false)
   const [aiRating, setAiRating] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
-  const [collapsed, setCollapsed] = useState(false)
   const qc = useQueryClient()
   const r = chunk.rating
   const pos = chunk.position + 1
@@ -79,7 +82,7 @@ function ChunkBlock({
       <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
         {/* Header */}
         <div
-          onClick={e => { if ((e.target as HTMLElement).closest('button') === null) setCollapsed(c => !c) }}
+          onClick={e => { if ((e.target as HTMLElement).closest('button') === null) onToggleCollapse() }}
           style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             padding: '6px 12px',
@@ -215,7 +218,18 @@ export default function WorkDetailModal({ projectId, workRef, dimensions, onClos
     enabled: !!work,
   })
 
+  const [collapsedChunks, setCollapsedChunks] = useState<Set<string>>(new Set())
+
   const hasChunks = chunks && chunks.length > 0
+  const allCollapsed = hasChunks && collapsedChunks.size === chunks.length
+
+  function toggleChunk(id: string) {
+    setCollapsedChunks(s => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
 
   return (
     <div
@@ -328,9 +342,22 @@ export default function WorkDetailModal({ projectId, workRef, dimensions, onClos
 
               {/* Chunks section */}
               <div>
-                <h4 style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {hasChunks ? `Chunks (${chunks.length})` : work.content_is_image ? 'Image' : 'Content'}
-                </h4>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <h4 style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    {hasChunks ? `Chunks (${chunks.length})` : work.content_is_image ? 'Image' : 'Content'}
+                  </h4>
+                  {hasChunks && chunks.length > 1 && (
+                    <button
+                      onClick={() => allCollapsed
+                        ? setCollapsedChunks(new Set())
+                        : setCollapsedChunks(new Set(chunks.map(c => c.chunk_id)))
+                      }
+                      style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                    >
+                      {allCollapsed ? 'Expand all' : 'Collapse all'}
+                    </button>
+                  )}
+                </div>
 
                 {chunksLoading && <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading chunks…</p>}
 
@@ -343,6 +370,8 @@ export default function WorkDetailModal({ projectId, workRef, dimensions, onClos
                         work={work}
                         dimensions={dimensions}
                         projectId={projectId}
+                        collapsed={collapsedChunks.has(chunk.chunk_id)}
+                        onToggleCollapse={() => toggleChunk(chunk.chunk_id)}
                       />
                     ))}
                   </div>
