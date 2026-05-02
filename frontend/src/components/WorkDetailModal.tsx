@@ -313,14 +313,20 @@ export default function WorkDetailModal({ projectId, workRef, dimensions, onClos
                     )}
 
                     {/* Immich */}
-                    {work.source_plugin === 'immich' && work.url && (
-                      <MetaRow label="URL">
-                        <a href={work.url} target="_blank" rel="noopener noreferrer"
-                          style={{ color: '#6b7de0', wordBreak: 'break-all' }}>
-                          {work.url}
-                        </a>
-                      </MetaRow>
-                    )}
+                    {work.source_plugin === 'immich' && (() => {
+                      const href = work.url
+                        || (work.plugin_metadata.base_url && work.plugin_metadata.asset_id
+                            ? `${work.plugin_metadata.base_url}/photos/${work.plugin_metadata.asset_id}`
+                            : null)
+                      return href ? (
+                        <MetaRow label="View in Immich">
+                          <a href={href} target="_blank" rel="noopener noreferrer"
+                            style={{ color: '#6b7de0' }}>
+                            Open in Immich ↗
+                          </a>
+                        </MetaRow>
+                      ) : null
+                    })()}
                     {work.source_plugin === 'immich' && work.plugin_metadata.original_filename != null && (
                       <MetaRow label="Filename">{String(work.plugin_metadata.original_filename)}</MetaRow>
                     )}

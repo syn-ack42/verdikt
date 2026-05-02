@@ -433,6 +433,7 @@ class ImmichPlugin(PluginBase):
             project_id=project_id,
             source_plugin=self.plugin_name,
             source_path=f"immich://{asset_id}",
+            url=f"{self._base_url}/photos/{asset_id}",
             work_title=work_title,
             content=content,
             content_is_remote=content_is_remote,
