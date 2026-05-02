@@ -113,6 +113,12 @@ export default function ProjectDashboard() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [worksPage, setWorksPage] = useState(0)
   const WORKS_PAGE_SIZE = 25
+  const [expandedDescs, setExpandedDescs] = useState<Set<string>>(new Set())
+  const toggleDesc = (id: string) => setExpandedDescs(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
 
   // AI rating state
   const [aiRatingStarting, setAiRatingStarting] = useState(false)
@@ -757,6 +763,27 @@ export default function ProjectDashboard() {
                     </span>
                     {ratingParts.length > 0 && <span>{ratingParts.join(' · ')}</span>}
                   </div>
+                  {w.first_description && (
+                    <div
+                      onClick={e => { e.stopPropagation(); toggleDesc(w.id) }}
+                      style={{ marginTop: 4, fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', cursor: 'pointer', lineHeight: 1.4 }}
+                    >
+                      {expandedDescs.has(w.id) ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {(w.chunk_descriptions ?? []).map(cd => (
+                            <div key={cd.position}>
+                              <span style={{ fontStyle: 'normal', fontWeight: 500 }}>chunk {cd.position + 1}:</span> {cd.description}
+                            </div>
+                          ))}
+                          <span style={{ fontSize: 10 }}>▴ collapse</span>
+                        </div>
+                      ) : (
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: 10, marginRight: 3, fontStyle: 'normal' }}>▾</span>{w.first_description}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {hasRatings && (
                     <button
                       onClick={e => { e.stopPropagation(); openChunks() }}
@@ -857,6 +884,27 @@ export default function ProjectDashboard() {
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                         {w.ingested_at.slice(0, 10)}
                       </div>
+                      {w.first_description && (
+                        <div
+                          onClick={e => { e.stopPropagation(); toggleDesc(w.id) }}
+                          style={{ marginTop: 3, fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', cursor: 'pointer', lineHeight: 1.4 }}
+                        >
+                          {expandedDescs.has(w.id) ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, whiteSpace: 'normal' }}>
+                              {(w.chunk_descriptions ?? []).map(cd => (
+                                <div key={cd.position}>
+                                  <span style={{ fontStyle: 'normal', fontWeight: 500 }}>chunk {cd.position + 1}:</span> {cd.description}
+                                </div>
+                              ))}
+                              <span style={{ fontSize: 10 }}>▴ collapse</span>
+                            </div>
+                          ) : (
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <span style={{ fontSize: 10, marginRight: 3, fontStyle: 'normal' }}>▾</span>{w.first_description}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </td>
                     {project.rating_dimensions.map(d => {
                       const ds = w.dim_stats?.[d.name]

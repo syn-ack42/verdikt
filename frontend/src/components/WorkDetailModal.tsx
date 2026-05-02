@@ -28,6 +28,7 @@ function toRatedChunkEntry(chunk: WorkChunk, work: WorkDetail): RatedChunkEntry 
     chunk_count: chunk.chunk_count,
     chunk_content: chunk.content,
     chunk_domain: chunk.domain,
+    chunk_description: chunk.description,
     material_item_id: chunk.material_item_id,
     work_seq: work.project_seq,
     work_title: work.work_title,
@@ -212,6 +213,7 @@ export default function WorkDetailModal({ projectId, workRef, dimensions, onClos
                       </MetaRow>
                     )}
 
+                    {/* AO3 */}
                     {work.source_plugin === 'ao3' && work.plugin_metadata.work_id != null && (
                       <MetaRow label="Work ID">{String(work.plugin_metadata.work_id)}</MetaRow>
                     )}
@@ -227,9 +229,10 @@ export default function WorkDetailModal({ projectId, workRef, dimensions, onClos
                       </MetaRow>
                     )}
 
-                    {work.source_plugin === 'filedrop' && (
+                    {/* Storage / Filedrop */}
+                    {(work.source_plugin === 'filedrop' || work.source_plugin === 'storage') && (
                       <MetaRow label="File">
-                        <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        <span style={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: 12 }}>
                           {work.storage_path ?? work.source_path}
                         </span>
                         {work.storage_path && (
@@ -241,7 +244,24 @@ export default function WorkDetailModal({ projectId, workRef, dimensions, onClos
                       </MetaRow>
                     )}
 
-                    {work.source_plugin !== 'ao3' && work.source_plugin !== 'filedrop' &&
+                    {/* Immich */}
+                    {work.source_plugin === 'immich' && work.url && (
+                      <MetaRow label="URL">
+                        <a href={work.url} target="_blank" rel="noopener noreferrer"
+                          style={{ color: '#6b7de0', wordBreak: 'break-all' }}>
+                          {work.url}
+                        </a>
+                      </MetaRow>
+                    )}
+                    {work.source_plugin === 'immich' && work.plugin_metadata.original_filename != null && (
+                      <MetaRow label="Filename">{String(work.plugin_metadata.original_filename)}</MetaRow>
+                    )}
+                    {work.source_plugin === 'immich' && work.plugin_metadata.file_created_at != null && (
+                      <MetaRow label="Captured">{String(work.plugin_metadata.file_created_at).slice(0, 10)}</MetaRow>
+                    )}
+
+                    {/* Generic fallback for any other plugin */}
+                    {!['ao3', 'filedrop', 'storage', 'immich'].includes(work.source_plugin) &&
                       Object.entries(work.plugin_metadata).map(([k, v]) => v != null && v !== '' ? (
                         <MetaRow key={k} label={k}>
                           <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{String(v)}</span>

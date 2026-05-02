@@ -152,6 +152,11 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
                   {editing.chunk_content ?? '(no content)'}
                 </div>
               )}
+              {editing.chunk_description && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.5, padding: '4px 0' }}>
+                  {editing.chunk_description}
+                </div>
+              )}
               {editing.explanations && Object.keys(editing.explanations).length > 0 && (
                 <div
                   onClick={() => setExpandedExpl(expandedExpl === editing.rating_id ? null : editing.rating_id)}

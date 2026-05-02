@@ -166,6 +166,14 @@ def list_works(
             for dim, vals in dim_data.items()
         }
 
+        # Chunk descriptions (AI-generated, ordered by position)
+        work_chunks_sorted = sorted(chunks_by_material.get(item.id, []), key=lambda c: c.position)
+        chunk_descriptions = [
+            {"position": c.position, "description": c.description}
+            for c in work_chunks_sorted if c.description
+        ]
+        first_description = chunk_descriptions[0]["description"] if chunk_descriptions else None
+
         return {
             "total_chunks": total_chunks,
             "human_rated": human_rated,
@@ -174,6 +182,8 @@ def list_works(
             "overall_max": overall_max,
             "overall_min": overall_min,
             "dim_stats": dim_stats,
+            "first_description": first_description,
+            "chunk_descriptions": chunk_descriptions,
         }
 
     result = [{**_work_response(i), **_work_stats(i)} for i in items]

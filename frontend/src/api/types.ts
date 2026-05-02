@@ -271,6 +271,7 @@ export interface RatedChunkEntry {
   chunk_count: number
   chunk_content: string | null
   chunk_domain?: 'text' | 'image'
+  chunk_description?: string | null
   material_item_id: string
   work_seq: number | null
   work_title: string | null
@@ -296,6 +297,8 @@ export interface WorkStats {
   overall_max: number | null
   overall_min: number | null
   dim_stats: Record<string, WorkDimStat>
+  first_description?: string | null
+  chunk_descriptions?: { position: number; description: string }[]
 }
 
 export type MaterialItemWithStats = MaterialItem & WorkStats
