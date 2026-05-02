@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
-import type { PluginInfo } from '../api/types'
+import type { PluginAction, PluginInfo } from '../api/types'
 import PluginConfigEditor from './PluginConfigEditor'
 import StoragePicker, { type Selection } from './StoragePicker'
+import PluginActionModal from './PluginActionModal'
 
 interface Props {
   projectId: string
@@ -36,6 +37,7 @@ export default function PluginIngestDialog({ projectId, domain, onClose, onInges
   const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null)
   const [configValues, setConfigValues] = useState<Record<string, unknown>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [activeAction, setActiveAction] = useState<PluginAction | null>(null)
 
   const { data: plugins, isLoading: pluginsLoading } = useQuery({
     queryKey: ['plugins', domain],
@@ -86,8 +88,18 @@ export default function PluginIngestDialog({ projectId, domain, onClose, onInges
   const buttonLabel = selectedPluginInfo
     ? `Ingest ${selectedPluginInfo.title || selectedPlugin}`
     : 'Ingest'
+  const pluginActions = selectedPluginInfo?.actions ?? []
 
   return (
+    <>
+    {activeAction && selectedPlugin && (
+      <PluginActionModal
+        projectId={projectId}
+        pluginName={selectedPlugin}
+        action={activeAction}
+        onClose={() => setActiveAction(null)}
+      />
+    )}
     <div
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
@@ -151,23 +163,42 @@ export default function PluginIngestDialog({ projectId, domain, onClose, onInges
           )}
         </div>
 
-        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border, #e0e0e0)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button onClick={onClose} style={{ padding: '6px 14px', border: '1px solid var(--border, #ddd)', borderRadius: 4, cursor: 'pointer', background: 'transparent', color: 'var(--text, #333)' }}>
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!selectedPlugin}
-            style={{
-              padding: '6px 16px', background: selectedPlugin ? '#6b7de0' : '#ccc',
-              color: '#fff', border: 'none', borderRadius: 4,
-              cursor: selectedPlugin ? 'pointer' : 'default',
-            }}
-          >
-            {buttonLabel}
-          </button>
+        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border, #e0e0e0)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {pluginActions.map(action => (
+              <button
+                key={action.name}
+                type="button"
+                onClick={() => setActiveAction(action)}
+                title={action.description}
+                style={{
+                  padding: '6px 14px', border: '1px solid var(--border, #ddd)', borderRadius: 4,
+                  cursor: 'pointer', background: 'transparent', color: 'var(--text, #333)', fontSize: 13,
+                }}
+              >
+                {action.title}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onClose} style={{ padding: '6px 14px', border: '1px solid var(--border, #ddd)', borderRadius: 4, cursor: 'pointer', background: 'transparent', color: 'var(--text, #333)' }}>
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!selectedPlugin}
+              style={{
+                padding: '6px 16px', background: selectedPlugin ? '#6b7de0' : '#ccc',
+                color: '#fff', border: 'none', borderRadius: 4,
+                cursor: selectedPlugin ? 'pointer' : 'default',
+              }}
+            >
+              {buttonLabel}
+            </button>
+          </div>
         </div>
       </div>
     </div>
+    </>
   )
 }

@@ -196,12 +196,19 @@ export interface PreferenceProfile {
   created_at: string
 }
 
+export interface PluginAction {
+  name: string
+  title: string
+  description: string
+  options_schema: Record<string, unknown>
+}
+
 export interface PluginInfo {
   name: string
   title: string
   description: string
   config_schema: Record<string, unknown>
-  supports_writeback?: boolean
+  actions?: PluginAction[]
 }
 
 export interface PluginConfig {

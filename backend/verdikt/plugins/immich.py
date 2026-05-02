@@ -124,8 +124,32 @@ class ImmichPlugin(PluginBase):
         return True
 
     @classmethod
-    def supports_writeback(cls) -> bool:
-        return True
+    def plugin_actions(cls) -> list[dict]:
+        return [{
+            "name": "writeback",
+            "title": "Write back to Immich",
+            "description": "Push Verdikt ratings and AI descriptions back to Immich assets.",
+            "options_schema": {
+                "type": "object",
+                "properties": {
+                    "write_ratings": {
+                        "type": "boolean",
+                        "title": "Write ratings as Immich star ratings (1–5)",
+                        "default": True,
+                    },
+                    "write_descriptions": {
+                        "type": "boolean",
+                        "title": "Write AI-generated descriptions (prefixed #verdikt:)",
+                        "default": True,
+                    },
+                },
+            },
+        }]
+
+    def run_action(self, action_name: str, project_id: str, session: object, options: dict) -> dict:
+        if action_name == "writeback":
+            return self.writeback(project_id, session, options)
+        raise NotImplementedError(action_name)
 
     # ── Fetch ──────────────────────────────────────────────────────────────────
 

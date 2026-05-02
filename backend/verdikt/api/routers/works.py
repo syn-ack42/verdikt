@@ -696,38 +696,6 @@ def get_work_chunks(
     return result
 
 
-class WritebackRequest(BaseModel):
-    write_ratings: bool = False
-    write_descriptions: bool = False
-
-
-@router.post("/plugins/{plugin_name}/writeback")
-def plugin_writeback(
-    project_id: str,
-    plugin_name: str,
-    body: WritebackRequest,
-    _user: AuthenticatedUser = Depends(get_current_user),
-    session: Session = Depends(get_session),
-) -> dict:
-    """Write Verdikt ratings and/or descriptions back to the source system."""
-    _get_project_or_404(project_id, session)
-    try:
-        cls = get_plugin(plugin_name)
-    except KeyError:
-        raise HTTPException(status_code=422, detail=f"Unknown plugin: {plugin_name!r}")
-    if not cls.supports_writeback():
-        raise HTTPException(status_code=422, detail=f"Plugin {plugin_name!r} does not support writeback")
-
-    cfg_store = SQLitePluginConfigStore(session)
-    saved_cfg = cfg_store.get(project_id, plugin_name)
-    if saved_cfg is None:
-        raise HTTPException(status_code=422, detail="No plugin config found for this project")
-
-    plugin = cls(saved_cfg.config)
-    result = plugin.writeback(project_id, session, {"write_ratings": body.write_ratings, "write_descriptions": body.write_descriptions})
-    return result
-
-
 @router.delete("/{work_ref}", status_code=204)
 def delete_work(
     project_id: str,

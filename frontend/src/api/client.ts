@@ -152,12 +152,12 @@ export const api = {
       req<UpdatePluginStatus>('GET', `/projects/${projectId}/works/update-plugin/status`),
     updatePluginStream: (projectId: string, onEvent: (e: UpdatePluginEvent) => void) =>
       streamFetch(`/projects/${projectId}/works/update-plugin/stream`, { method: 'POST' }, onEvent as (e: unknown) => void),
-    writeback: (projectId: string, pluginName: string, opts: { write_ratings: boolean; write_descriptions: boolean }) =>
-      req<WritebackResult>('POST', `/projects/${projectId}/works/plugins/${encodeURIComponent(pluginName)}/writeback`, opts),
   },
   plugins: {
     list: (domain?: string) => req<PluginInfo[]>('GET', `/plugins${domain ? `?domain=${domain}` : ''}`),
     help: (pluginName: string) => req<{ markdown: string }>('GET', `/plugins/${encodeURIComponent(pluginName)}/help`),
+    runAction: (pluginName: string, projectId: string, actionName: string, options: Record<string, unknown>) =>
+      req<WritebackResult>('POST', `/plugins/${encodeURIComponent(pluginName)}/projects/${encodeURIComponent(projectId)}/actions/${encodeURIComponent(actionName)}`, options),
   },
   pipeline: {
     run: (projectId: string) => req<PipelineResult>('POST', `/projects/${projectId}/pipeline/run`),

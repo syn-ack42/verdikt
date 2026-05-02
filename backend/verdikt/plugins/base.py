@@ -96,15 +96,22 @@ class PluginBase(ABC):
         raise NotImplementedError(f"{self.__class__.__name__} does not implement fetch_content()")
 
     @classmethod
-    def supports_writeback(cls) -> bool:
-        """True if this plugin can write Verdikt-generated data back to the source system."""
-        return False
+    def plugin_actions(cls) -> list[dict]:
+        """Declare user-triggerable actions this plugin supports.
 
-    def writeback(self, project_id: str, session: object, options: dict) -> dict:
-        """Write ratings and/or descriptions back to the source system.
-
-        options: {"write_ratings": bool, "write_descriptions": bool}
-        Returns: {"updated": int, "skipped": int, "errors": list[str]}
-        Only required when supports_writeback() returns True.
+        Each action is a dict with keys:
+          name          — machine identifier (used in the API URL)
+          title         — button label shown in the UI
+          description   — one-line explanation shown below the button
+          options_schema — JSON Schema object describing the action's options form
+        Returns [] by default (no actions).
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not implement writeback()")
+        return []
+
+    def run_action(self, action_name: str, project_id: str, session: object, options: dict) -> dict:
+        """Execute a named action declared by plugin_actions().
+
+        Returns a result dict (shape is action-specific; writeback returns
+        {"updated": int, "skipped": int, "errors": list[str]}).
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not implement run_action()")
