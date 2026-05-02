@@ -99,8 +99,9 @@ export default function AdminModels() {
 
       {models && models.length > 0 && (
         <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
           {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 60px 80px 60px', gap: 8, padding: '8px 14px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border)', background: 'var(--surface, rgba(128,128,128,0.04))' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 60px 80px 60px', gap: 8, padding: '8px 14px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border)', background: 'var(--surface, rgba(128,128,128,0.04))', minWidth: 700 }}>
             <span>Model</span>
             <span>Type</span>
             <span>Domain</span>
@@ -118,6 +119,7 @@ export default function AdminModels() {
                 display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 60px 80px 60px', gap: 8, padding: '10px 14px', alignItems: 'center',
                 borderBottom: i < models.length - 1 ? '1px solid var(--border)' : 'none',
                 opacity: m.enabled ? 1 : 0.6,
+                minWidth: 700,
               }}
             >
               <div style={{ minWidth: 0 }}>
@@ -171,6 +173,7 @@ export default function AdminModels() {
               </span>
             </div>
           ))}
+          </div>
         </div>
       )}
 
