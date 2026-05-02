@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import RatedChunksModal from './RatedChunksModal'
 import type { RatedChunkEntry, RatingDimension, WorkChunk, WorkDetail } from '../api/types'
@@ -53,88 +53,142 @@ function ChunkBlock({
   projectId: string
 }) {
   const [editOpen, setEditOpen] = useState(false)
+  const [aiRating, setAiRating] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
+  const qc = useQueryClient()
   const r = chunk.rating
   const pos = chunk.position + 1
   const total = chunk.chunk_count
+
+  async function triggerAiRating() {
+    setAiRating(true)
+    setAiError(null)
+    try {
+      await api.ratings.rateChunkAI(projectId, chunk.chunk_id, chunk.material_item_id)
+      qc.invalidateQueries({ queryKey: ['work-chunks', projectId] })
+    } catch (e: unknown) {
+      setAiError(e instanceof Error ? e.message : 'AI rating failed')
+    } finally {
+      setAiRating(false)
+    }
+  }
 
   return (
     <>
       <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
         {/* Header */}
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: '6px 12px',
-          background: 'var(--surface, rgba(128,128,128,0.06))',
-          borderBottom: '1px solid var(--border)',
-          gap: 8,
-        }}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
+        <div
+          onClick={e => { if ((e.target as HTMLElement).closest('button') === null) setCollapsed(c => !c) }}
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '6px 12px',
+            background: 'var(--surface, rgba(128,128,128,0.06))',
+            borderBottom: collapsed ? 'none' : '1px solid var(--border)',
+            gap: 8,
+            flexWrap: 'wrap',
+            cursor: 'pointer',
+            userSelect: 'none',
+          }}
+        >
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 10, opacity: 0.6 }}>{collapsed ? '▸' : '▾'}</span>
             Chunk {pos} of {total}
           </span>
 
-          {r ? (
-            <button
-              onClick={() => setEditOpen(true)}
-              title="Edit rating"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: 'none', border: '1px solid var(--border)',
-                borderRadius: 20, padding: '2px 10px', cursor: 'pointer', fontSize: 12,
-              }}
-            >
-              {r.is_ai ? (
-                <span style={{ background: 'rgba(180,83,9,0.15)', color: '#b45309', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>AI</span>
-              ) : (
-                <span style={{ background: 'rgba(46,125,50,0.12)', color: '#2e7d32', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>Human</span>
-              )}
-              {r.avg_score != null && (
-                <span style={{ fontWeight: 700, color: scoreColor(r.avg_score) }}>{r.avg_score.toFixed(1)}</span>
-              )}
-              {dimensions.map(d => (
-                <span key={d.name} style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {d.name[0].toUpperCase()}{d.name[1] ?? ''}:&thinsp;
-                  <span style={{ color: scoreColor(r.dimension_scores[d.name] ?? null), fontWeight: 600 }}>
-                    {r.dimension_scores[d.name] != null ? r.dimension_scores[d.name].toFixed(1) : '—'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            {r ? (
+              <button
+                onClick={() => setEditOpen(true)}
+                title="Edit rating"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'none', border: '1px solid var(--border)',
+                  borderRadius: 20, padding: '2px 10px', cursor: 'pointer', fontSize: 12,
+                }}
+              >
+                {r.is_ai ? (
+                  <span style={{ background: 'rgba(180,83,9,0.15)', color: '#b45309', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>AI</span>
+                ) : (
+                  <>
+                    <span style={{ background: 'rgba(46,125,50,0.12)', color: '#2e7d32', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>Human</span>
+                    {r.also_ai_rated && (
+                      <span style={{ border: '1px dashed #b45309', color: '#b45309', fontSize: 10, padding: '0px 4px', borderRadius: 3, fontWeight: 600, opacity: 0.7 }} title="This chunk was also rated by AI">AI</span>
+                    )}
+                  </>
+                )}
+                {r.avg_score != null && (
+                  <span style={{ fontWeight: 700, color: scoreColor(r.avg_score) }}>{r.avg_score.toFixed(1)}</span>
+                )}
+                {dimensions.map(d => (
+                  <span key={d.name} style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {d.name[0].toUpperCase()}{d.name[1] ?? ''}:&thinsp;
+                    <span style={{ color: scoreColor(r.dimension_scores[d.name] ?? null), fontWeight: 600 }}>
+                      {r.dimension_scores[d.name] != null ? r.dimension_scores[d.name].toFixed(1) : '—'}
+                    </span>
                   </span>
-                </span>
-              ))}
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>✎</span>
-            </button>
-          ) : (
+                ))}
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>✎</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setEditOpen(true)}
+                style={{
+                  background: 'none', border: '1px dashed var(--border)',
+                  borderRadius: 20, padding: '2px 10px', cursor: 'pointer',
+                  fontSize: 12, color: 'var(--text-muted)',
+                }}
+              >
+                + rate
+              </button>
+            )}
+
             <button
-              onClick={() => setEditOpen(true)}
+              onClick={triggerAiRating}
+              disabled={aiRating}
+              title={r?.is_ai ? 'Re-rate with AI' : r ? 'Rate with AI (replaces existing AI rating if any)' : 'Rate with AI'}
               style={{
-                background: 'none', border: '1px dashed var(--border)',
-                borderRadius: 20, padding: '2px 10px', cursor: 'pointer',
-                fontSize: 12, color: 'var(--text-muted)',
+                background: 'none', border: '1px solid var(--border)',
+                borderRadius: 20, padding: '2px 8px', cursor: aiRating ? 'default' : 'pointer',
+                fontSize: 11, color: aiRating ? 'var(--text-muted)' : '#b45309',
+                display: 'flex', alignItems: 'center', gap: 4,
               }}
             >
-              + rate
+              <span style={aiRating ? { display: 'inline-block', animation: 'spin 1s linear infinite' } : {}}>↺</span>
+              {aiRating ? 'AI…' : 'AI'}
             </button>
+          </div>
+
+          {aiError && (
+            <span style={{ fontSize: 11, color: '#c00', width: '100%' }}>{aiError}</span>
           )}
         </div>
 
-        {/* Content */}
-        <div style={{ padding: '10px 14px' }}>
-          {chunk.domain === 'image' && chunk.content ? (
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <img
-                src={`data:image/jpeg;base64,${chunk.content}`}
-                alt={`Chunk ${pos}`}
-                style={{ maxWidth: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 4 }}
-              />
-            </div>
-          ) : (
-            <div style={{ fontSize: 14, lineHeight: 1.75, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'Georgia, serif' }}>
-              {chunk.content ?? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>(no content)</span>}
-            </div>
-          )}
-          {chunk.description && (
-            <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.5 }}>
-              {chunk.description}
-            </div>
-          )}
-        </div>
+        {/* Content — hidden when collapsed */}
+        {!collapsed && (
+          <div style={{ padding: '10px 14px 6px' }}>
+            {chunk.domain === 'image' && chunk.content ? (
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <img
+                  src={`data:image/jpeg;base64,${chunk.content}`}
+                  alt={`Chunk ${pos}`}
+                  style={{ maxWidth: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 4 }}
+                />
+              </div>
+            ) : (
+              <div style={{ fontSize: 14, lineHeight: 1.75, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'Georgia, serif' }}>
+                {chunk.content ?? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>(no content)</span>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Description — always visible */}
+        {chunk.description && (
+          <div style={{ padding: collapsed ? '5px 14px 7px' : '0 14px 8px', fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.5 }}>
+            {chunk.description}
+          </div>
+        )}
       </div>
 
       {editOpen && (

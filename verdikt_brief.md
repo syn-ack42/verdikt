@@ -104,8 +104,17 @@ Embedding pre-filter. LLM judge with profile. Recommendation browser UI. Feedbac
 **Milestone 5 — Production hardening** *(complete)*
 User authentication (email/password, HttpOnly JWT cookie). Per-user data isolation with SQLCipher-encrypted databases. AES-256-GCM file encryption at rest (opaque UUID blobs, metadata in encrypted DB). Project export/import. AI-accuracy-based confidence indicators. Background AI preview in rating interface. Active learning for chunk selection. Admin user management UI. Docker deployment (multi-stage image, docker-compose, static frontend served by uvicorn).
 
-**Milestone 6 — Domain extensibility**
+**Milestone 6 — Domain extensibility** *(complete)*
 Image domain support (CLIP embeddings, image display in rating UI). Validates that the domain abstraction actually works.
+
+**Milestone 7 — Token budget, OAuth, sentence-transformer catalog** *(complete)*
+Token usage tracking with per-user daily grant budgets and admin controls. Admin promote/demote and user blocking. Google and GitHub OAuth login. Sentence-transformer embedding models added to the model catalog (manually registered, not Ollama-synced).
+
+**Milestone 8 — Immich, remote content, chunk descriptions, writeback** *(complete)*
+`ImmichPlugin` — sources photos from a self-hosted Immich instance by album, search query, or entire library. Remote content protocol — plugins can store only a reference at ingest; bytes are fetched lazily on pipeline execution (three modes: `preview`, `thumbnail`, `none`). Chunk descriptions — the LLM judge emits a neutral 1–2 sentence factual description of each chunk alongside scores; stored on `ChunkRow`, surfaced throughout the UI. Immich writeback — user-triggered: writes Verdikt star ratings and/or generated descriptions back to Immich assets. Config form improvements: `enum` fields render as dropdowns; object-array fields with `(for type=X)` descriptions are shown/hidden based on a discriminator field in the same row.
+
+**Post-M8 UX improvements**
+Per-chunk AI rating in work detail — a `↺ AI` button on each chunk block lets users trigger or re-trigger AI rating for a single chunk without running a full batch. Human-rated chunks that also have a stored AI rating show a dashed-border `AI` badge so the dual-rating state is visible. The rated-chunks list deduplicates: one entry per chunk, human preferred over AI, with an `also_ai_rated` flag. Chunk blocks in work detail are collapsible (click header to toggle); the AI-generated description remains visible even when collapsed. "Chunk N of M" label is suppressed when a work has only one chunk.
 
 ## What this is not
 

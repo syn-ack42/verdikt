@@ -5,11 +5,12 @@ A local-first, open-source preference learning platform. Rate content samples ac
 ## How it works
 
 1. **Register & log in** — create an account; all your data is isolated and encrypted per user
-2. **Ingest** — upload files via the UI or drop them into your storage directory; select what to ingest
+2. **Ingest** — upload files, point at a storage directory, or connect to a remote source like Immich; select what to ingest
 3. **Pipeline** — Verdikt chunks, embeds, and clusters your content automatically
 4. **Rate** — score representative chunks on dimensions you define (prose quality, composition, atmosphere, etc.) using keyboard shortcuts for speed
 5. **Crystallise** — once you have enough ratings, a local LLM synthesises a structured preference profile
 6. **Confirm AI ratings** — after a profile exists, AI rates new chunks in the background; review and confirm them to rapidly build profile confidence
+7. **Inspect works** — open any work's detail view to see its chunks, ratings, and AI-generated descriptions; collapse chunks you've reviewed, or trigger AI rating on individual chunks directly from the detail view
 
 ## Requirements
 
@@ -65,7 +66,7 @@ Open `http://localhost:5173`. You will be redirected to the registration page on
 2. Go to **Admin › Models**, click **Sync from Ollama** to discover installed models
 3. Enable the models you want and set a default LLM for each domain you plan to use
 4. Create a project — choose a domain (Text or Image), name it, configure rating dimensions
-5. Click **Browse & Ingest Files** to upload files and select what to ingest
+5. Click **Browse & Ingest Files** to upload files and select what to ingest (or configure a plugin such as Immich)
 6. Click **Run Pipeline** on the dashboard — watch chunk / embed / cluster progress live
 7. Click **Rate Chunks** and score passages with the keyboard
 8. Once the dashboard shows enough ratings, open **Profile** and click **Crystallise**
@@ -133,6 +134,16 @@ After a preference profile exists, Verdikt scores new chunks in the background w
 
 Accuracy resets with each new profile version so you can track improvement over time.
 
+## Work detail view
+
+Click any work title on the project dashboard to open its detail view. The view shows metadata (source, ingest date, URL, file path) and all chunks with their current ratings.
+
+- **Collapse chunks** — click a chunk header to show or hide the content. The AI-generated description (if available) remains visible below the header even when collapsed.
+- **Rate or edit** — click the rating pill on a rated chunk to open the edit dialog; click **+ rate** on an unrated chunk to add a rating.
+- **↺ AI button** — triggers AI rating for a single chunk. Works whether the chunk is unrated or already rated; re-rating a chunk replaces the previous AI score. The button spins while the LLM is running and the view refreshes automatically when done.
+- **AI badge on human ratings** — if a human rating has replaced an AI rating for a chunk, a small dashed-border `AI` badge appears next to `Human` to indicate both scores exist.
+- **Remove work** — the footer of the detail view has a **Remove work** button that deletes the work, its chunks, and all associated ratings.
+
 ## Export and import
 
 Projects can be exported and imported as JSON from the project list:
@@ -140,7 +151,9 @@ Projects can be exported and imported as JSON from the project list:
 - **Export** — downloads a `verdikt-export-<project>.json` file containing the project, all materials, ratings, profiles, and plugin configs (binary content excluded)
 - **Import** — creates a new project from an export file; materials are marked `ingested` and need the pipeline re-run to regenerate chunks and embeddings
 
-## File storage
+## Content sources
+
+### File storage
 
 Files for ingest are managed per-user at `~/.verdikt/users/<user_id>/files/`. Two ways to add files:
 
@@ -155,6 +168,17 @@ The Storage plugin filters accepted extensions automatically based on the projec
 Files are stored encrypted at rest using AES-256-GCM. On disk each file is an opaque UUID-named blob with no extension or readable metadata; filenames, paths, and sizes are kept only in the per-user SQLCipher database. A server admin with filesystem access cannot read file content or determine what files a user has uploaded. Existing plaintext files are migrated automatically on first login after an upgrade.
 
 The storage root is configurable via `VERDIKT_DATA_DIR` (defaults to `/var/lib/verdikt`). User spaces can be placed on a separate volume with `VERDIKT_USERS_DIR`.
+
+### Immich
+
+The built-in Immich plugin sources photos from a self-hosted [Immich](https://immich.app) instance. Configure it from the project dashboard under **Plugins**:
+
+- **Immich URL** — base URL of your Immich instance (e.g. `http://192.168.1.10:2283`)
+- **API Key** — generate one in Immich under Account Settings › API Keys
+- **Image storage** — `preview` (~200 KB per photo, default), `thumbnail` (~30 KB), or `none` (always fetch from Immich; requires Immich to be reachable at rating time)
+- **Sources** — one or more sources: `album` (one specific album by ID), `search` (photos matching a metadata query), or `all` (entire library, up to a configurable cap)
+
+After ingesting and running the pipeline, you can write Verdikt ratings and AI-generated descriptions back to Immich via the **Write back** button on the project dashboard.
 
 ### What is not sealed at rest
 

@@ -378,6 +378,10 @@ class SQLiteRatingStore(RatingStore):
         )
         self._s.flush()
 
+    def delete(self, rating_id: str) -> None:
+        self._s.execute(sql_delete(RatingRow).where(RatingRow.id == rating_id))
+        self._s.flush()
+
     def delete_by_material(self, material_item_id: str) -> None:
         self._s.execute(
             sql_delete(RatingRow).where(RatingRow.material_item_id == material_item_id)

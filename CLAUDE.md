@@ -123,7 +123,7 @@ The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.y
 - Daily grants are lazily issued (at first balance check of the day), not via a scheduler
 - `LLMJudge._call_ollama` returns `(response, prompt_eval_count, eval_count)`; `judge.usage` accumulates per-run; flushed to auth.db by routers after each run
 - `ProfileCrystalliser.crystallise` returns `(profile, total_prompt_tokens, total_completion_tokens)`
-- Pre-flight `check_token_budget` before: crystallise, ai-rating/start, ai-rating/preview
+- Pre-flight `check_token_budget` before: crystallise, ai-rating/start, ai-rating/preview, ai-rating/rate-chunk
 - Background ai_rating thread records accumulated usage into a fresh auth session at end of run
 - `GET /api/usage` — user's balance + day/week/month/all-time + per-project breakdown
 - `GET /api/admin/users/{id}/usage`, `POST /api/admin/users/{id}/grants`, `PATCH /api/admin/users/{id}/limits`
@@ -170,7 +170,19 @@ Plugins that source remote content (e.g. Immich) can store only a reference at i
 
 ## Chunk descriptions
 
-The LLM judge (`inference/judge.py`) emits a 4th return value: a neutral factual description of the chunk (1–2 sentences, no evaluative language). Return signature: `(scores, overall, explanations, description)`. Stored in `ChunkRow.description` (nullable TEXT). Written by AI rater and live preview endpoint; surfaced as a caption in the rating interface and work detail modal.
+The LLM judge (`inference/judge.py`) emits a 4th return value: a neutral factual description of the chunk (1–2 sentences, no evaluative language). Return signature: `(scores, overall, explanations, description)`. Stored in `ChunkRow.description` (nullable TEXT). Written by AI rater and live preview endpoint; surfaced as a caption in the rating interface, work detail modal, work list (first chunk's description as a collapsible one-liner), and the rated-chunks modal edit view.
+
+In the work detail modal, each chunk block is collapsible: clicking the header (`▸`/`▾` toggle) hides the content area. The description remains visible below the header even when collapsed.
+
+## Per-chunk AI rating
+
+- `POST /api/projects/{id}/ai-rating/rate-chunk` — explicit user-triggered AI rating of a single chunk. Unlike `/preview`, has no `already_rated` guard: calling it on an already-rated chunk deletes the existing AI rating and saves a fresh one. Returns `{ai_rating_id, dimension_scores, explanations}`. Budgeted via `check_token_budget`.
+- The work detail modal shows a `↺ AI` button in each chunk header. While the request is in flight the `↺` icon spins (CSS `@keyframes spin`). After completion the chunk list auto-refreshes via `invalidateQueries`.
+- `SQLiteRatingStore.delete(rating_id)` — deletes a single rating row; used by `rate-chunk` to remove the previous AI rating before saving the new one.
+
+## `also_ai_rated` flag
+
+When a chunk has both a human rating and an AI rating, `get_work_chunks` and `list_rated_chunks` both return `also_ai_rated: true` on the displayed (human) rating dict. This flag lets the UI surface a dashed-border `AI` badge alongside the `Human` badge so users can see that an AI score also exists. `list_rated_chunks` deduplicates — only the best rating per chunk (human preferred over AI) is returned; the `also_ai_rated` flag on that entry signals the AI rating's existence without including a duplicate row.
 
 ## Writeback protocol
 

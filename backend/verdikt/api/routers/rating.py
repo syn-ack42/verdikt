@@ -170,21 +170,31 @@ def list_rated_chunks(
     chunk_store = SQLiteChunkStore(session)
     mat_store = SQLiteMaterialStore(session)
 
-    ratings = [r for r in rating_store.list_by_project(project_id) if not r.skipped]
+    all_ratings = [r for r in rating_store.list_by_project(project_id) if not r.skipped]
 
     if work_seq is not None:
         material = mat_store.get_by_seq(project_id, work_seq)
         if material is None:
             return []
         target_id = material.id
-        ratings = [r for r in ratings if r.material_item_id == target_id]
+        all_ratings = [r for r in all_ratings if r.material_item_id == target_id]
+
+    # Deduplicate: prefer human over AI for the same chunk
+    best_by_chunk: dict = {}
+    for r in all_ratings:
+        existing = best_by_chunk.get(r.chunk_id)
+        if existing is None or (existing.is_ai and not r.is_ai):
+            best_by_chunk[r.chunk_id] = r
+
+    # Track chunks that also have an AI rating (even when human wins)
+    ai_rated_chunk_ids = {r.chunk_id for r in all_ratings if r.is_ai}
 
     # Cache material info and chunk counts to avoid N+1
     mat_cache: dict = {}
     chunk_count_cache: dict = {}
 
     result = []
-    for r in ratings:
+    for r in best_by_chunk.values():
         mid = r.material_item_id
         if mid not in mat_cache:
             mat = mat_store.get(mid)
@@ -221,6 +231,7 @@ def list_rated_chunks(
             "dimension_scores": r.dimension_scores,
             "avg_score": round(avg_score, 2) if avg_score is not None else None,
             "is_ai": r.is_ai,
+            "also_ai_rated": (not r.is_ai) and (r.chunk_id in ai_rated_chunk_ids),
             "explanations": r.explanations,
             "rated_at": r.rated_at.isoformat(),
         })

@@ -181,6 +181,11 @@ export const api = {
         { chunk_id: chunkId, material_item_id: materialItemId },
         signal,
       ),
+    rateChunkAI: (projectId: string, chunkId: string, materialItemId: string) =>
+      req<{ ai_rating_id: string; dimension_scores: Record<string, number>; explanations: Record<string, string> }>(
+        'POST', `/projects/${projectId}/ai-rating/rate-chunk`,
+        { chunk_id: chunkId, material_item_id: materialItemId },
+      ),
     list: (projectId: string) => req<Rating[]>('GET', `/projects/${projectId}/ratings`),
     ratedChunks: (projectId: string, workSeq?: number) =>
       req<RatedChunkEntry[]>('GET', `/projects/${projectId}/ratings/rated-chunks${workSeq != null ? `?work_seq=${workSeq}` : ''}`),

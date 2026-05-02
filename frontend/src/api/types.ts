@@ -243,6 +243,7 @@ export interface ChunkRating {
   dimension_scores: Record<string, number>
   avg_score: number | null
   is_ai: boolean
+  also_ai_rated?: boolean
   explanations: Record<string, string>
   rated_at: string
 }
@@ -279,6 +280,7 @@ export interface RatedChunkEntry {
   dimension_scores: Record<string, number>
   avg_score: number | null
   is_ai: boolean
+  also_ai_rated?: boolean
   explanations: Record<string, string>
   rated_at: string
 }

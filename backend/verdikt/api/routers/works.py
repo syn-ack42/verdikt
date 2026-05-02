@@ -656,6 +656,9 @@ def get_work_chunks(
         if existing is None or (existing.is_ai and not r.is_ai):
             rating_by_chunk[r.chunk_id] = r
 
+    # Track which chunks also have an AI rating (even when human rating is shown)
+    ai_rated_chunk_ids = {r.chunk_id for r in all_ratings if r.is_ai}
+
     result = []
     for chunk in chunks:
         if isinstance(chunk.content, bytes):
@@ -676,6 +679,7 @@ def get_work_chunks(
                 "is_ai": r.is_ai,
                 "explanations": r.explanations,
                 "rated_at": r.rated_at.isoformat(),
+                "also_ai_rated": (not r.is_ai) and (chunk.id in ai_rated_chunk_ids),
             }
 
         result.append({

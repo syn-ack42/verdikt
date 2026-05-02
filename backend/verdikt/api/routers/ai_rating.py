@@ -270,6 +270,68 @@ def ai_preview_rating(
     }
 
 
+@router.post("/rate-chunk", status_code=201)
+def rate_chunk_ai(
+    project_id: str,
+    body: AiPreviewRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+    auth_session: Session = Depends(get_auth_session),
+) -> dict:
+    """Rate a single chunk with AI, replacing any existing AI rating. Used for explicit user-triggered (re-)rating."""
+    check_token_budget(user.id, auth_session)
+    proj = _get_project_or_404(project_id, session)
+
+    profile = SQLiteProfileStore(session).get_latest(project_id)
+    if profile is None:
+        raise HTTPException(status_code=503, detail="No profile found")
+
+    chunk = SQLiteChunkStore(session).get(body.chunk_id)
+    if chunk is None:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    config = get_config()
+    ollama_base_url, llm_model = resolve_llm_model(proj, config)
+    judge = LLMJudge(ollama_base_url, llm_model)
+
+    chunk_store = SQLiteChunkStore(session)
+    rating_store = SQLiteRatingStore(session)
+
+    try:
+        scores, _, explanations, description = judge.score_chunk(chunk.content, profile, proj)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"AI rating failed: {exc}")
+
+    if judge.usage:
+        p, c = judge.usage[-1]
+        record_usage(user.id, project_id, llm_model, "rate_chunk", p, c, auth_session)
+
+    # Delete any existing AI rating for this chunk before saving a new one
+    existing = [r for r in rating_store.list_by_project(project_id)
+                if r.chunk_id == body.chunk_id and r.is_ai and not r.skipped]
+    for old in existing:
+        rating_store.delete(old.id)
+
+    rating = Rating(
+        project_id=project_id,
+        chunk_id=body.chunk_id,
+        material_item_id=body.material_item_id,
+        dimension_scores=scores,
+        is_ai=True,
+        explanations=explanations,
+    )
+    rating_store.save(rating)
+    if description:
+        chunk_store.update_description(body.chunk_id, description)
+    session.commit()
+
+    return {
+        "ai_rating_id": rating.id,
+        "dimension_scores": scores,
+        "explanations": explanations,
+    }
+
+
 @router.get("/status")
 def get_ai_rating_status(
     project_id: str,

@@ -134,7 +134,7 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                 {editing.work_title ?? 'Unknown work'}
                 {editing.author && ` — ${editing.author}`}
-                {' · '}chunk {editing.chunk_position + 1} of {editing.chunk_count}
+                {editing.chunk_count > 1 && ` · chunk ${editing.chunk_position + 1} of ${editing.chunk_count}`}
               </div>
               {editing.chunk_domain === 'image' && editing.chunk_content ? (
                 <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
@@ -278,11 +278,18 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
 
                       {/* Meta row */}
                       <div style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span>Chunk {entry.chunk_position + 1} of {entry.chunk_count}</span>
+                        {entry.chunk_count > 1 && (
+                          <span>Chunk {entry.chunk_position + 1} of {entry.chunk_count}</span>
+                        )}
                         {entry.is_ai ? (
                           <span style={{ background: 'rgba(180,83,9,0.12)', color: '#b45309', fontSize: 10, padding: '2px 5px', borderRadius: 3, fontWeight: 600 }}>AI</span>
                         ) : (
-                          <span>Human</span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            Human
+                            {entry.also_ai_rated && (
+                              <span style={{ border: '1px dashed #b45309', color: '#b45309', fontSize: 10, padding: '0px 4px', borderRadius: 3, fontWeight: 600, opacity: 0.7 }} title="This chunk was also rated by AI">AI</span>
+                            )}
+                          </span>
                         )}
                       </div>
 

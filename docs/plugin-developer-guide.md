@@ -232,6 +232,99 @@ def fetch_by_ids(self, project_id, work_ids, **kwargs):
 
 ---
 
+## Remote content protocol
+
+For plugins that source remote content (e.g. a photo service), it is often preferable to store only a reference at ingest time and fetch the actual bytes lazily rather than downloading everything upfront.
+
+### Opting in
+
+Override two classmethods and one instance method:
+
+```python
+@classmethod
+def supports_remote_content(cls) -> bool:
+    return True
+
+def fetch_content(self, source_path: str) -> bytes:
+    """Fetch and return the raw bytes for the item identified by source_path."""
+    asset_id = source_path.removeprefix("myservice://")
+    return self._http_get_bytes(f"/assets/{asset_id}/file")
+```
+
+### How it works
+
+When `supports_remote_content()` returns `True`:
+
+- Set `content=b""` and `content_is_remote=True` on every `MaterialItem` in `fetch()`. Do **not** download bytes at ingest time.
+- The pipeline's chunk phase will call `fetch_content(source_path)` for each item to obtain the bytes before chunking.
+- A `thumbnail_size` config field (enum: `"preview"` / `"thumbnail"` / `"none"`) controls whether fetched bytes are persisted to `ChunkRow.content` after the first fetch:
+  - `"preview"` / `"thumbnail"` — bytes are stored once; all downstream reads (rating display, AI judge) use the DB copy.
+  - `"none"` — `ChunkRow.content` stays empty; every access (rating display, AI judge) calls `fetch_content()` on demand. Requires the remote service to be reachable at all times.
+
+```python
+# In fetch():
+yield MaterialItem(
+    project_id=project_id,
+    source_plugin=self.plugin_name,
+    source_path=f"myservice://{asset_id}",
+    content=b"",
+    content_is_remote=True,
+    content_hash=asset["checksum"],   # hash of the remote original
+    domain=Domain.IMAGE,
+    content_type=ContentType.JPEG,
+    plugin_metadata={"asset_id": asset_id},
+)
+```
+
+---
+
+## Writeback protocol
+
+Plugins that can push data back to their source (e.g. writing star ratings or descriptions back to a photo service) can implement writeback:
+
+### Opting in
+
+```python
+@classmethod
+def supports_writeback(cls) -> bool:
+    return True
+
+def writeback(self, project_id: str, session, options: dict) -> dict:
+    """
+    Push data back to the source.
+
+    options keys:
+        write_ratings: bool      — push Verdikt star ratings
+        write_descriptions: bool — push AI-generated chunk descriptions
+
+    Returns {"updated": N, "skipped": N, "errors": [...]}
+    """
+    updated, skipped, errors = 0, 0, []
+    for item in self._load_items(project_id, session):
+        payload = {}
+        if options.get("write_ratings"):
+            star = self._compute_star_rating(item, session)
+            if star is not None:
+                payload["rating"] = star
+        if options.get("write_descriptions"):
+            desc = self._get_description(item, session)
+            if desc:
+                payload["description"] = desc
+        if payload:
+            try:
+                self._push(item, payload)
+                updated += 1
+            except Exception as e:
+                errors.append(str(e))
+        else:
+            skipped += 1
+    return {"updated": updated, "skipped": skipped, "errors": errors}
+```
+
+When `supports_writeback()` returns `True`, Verdikt exposes a **Write back** button on the project dashboard for any project that has the plugin configured. The button opens a modal with opt-in checkboxes for each write type and calls `POST /api/projects/{id}/works/plugins/{name}/writeback`.
+
+---
+
 ## Config schema reference
 
 The `config_schema()` classmethod returns a [JSON Schema](https://json-schema.org/) `object`. Verdikt renders the config form automatically from this schema.
@@ -243,12 +336,37 @@ The `config_schema()` classmethod returns a [JSON Schema](https://json-schema.or
 | `{"type": "string"}` | Text input |
 | `{"type": "string", "format": "password"}` | Password input (masked) |
 | `{"type": "string", "format": "uri"}` | URL input |
+| `{"type": "string", "enum": ["a", "b", "c"]}` | Dropdown (`<select>`) |
 | `{"type": "integer"}` or `{"type": "number"}` | Number input (respects `minimum`/`maximum`) |
 | `{"type": "array", "items": {"type": "string"}}` | Dynamic list of text inputs |
 | `{"type": "array", "items": {"type": "string", "format": "uri"}}` | Dynamic list of URL inputs |
-| `{"type": "array", "items": {"type": "object", "properties": {...}}}` | Dynamic list of inline rows — each row renders one input per property (URL properties stretch, number properties are compact). When adding a new row, non-URL fields default to the previous row's values. |
+| `{"type": "array", "items": {"type": "object", "properties": {...}}}` | Dynamic list of inline rows — each row renders one input per property (URL properties stretch, enum properties render as dropdowns, number properties are compact). When adding a new row, non-URL fields default to the previous row's values. |
 
-Each property inside `items.properties` supports the same field-level keys as top-level properties: `type`, `format`, `title`, `minimum`, `maximum`, `default`.
+Each property inside `items.properties` supports the same field-level keys as top-level properties: `type`, `format`, `enum`, `title`, `minimum`, `maximum`, `default`.
+
+### Conditional fields in object-array rows
+
+Within an object-array, you can hide fields unless a discriminator field matches a specific value. Append `(for type=<value>)` to a field's `"description"` and the UI will show that field only when the row's `type` field equals `<value>`.
+
+```python
+"sources": {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "type":     {"type": "string", "enum": ["album", "search", "all"], "title": "Source type"},
+            "album_id": {"type": "string", "title": "Album ID",
+                         "description": "Immich album UUID (for type=album)"},
+            "query":    {"type": "string", "title": "Search query",
+                         "description": "Metadata search query (for type=search)"},
+            "max_items":{"type": "integer", "title": "Max items", "default": 500},
+        },
+        "required": ["type"],
+    },
+}
+```
+
+In this example, `album_id` is only shown when the row's `type` dropdown is set to `album`, and `query` is only shown when `type` is `search`. The `(for type=X)` clause is stripped from the displayed hint text.
 
 **Example** — a list of search targets each with their own result cap (as used by the built-in AO3 plugin):
 
