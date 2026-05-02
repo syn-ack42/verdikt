@@ -34,18 +34,28 @@ class MockEmbedder(EmbedderBase):
 class MockVectorStore(VectorStore):
     def __init__(self) -> None:
         self.upserted: list[str] = []
+        self._store: dict[str, list[float]] = {}
 
     def upsert(self, item_id: str, embedding: list[float], metadata: dict) -> None:
         self.upserted.append(item_id)
+        self._store[item_id] = embedding
 
     def query(self, embedding: list[float], n_results: int = 10) -> list[dict]:
         return []
 
     def delete_collection(self) -> None:
         self.upserted.clear()
+        self._store.clear()
 
     def delete_items(self, ids: list[str]) -> None:
         self.upserted = [i for i in self.upserted if i not in ids]
+        for id_ in ids:
+            self._store.pop(id_, None)
+
+    def get_all_embeddings(self) -> tuple[list[str], np.ndarray]:
+        ids = list(self._store.keys())
+        embs = np.array([self._store[i] for i in ids], dtype=np.float32) if ids else np.empty((0,), dtype=np.float32)
+        return ids, embs
 
 
 @pytest.fixture

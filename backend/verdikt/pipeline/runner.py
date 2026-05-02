@@ -135,58 +135,61 @@ class PipelineRunner:
 
     def _embed_stream(self, project_id: str) -> Generator[dict[str, Any], None, None]:
         items = list(self._materials.list_by_project(project_id, phase=PipelinePhase.CHUNKED))
-        all_chunks: list[Chunk] = []
+        yield {"type": "start", "total": len(items)}
+
+        processed = 0
         for item in items:
-            all_chunks.extend(self._chunks.list_by_material(item.id))
-
-        yield {"type": "start", "total": len(all_chunks)}
-
-        if not all_chunks:
-            yield {"type": "done", "items_processed": 0}
-            return
-
-        embeddings = self._embedder.embed([c.content for c in all_chunks])
-        for chunk, embedding in zip(all_chunks, embeddings):
-            self._vectors.upsert(
-                item_id=chunk.id,
-                embedding=embedding.tolist(),
-                metadata={
-                    "chunk_id": chunk.id,
-                    "project_id": chunk.project_id,
-                    "material_item_id": chunk.material_item_id,
-                    "position": chunk.position,
-                },
-            )
-
-        for item in items:
+            chunks = self._chunks.list_by_material(item.id)
+            if not chunks:
+                self._materials.update_phase(item.id, PipelinePhase.EMBEDDED)
+                continue
+            embeddings = self._embedder.embed([c.content for c in chunks])
+            for chunk, embedding in zip(chunks, embeddings):
+                self._vectors.upsert(
+                    item_id=chunk.id,
+                    embedding=embedding.tolist(),
+                    metadata={
+                        "chunk_id": chunk.id,
+                        "project_id": chunk.project_id,
+                        "material_item_id": chunk.material_item_id,
+                        "position": chunk.position,
+                    },
+                )
             self._materials.update_phase(item.id, PipelinePhase.EMBEDDED)
+            processed += len(chunks)
 
-        yield {"type": "done", "items_processed": len(all_chunks)}
+        yield {"type": "done", "items_processed": processed}
 
     def _cluster_stream(self, project_id: str) -> Generator[dict[str, Any], None, None]:
         from sklearn.cluster import KMeans
 
         items = list(self._materials.list_by_project(project_id, phase=PipelinePhase.EMBEDDED))
-        all_chunks: list[Chunk] = []
-        for item in items:
-            all_chunks.extend(self._chunks.list_by_material(item.id))
+        # Lightweight ID-only query — avoids loading content bytes
+        id_pairs = self._chunks.list_ids_by_project(project_id)
+        chunk_ids = [cid for cid, _ in id_pairs]
 
-        yield {"type": "start", "total": len(all_chunks)}
+        yield {"type": "start", "total": len(chunk_ids)}
 
-        if len(all_chunks) < 2:
+        if len(chunk_ids) < 2:
             for item in items:
                 self._materials.update_phase(item.id, PipelinePhase.CLUSTERED)
-            yield {"type": "done", "items_processed": len(all_chunks)}
+            yield {"type": "done", "items_processed": len(chunk_ids)}
             return
 
-        embeddings = self._embedder.embed([c.content for c in all_chunks])
-        n_clusters = max(2, isqrt(len(all_chunks)))
+        # Retrieve stored embeddings from vector store — no content bytes needed
+        stored_ids, all_embeddings = self._vectors.get_all_embeddings()
+        id_to_idx = {id_: i for i, id_ in enumerate(stored_ids)}
+        indices = [id_to_idx[cid] for cid in chunk_ids if cid in id_to_idx]
+        embeddings = all_embeddings[indices]
+
+        n_clusters = max(2, isqrt(len(indices)))
         labels = KMeans(n_clusters=n_clusters, random_state=42, n_init="auto").fit_predict(embeddings)
 
-        for chunk, label in zip(all_chunks, labels):
-            self._chunks.update_cluster(chunk.id, int(label))
+        for cid, label in zip(chunk_ids, labels):
+            if cid in id_to_idx:
+                self._chunks.update_cluster(cid, int(label))
 
         for item in items:
             self._materials.update_phase(item.id, PipelinePhase.CLUSTERED)
 
-        yield {"type": "done", "items_processed": len(all_chunks)}
+        yield {"type": "done", "items_processed": len(indices)}

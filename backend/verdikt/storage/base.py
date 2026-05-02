@@ -105,6 +105,15 @@ class VectorStore(ABC):
     @abstractmethod
     def delete_items(self, ids: list[str]) -> None: ...
 
+    @abstractmethod
+    def get_all_embeddings(self) -> tuple[list[str], "np.ndarray"]:
+        """Return (ids, embeddings) for every item in the collection.
+
+        Used by the cluster phase to retrieve stored embeddings without
+        re-loading content bytes from the database.
+        """
+        ...
+
 
 class RatingStore(ABC):
     @abstractmethod

@@ -7,6 +7,7 @@ import numpy as np
 from verdikt.inference.base import EmbedderBase
 
 _DEFAULT_MODEL = "openai/clip-vit-base-patch32"
+_CLIP_BATCH = 32
 
 
 class CLIPEmbedder(EmbedderBase):
@@ -29,28 +30,33 @@ class CLIPEmbedder(EmbedderBase):
         import torch
         from PIL import Image
 
-        images = []
-        for inp in inputs:
-            if isinstance(inp, bytes):
-                try:
-                    images.append(Image.open(io.BytesIO(inp)).convert("RGB"))
-                except Exception as exc:
-                    raise ValueError(f"Failed to decode image for CLIP embedding: {exc}") from exc
-            else:
-                raise TypeError(
-                    "CLIPEmbedder only accepts image bytes. "
-                    "For text projects use SentenceTransformerEmbedder."
-                )
+        if not inputs:
+            return np.empty((0, self.dimension), dtype=np.float32)
 
-        pixel_values = self._processor(images=images, return_tensors="pt")["pixel_values"]
-        with torch.no_grad():
-            vision_out = self._model.vision_model(pixel_values=pixel_values)
-            # pooler_output is the [CLS] token embedding; project to CLIP embedding space
-            features = self._model.visual_projection(vision_out.pooler_output)
-            # L2-normalise so cosine similarity == dot product in ChromaDB
-            features = torch.nn.functional.normalize(features, dim=-1)
-
-        return features.cpu().numpy().astype(np.float32)
+        results: list[np.ndarray] = []
+        for start in range(0, len(inputs), _CLIP_BATCH):
+            batch = inputs[start : start + _CLIP_BATCH]
+            images = []
+            for inp in batch:
+                if isinstance(inp, bytes):
+                    try:
+                        images.append(Image.open(io.BytesIO(inp)).convert("RGB"))
+                    except Exception as exc:
+                        raise ValueError(f"Failed to decode image for CLIP embedding: {exc}") from exc
+                else:
+                    raise TypeError(
+                        "CLIPEmbedder only accepts image bytes. "
+                        "For text projects use SentenceTransformerEmbedder."
+                    )
+            pixel_values = self._processor(images=images, return_tensors="pt")["pixel_values"]
+            with torch.no_grad():
+                vision_out = self._model.vision_model(pixel_values=pixel_values)
+                # pooler_output is the [CLS] token embedding; project to CLIP embedding space
+                features = self._model.visual_projection(vision_out.pooler_output)
+                # L2-normalise so cosine similarity == dot product in ChromaDB
+                features = torch.nn.functional.normalize(features, dim=-1)
+            results.append(features.cpu().numpy().astype(np.float32))
+        return np.concatenate(results, axis=0)
 
     @property
     def dimension(self) -> int:

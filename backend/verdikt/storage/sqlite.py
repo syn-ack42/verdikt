@@ -266,6 +266,24 @@ class SQLiteChunkStore(ChunkStore):
         )
         return [self._from_row(r) for r in rows]
 
+    def list_ids_by_project(self, project_id: str) -> list[tuple[str, str]]:
+        """Return [(chunk_id, material_item_id)] without loading content bytes."""
+        rows = (
+            self._s.query(ChunkRow.id, ChunkRow.material_item_id)
+            .filter(ChunkRow.project_id == project_id)
+            .order_by(ChunkRow.material_item_id, ChunkRow.position)
+            .all()
+        )
+        return [(r.id, r.material_item_id) for r in rows]
+
+    def get_by_ids(self, ids: list[str]) -> list[Chunk]:
+        """Fetch full Chunk objects for a specific list of IDs, preserving order."""
+        if not ids:
+            return []
+        rows = self._s.query(ChunkRow).filter(ChunkRow.id.in_(ids)).all()
+        by_id = {r.id: r for r in rows}
+        return [self._from_row(by_id[id_]) for id_ in ids if id_ in by_id]
+
     def update_cluster(self, chunk_id: str, cluster_id: int) -> None:
         self._s.execute(
             update(ChunkRow).where(ChunkRow.id == chunk_id).values(cluster_id=cluster_id)

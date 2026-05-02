@@ -41,7 +41,9 @@ def _make_stores(chunks: list[Chunk], ratings: list[Rating], ai_ratings: list[Ra
     """Build mocked store objects."""
     chunk_store = MagicMock()
     chunk_store.list_by_project.return_value = chunks
+    chunk_store.list_ids_by_project.return_value = [(c.id, c.material_item_id) for c in chunks]
     chunk_store.get.side_effect = lambda cid: next((c for c in chunks if c.id == cid), None)
+    chunk_store.get_by_ids.side_effect = lambda ids: [c for c in chunks if c.id in ids]
 
     all_ratings = ratings + (ai_ratings or [])
     rating_store = MagicMock()

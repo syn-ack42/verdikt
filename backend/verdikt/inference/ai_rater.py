@@ -88,17 +88,18 @@ class AIRater:
         # Phase 2: score new unrated chunks in batches
         rated_ids = self._ratings.get_all_rated_chunk_ids(project_id)
 
-        all_chunks = self._chunks.list_by_project(project_id)
-        unrated_chunks = [c for c in all_chunks if c.id not in rated_ids]
+        # Load only chunk IDs — avoids pulling all content bytes into memory
+        all_id_pairs = self._chunks.list_ids_by_project(project_id)
+        unrated_ids = [cid for cid, _ in all_id_pairs if cid not in rated_ids]
 
-        if not unrated_chunks:
+        if not unrated_ids:
             yield {"type": "complete", "total_rated": len(rated_ids)}
             return
 
         # Get similarity-ordered candidates from vector store.
         # Image projects use CLIP (bytes-only), so text-embedding the profile summary is
         # not possible; fall back to random ordering silently.
-        n_query = min(len(unrated_chunks), 500)
+        n_query = min(len(unrated_ids), 500)
         is_image = getattr(project.domain, "value", project.domain) == Domain.IMAGE.value
         similar_ids: list[str] = []
         if not is_image:
@@ -112,12 +113,12 @@ class AIRater:
         else:
             log.debug("ai_rater: image project — skipping text similarity, using random order")
 
+        unrated_id_set = set(unrated_ids)
         similar_set = set(similar_ids)
-        unrated_by_id = {c.id: c for c in unrated_chunks}
 
         # Build ordered pool: similarity-ranked first, then remaining
-        ordered_pool = [cid for cid in similar_ids if cid in unrated_by_id]
-        random_pool = [c.id for c in unrated_chunks if c.id not in similar_set]
+        ordered_pool = [cid for cid in similar_ids if cid in unrated_id_set]
+        random_pool = [cid for cid in unrated_ids if cid not in similar_set]
         random.shuffle(random_pool)
 
         batch_avgs: deque[float] = deque(maxlen=stop_window)
@@ -156,12 +157,15 @@ class AIRater:
             batch_num += 1
             batch_scores: list[float] = []
 
+            # Fetch content only for this batch — avoids holding all chunks in memory
+            batch_chunks_by_id = {c.id: c for c in self._chunks.get_by_ids(batch_ids)}
+
             for i, chunk_id in enumerate(batch_ids):
                 if stop_flag:
                     yield {"type": "stopped", "reason": "user_stopped", "total_rated": total_rated}
                     return
 
-                chunk = unrated_by_id.get(chunk_id)
+                chunk = batch_chunks_by_id.get(chunk_id)
                 if chunk is None:
                     continue
 

@@ -45,6 +45,11 @@ class _MockVectorStore(VectorStore):
         for i in ids:
             self._data.pop(i, None)
 
+    def get_all_embeddings(self):
+        ids = list(self._data.keys())
+        embs = np.array([self._data[i] for i in ids], dtype=np.float32) if ids else np.empty((0,), dtype=np.float32)
+        return ids, embs
+
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

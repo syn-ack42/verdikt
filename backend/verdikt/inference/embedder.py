@@ -30,7 +30,7 @@ class SentenceTransformerEmbedder(EmbedderBase):
             else:
                 encoded.append(inp)
 
-        return self._model.encode(encoded, convert_to_numpy=True).astype(np.float32)
+        return self._model.encode(encoded, batch_size=32, convert_to_numpy=True).astype(np.float32)
 
     @property
     def dimension(self) -> int:

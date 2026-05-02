@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import chromadb
 
 from verdikt.storage.base import VectorStore
@@ -38,3 +39,13 @@ class ChromaVectorStore(VectorStore):
     def delete_items(self, ids: list[str]) -> None:
         if ids:
             self._collection.delete(ids=ids)
+
+    def get_all_embeddings(self) -> tuple[list[str], np.ndarray]:
+        result = self._collection.get(include=["embeddings"])
+        ids: list[str] = result["ids"]
+        raw = result.get("embeddings")
+        if raw is not None and len(raw) > 0:
+            embs = np.array(raw, dtype=np.float32)
+        else:
+            embs = np.empty((0,), dtype=np.float32)
+        return ids, embs
