@@ -206,11 +206,6 @@ export default function ProjectDashboard() {
     },
   })
 
-  const { data: pluginConfigMap } = useQuery({
-    queryKey: ['plugin-config', projectId],
-    queryFn: () => api.works.getPluginConfig(projectId!),
-    enabled: !!projectId,
-  })
 
   // Check server for background update status; only poll while a job is actually running
   const { data: updateStatus, refetch: refetchUpdateStatus } = useQuery({
