@@ -133,7 +133,7 @@ class SQLiteMaterialStore(MaterialStore):
             select(MaterialItemRow).where(
                 MaterialItemRow.project_id == project_id,
                 MaterialItemRow.source_path == source_path,
-            )
+            ).limit(1)
         ).scalar_one_or_none()
         return self._from_row(row) if row else None
 
