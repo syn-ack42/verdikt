@@ -11,6 +11,7 @@ interface Props {
   domain: string
   onClose: () => void
   onIngest: (pluginName: string, config: Record<string, unknown>) => void
+  onBatchIngest?: (pluginName: string) => void
 }
 
 function defaultValues(schema: Record<string, unknown>): Record<string, unknown> {
@@ -33,7 +34,7 @@ function validateRequired(schema: Record<string, unknown>, values: Record<string
   return errors
 }
 
-export default function PluginIngestDialog({ projectId, domain, onClose, onIngest }: Props) {
+export default function PluginIngestDialog({ projectId, domain, onClose, onIngest, onBatchIngest }: Props) {
   const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null)
   const [configValues, setConfigValues] = useState<Record<string, unknown>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -71,7 +72,7 @@ export default function PluginIngestDialog({ projectId, domain, onClose, onInges
     setErrors({})
   }, [selectedPlugin, savedConfigs, plugins])
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const plugin = plugins?.find(p => p.name === selectedPlugin)
     if (!plugin) return
     const errs = validateRequired(plugin.config_schema, configValues)
@@ -80,13 +81,19 @@ export default function PluginIngestDialog({ projectId, domain, onClose, onInges
       if (sels.length === 0) { setErrors({ selections: 'Select at least one file or folder' }); return }
     }
     if (Object.keys(errs).length > 0) { setErrors(errs); return }
-    onIngest(selectedPlugin!, configValues)
+    if (plugin.supports_batched_ingest && onBatchIngest) {
+      await api.works.savePluginConfig(projectId, selectedPlugin!, configValues)
+      onBatchIngest(selectedPlugin!)
+    } else {
+      onIngest(selectedPlugin!, configValues)
+    }
     onClose()
   }
 
   const selectedPluginInfo = plugins?.find((p: PluginInfo) => p.name === selectedPlugin)
+  const isBatch = !!(selectedPluginInfo?.supports_batched_ingest && onBatchIngest)
   const buttonLabel = selectedPluginInfo
-    ? `Ingest ${selectedPluginInfo.title || selectedPlugin}`
+    ? `${isBatch ? 'Start' : 'Ingest'} ${selectedPluginInfo.title || selectedPlugin}`
     : 'Ingest'
   const pluginActions = selectedPluginInfo?.actions ?? []
 

@@ -209,6 +209,7 @@ export interface PluginInfo {
   description: string
   config_schema: Record<string, unknown>
   actions?: PluginAction[]
+  supports_batched_ingest?: boolean
 }
 
 export interface PluginConfig {

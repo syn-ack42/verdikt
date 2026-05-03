@@ -44,6 +44,7 @@ class ImmichPlugin(PluginBase):
         self._api_key = config.get("api_key", "")
         self._thumbnail_size = config.get("thumbnail_size", "preview")
         self._sources: list[dict] = config.get("sources") or [{"type": "all", "max_items": _DEFAULT_MAX_ITEMS}]
+        self._batch_size: int = int(config.get("batch_size") or _BATCH_SIZE)
 
     # ── PluginBase protocol ────────────────────────────────────────────────────
 
@@ -111,6 +112,17 @@ class ImmichPlugin(PluginBase):
                         "required": ["type"],
                     },
                 },
+                "batch_size": {
+                    "type": "integer",
+                    "title": "Batch size",
+                    "default": 50,
+                    "minimum": 10,
+                    "maximum": 250,
+                    "description": (
+                        "Photos fetched and processed per batch "
+                        "(lower = faster first results; higher = fewer pipeline runs)"
+                    ),
+                },
             },
             "required": ["base_url", "api_key"],
         }
@@ -158,10 +170,17 @@ class ImmichPlugin(PluginBase):
     def supports_batched_ingest(cls) -> bool:
         return True
 
-    def ingest_batch(self, project_id: str, state: dict | None) -> tuple[list[MaterialItem], dict | None]:
+    def ingest_batch(
+        self,
+        project_id: str,
+        state: dict | None,
+        existing_hashes: dict[str, str] | None = None,
+    ) -> tuple[list[MaterialItem], dict | None]:
         """Fetch one page of Immich assets.
 
         State shape: {"source_index": int, "page": int}
+        existing_hashes: {source_path: content_hash} — assets whose hash matches are returned
+            with skip_content=True (no thumbnail download) so the router marks them unchanged.
         Returns (items, next_state). next_state is None when all sources are exhausted.
         """
         if state is None:
@@ -182,18 +201,18 @@ class ImmichPlugin(PluginBase):
                     page = 1
                     continue
                 assets = self._album_assets(source.get("album_id", ""), max_items)
-                items = [i for i in (self._asset_to_item(a, project_id) for a in assets) if i]
+                items = [i for i in (self._asset_to_item(a, project_id, self._skip(a, existing_hashes)) for a in assets) if i]
                 next_si = source_index + 1
                 return items, ({"source_index": next_si, "page": 1} if next_si < len(self._sources) else None)
 
             # search / all — paginated
-            max_pages = (max_items + _BATCH_SIZE - 1) // _BATCH_SIZE
+            max_pages = (max_items + self._batch_size - 1) // self._batch_size
             if page > max_pages:
                 source_index += 1
                 page = 1
                 continue
 
-            batch_size = min(_BATCH_SIZE, max_items - (page - 1) * _BATCH_SIZE)
+            batch_size = min(self._batch_size, max_items - (page - 1) * self._batch_size)
             body: dict = {"type": "IMAGE", "page": page, "size": batch_size}
             if src_type == "search":
                 body["query"] = source.get("query", "")
@@ -210,7 +229,7 @@ class ImmichPlugin(PluginBase):
                 page = 1
                 continue
 
-            items = [i for i in (self._asset_to_item(a, project_id) for a in raw) if i]
+            items = [i for i in (self._asset_to_item(a, project_id, self._skip(a, existing_hashes)) for a in raw) if i]
 
             has_next_page = (
                 data.get("assets", {}).get("nextPage") is not None
@@ -223,6 +242,14 @@ class ImmichPlugin(PluginBase):
             return items, ({"source_index": next_si, "page": 1} if next_si < len(self._sources) else None)
 
         return [], None
+
+    def _skip(self, asset: dict, existing_hashes: dict[str, str] | None) -> bool:
+        """True if the asset is unchanged relative to existing_hashes (skip thumbnail download)."""
+        if not existing_hashes:
+            return False
+        asset_id = asset.get("id", "")
+        checksum = asset.get("checksum") or asset_id
+        return existing_hashes.get(f"immich://{asset_id}") == checksum
 
     # ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -481,7 +508,7 @@ class ImmichPlugin(PluginBase):
 
     # ── Asset → MaterialItem ───────────────────────────────────────────────────
 
-    def _asset_to_item(self, asset: dict, project_id: str) -> MaterialItem | None:
+    def _asset_to_item(self, asset: dict, project_id: str, skip_content: bool = False) -> MaterialItem | None:
         asset_id = asset.get("id", "")
         if not asset_id:
             return None
@@ -490,7 +517,10 @@ class ImmichPlugin(PluginBase):
         work_title = Path(original_name).stem
 
         thumbnail_size = self._thumbnail_size
-        if thumbnail_size != "none":
+        if skip_content or thumbnail_size == "none":
+            content = b""
+            content_is_remote = True
+        else:
             try:
                 content = self._get(f"/api/assets/{asset_id}/thumbnail?size={thumbnail_size}").content
                 content_is_remote = False
@@ -498,9 +528,6 @@ class ImmichPlugin(PluginBase):
                 log.exception("immich: failed to fetch thumbnail for asset %s", asset_id)
                 content = b""
                 content_is_remote = True
-        else:
-            content = b""
-            content_is_remote = True
 
         return MaterialItem(
             project_id=project_id,

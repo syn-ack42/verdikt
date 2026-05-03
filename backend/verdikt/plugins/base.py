@@ -125,10 +125,17 @@ class PluginBase(ABC):
         """
         return False
 
-    def ingest_batch(self, project_id: str, state: dict | None) -> tuple[list[MaterialItem], dict | None]:
+    def ingest_batch(
+        self,
+        project_id: str,
+        state: dict | None,
+        existing_hashes: dict[str, str] | None = None,
+    ) -> tuple[list[MaterialItem], dict | None]:
         """Fetch one batch of MaterialItems.
 
         state: opaque dict returned by the previous call (None = fresh start).
+        existing_hashes: {source_path: content_hash} for items already in the DB; plugins
+            may use this to skip re-downloading content for unchanged items.
         Returns (items, next_state). next_state is None when all content has been fetched.
         The router persists next_state between requests; its shape is entirely plugin-defined.
         """

@@ -170,13 +170,16 @@ def start_batch_stream(
         state_store.upsert(project_id, plugin_name, current_state or {}, "running", total_fetched)
         session.commit()
 
+        # Pre-load existing hashes so ingest_batch can skip re-downloading unchanged content
+        existing_hashes = mat_store.list_source_hashes(project_id, plugin_name)
+
         batch_num = 0
         total_added = total_updated = total_unchanged = 0
 
         while True:
             # ── fetch one batch ────────────────────────────────────────────────
             try:
-                items, next_state = plugin.ingest_batch(project_id, current_state)
+                items, next_state = plugin.ingest_batch(project_id, current_state, existing_hashes)
             except Exception as exc:
                 log.exception("batch ingest: ingest_batch failed")
                 yield _sse({"type": "error", "error": str(exc)})

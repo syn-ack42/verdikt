@@ -288,6 +288,13 @@ export default function ProjectDashboard() {
     if (!hadError && hadChanges) runPipeline()
   }
 
+  const startBatchIngest = async () => {
+    // Reset any prior run state then launch a fresh batch stream
+    try { await api.batchIngest.reset(projectId!) } catch { /* no state yet */ }
+    await refetchBatchStatus()
+    runBatchIngest()
+  }
+
   const runBatchIngest = async () => {
     setBatchRunning(true)
     setBatchError(null)
@@ -460,47 +467,42 @@ export default function ProjectDashboard() {
       <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <button
           onClick={() => setShowPluginIngest(true)}
-          disabled={ingestRunning}
-          style={{ padding: '8px 18px', background: '#6b7de0', color: '#fff', border: 'none', borderRadius: 6, cursor: ingestRunning ? 'default' : 'pointer', fontSize: 14 }}
+          disabled={ingestRunning || batchRunning}
+          style={{ padding: '8px 18px', background: '#6b7de0', color: '#fff', border: 'none', borderRadius: 6, cursor: (ingestRunning || batchRunning) ? 'default' : 'pointer', fontSize: 14 }}
         >
           {ingestRunning ? 'Ingesting…' : 'Ingest'}
         </button>
         <button
-          onClick={runUpdate}
-          disabled={updateRunning || serverRunning}
-          style={{ padding: '8px 18px', background: 'none', border: '1px solid #6b7de0', color: '#6b7de0', borderRadius: 6, cursor: updateRunning || serverRunning ? 'default' : 'pointer', fontSize: 14 }}
+          onClick={async () => {
+            if (batchStatus?.supported) {
+              await api.batchIngest.reset(projectId!)
+              await refetchBatchStatus()
+              runBatchIngest()
+            } else {
+              runUpdate()
+            }
+          }}
+          disabled={updateRunning || serverRunning || batchRunning}
+          style={{ padding: '8px 18px', background: 'none', border: '1px solid #6b7de0', color: '#6b7de0', borderRadius: 6, cursor: (updateRunning || serverRunning || batchRunning) ? 'default' : 'pointer', fontSize: 14 }}
         >
-          {updateRunning ? 'Updating…' : serverRunning && !updateRunning ? 'Update running…' : 'Update'}
+          {updateRunning ? 'Updating…' : batchRunning ? 'Importing…' : serverRunning && !updateRunning ? 'Update running…' : 'Update'}
         </button>
-        {batchStatus?.supported && (
-          <>
-            {batchRunning || batchStopping ? (
-              <button
-                onClick={async () => { setBatchStopping(true); await api.batchIngest.stop(projectId!) }}
-                disabled={batchStopping}
-                style={{ padding: '8px 18px', background: 'none', border: '1px solid #f59e0b', color: '#b45309', borderRadius: 6, cursor: batchStopping ? 'default' : 'pointer', fontSize: 14 }}
-              >
-                {batchStopping ? 'Stopping…' : 'Stop Batch'}
-              </button>
-            ) : (
-              <button
-                onClick={runBatchIngest}
-                disabled={batchStatus.status === 'done'}
-                title={batchStatus.status === 'done' ? 'Run complete — reset to start again' : undefined}
-                style={{ padding: '8px 18px', background: 'none', border: '1px solid #6b7de0', color: '#6b7de0', borderRadius: 6, cursor: batchStatus.status === 'done' ? 'default' : 'pointer', fontSize: 14 }}
-              >
-                {batchStatus.status === 'paused' ? 'Resume Batch' : batchStatus.status === 'done' ? 'Batch done ✓' : 'Batch Import'}
-              </button>
-            )}
-            {(batchStatus.status === 'paused' || batchStatus.status === 'done' || batchStatus.status === 'error') && !batchRunning && (
-              <button
-                onClick={async () => { await api.batchIngest.reset(projectId!); refetchBatchStatus(); setBatchCounts(null); setBatchError(null); setBatchLog([]) }}
-                style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', color: 'var(--text-muted)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}
-              >
-                Reset
-              </button>
-            )}
-          </>
+        {(batchRunning || batchStopping) && (
+          <button
+            onClick={async () => { setBatchStopping(true); await api.batchIngest.stop(projectId!) }}
+            disabled={batchStopping}
+            style={{ padding: '8px 18px', background: 'none', border: '1px solid #f59e0b', color: '#b45309', borderRadius: 6, cursor: batchStopping ? 'default' : 'pointer', fontSize: 14 }}
+          >
+            {batchStopping ? 'Stopping…' : 'Stop'}
+          </button>
+        )}
+        {!batchRunning && !batchStopping && batchStatus?.supported && batchStatus.status === 'paused' && (
+          <button
+            onClick={runBatchIngest}
+            style={{ padding: '8px 18px', background: 'none', border: '1px solid #6b7de0', color: '#6b7de0', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}
+          >
+            Resume
+          </button>
         )}
         <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>
         <Link to={`/projects/${projectId}/rate`}>
@@ -680,6 +682,15 @@ export default function ProjectDashboard() {
               </p>
             )}
             {batchError && <p style={{ margin: '4px 0 0', color: '#c00' }}>{batchError}</p>}
+            {!batchRunning && batchStatus?.supported &&
+              (batchStatus.status === 'paused' || batchStatus.status === 'done' || batchStatus.status === 'error') && (
+              <button
+                onClick={async () => { await api.batchIngest.reset(projectId!); refetchBatchStatus(); setBatchCounts(null); setBatchError(null); setBatchLog([]) }}
+                style={{ marginTop: 4, padding: '4px 12px', background: 'none', border: '1px solid var(--border, #ddd)', color: 'var(--text-muted)', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+              >
+                Reset
+              </button>
+            )}
           </div>
         )}
 
@@ -1050,6 +1061,10 @@ export default function ProjectDashboard() {
             setShowPluginIngest(false)
             refetchUpdateStatus()
             runIngest(pluginName, config)
+          }}
+          onBatchIngest={() => {
+            setShowPluginIngest(false)
+            startBatchIngest()
           }}
         />
       )}

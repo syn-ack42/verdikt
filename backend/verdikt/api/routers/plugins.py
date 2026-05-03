@@ -36,6 +36,7 @@ def list_plugins(
             "description": schema.get("description", ""),
             "config_schema": schema,
             "actions": cls.plugin_actions(),
+            "supports_batched_ingest": cls.supports_batched_ingest(),
         })
     return result
 

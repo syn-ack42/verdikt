@@ -150,6 +150,18 @@ class SQLiteMaterialStore(MaterialStore):
         ).scalars().all()
         return [self._from_row(r) for r in rows]
 
+    def list_source_hashes(self, project_id: str, source_plugin: str) -> dict[str, str]:
+        """Return {source_path: content_hash} for all items from a plugin — used to skip re-downloads."""
+        rows = self._s.execute(
+            select(MaterialItemRow.source_path, MaterialItemRow.content_hash).where(
+                MaterialItemRow.project_id == project_id,
+                MaterialItemRow.source_plugin == source_plugin,
+                MaterialItemRow.source_path.isnot(None),
+                MaterialItemRow.content_hash.isnot(None),
+            )
+        ).all()
+        return {row.source_path: row.content_hash for row in rows}
+
     def get_by_source(self, project_id: str, source_plugin: str, source_path: str) -> MaterialItem | None:
         row = self._s.execute(
             select(MaterialItemRow).where(
