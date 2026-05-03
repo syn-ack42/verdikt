@@ -314,13 +314,13 @@ export default function ProjectDashboard() {
           setBatchPipelinePhases(PHASES.map(p => ({ phase: p, status: 'waiting' })))
         } else if (event.type === 'pipeline_phase') {
           const phaseName = event.phase
-          const st = event.status as PhaseStatus
+          const st = event.status
           setBatchPipelinePhases(prev => prev.map(p =>
             p.phase !== phaseName ? p :
-            st === 'running' ? { ...p, status: 'running', total: event.total } :
-            st === 'progress' ? { ...p, status: 'running', current: event.current, total: event.total } :
-            st === 'done' ? { ...p, status: 'done', current: undefined } :
-            { ...p, status: 'error' }
+            st === 'running' ? { ...p, status: 'running' as PhaseStatus, total: event.total } :
+            st === 'progress' ? { ...p, status: 'running' as PhaseStatus, current: event.current, total: event.total } :
+            st === 'done' ? { ...p, status: 'done' as PhaseStatus, current: undefined } :
+            { ...p, status: 'error' as PhaseStatus }
           ))
         } else if (event.type === 'pipeline_done') {
           qc.invalidateQueries({ queryKey: ['works', projectId] })
