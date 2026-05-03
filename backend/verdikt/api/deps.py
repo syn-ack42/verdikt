@@ -126,6 +126,11 @@ def _make_user_engine(db_path: str, db_key: str) -> Engine:
             # when creator= is used, and sqlcipher3 enforces thread affinity at C level.
             conn = sqlcipher.connect(db_path, check_same_thread=False)
             conn.execute(f"PRAGMA key=\"{db_key}\"")
+            # WAL mode: readers and writers don't block each other, eliminating the
+            # lock contention caused by AI preview holding a read transaction during
+            # the LLM call while the user submits a rating concurrently.
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
             return conn
 
         # Use plain sqlite:// dialect so SQLAlchemy doesn't inject its own PRAGMA key.
@@ -139,11 +144,19 @@ def _make_user_engine(db_path: str, db_key: str) -> Engine:
         )
     except ImportError:
         log.warning("sqlcipher3 not installed — using plain SQLite (no encryption)")
+        from sqlalchemy import event as _sa_event
+
         engine = create_engine(
             f"sqlite:///{db_path}",
             connect_args={"check_same_thread": False},
             poolclass=NullPool,
         )
+
+        @_sa_event.listens_for(engine, "connect")
+        def _set_wal(dbapi_conn, _conn_record):
+            dbapi_conn.execute("PRAGMA journal_mode=WAL")
+            dbapi_conn.execute("PRAGMA busy_timeout=5000")
+
     return engine
 
 

@@ -232,6 +232,13 @@ export default function RatingInterface() {
         {' · '}cluster {chunk.cluster_id ?? '—'} · position {chunk.position}
       </div>
 
+      {chunk.description && (
+        <div style={{ marginBottom: 10, fontSize: 12, borderRadius: 6, background: 'rgba(107,125,224,0.06)', border: '1px solid rgba(107,125,224,0.13)', padding: '6px 10px', lineHeight: 1.5, color: 'var(--text)' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#6b7de0', marginRight: 6, letterSpacing: '0.05em' }}>AI</span>
+          {chunk.description}
+        </div>
+      )}
+
       <div ref={chunkBoxRef} style={{
         background: 'var(--chunk-bg)',
         border: '1px solid var(--border)',
@@ -247,12 +254,6 @@ export default function RatingInterface() {
           : chunk.content ?? '(no content)'
         }
       </div>
-
-      {chunk.description && (
-        <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.5 }}>
-          {chunk.description}
-        </div>
-      )}
 
       {mode === 'confirm_ai' && data?.ai_explanations && Object.keys(data.ai_explanations).length > 0 && (
         <div
@@ -280,6 +281,7 @@ export default function RatingInterface() {
           <RatingSlider
             key={dim.name}
             name={dim.name}
+            description={dim.description}
             score={scores[dim.name]}
             active={activeIdx === i}
             onScore={v => setScores(s => ({ ...s, [dim.name]: v }))}

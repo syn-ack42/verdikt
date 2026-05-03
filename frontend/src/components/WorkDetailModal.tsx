@@ -244,7 +244,7 @@ export default function WorkDetailModal({ projectId, workRef, dimensions, onClos
         border: '1px solid var(--border)',
       }}>
         {/* Header */}
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexShrink: 0 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h3 style={{ margin: 0, fontSize: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {work?.work_title ?? (isLoading ? 'Loading…' : 'Work Detail')}
@@ -254,156 +254,154 @@ export default function WorkDetailModal({ projectId, workRef, dimensions, onClos
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)', flexShrink: 0 }}>×</button>
         </div>
 
-        {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, padding: 'clamp(12px, 4vw, 20px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {isLoading && <p style={{ color: 'var(--text-muted)' }}>Loading…</p>}
-          {error && <p style={{ color: '#c00' }}>Failed to load work details.</p>}
-
-          {work && (
-            <>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ fontSize: 13, borderCollapse: 'collapse', width: '100%' }}>
-                  <tbody>
-                    <MetaRow label="Source">{work.source_plugin}</MetaRow>
-                    <MetaRow label="Status">
-                      <span style={{
-                        background: work.pipeline_phase === 'clustered' ? 'var(--badge-green-bg)' : 'var(--badge-yellow-bg)',
-                        color: work.pipeline_phase === 'clustered' ? 'var(--badge-green-text)' : 'var(--badge-yellow-text)',
-                        padding: '1px 6px', borderRadius: 3, fontSize: 11,
-                      }}>
-                        {work.pipeline_phase === 'clustered' ? 'processed' : work.pipeline_phase}
-                      </span>
-                    </MetaRow>
-                    <MetaRow label="Ingested">{work.ingested_at.slice(0, 10)}</MetaRow>
-                    {work.content_hash && (
-                      <MetaRow label="Hash">
-                        <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{work.content_hash.slice(0, 16)}…</span>
-                      </MetaRow>
-                    )}
-
-                    {/* AO3 */}
-                    {work.source_plugin === 'ao3' && work.plugin_metadata.work_id != null && (
-                      <MetaRow label="Work ID">{String(work.plugin_metadata.work_id)}</MetaRow>
-                    )}
-                    {work.source_plugin === 'ao3' && work.plugin_metadata.source_updated_at != null && (
-                      <MetaRow label="Last updated">{String(work.plugin_metadata.source_updated_at).slice(0, 10)}</MetaRow>
-                    )}
-                    {work.source_plugin === 'ao3' && work.url && (
-                      <MetaRow label="URL">
-                        <a href={work.url} target="_blank" rel="noopener noreferrer"
-                          style={{ color: '#6b7de0', wordBreak: 'break-all' }}>
-                          {work.url}
-                        </a>
-                      </MetaRow>
-                    )}
-
-                    {/* Storage / Filedrop */}
-                    {(work.source_plugin === 'filedrop' || work.source_plugin === 'storage') && (
-                      <MetaRow label="File">
-                        <span style={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: 12 }}>
-                          {work.storage_path ?? work.source_path}
-                        </span>
-                        {work.storage_path && (
-                          <a href={api.storage.downloadUrl(work.storage_path)} download
-                            style={{ marginLeft: 10, fontSize: 12, padding: '2px 8px', background: '#6b7de0', color: '#fff', borderRadius: 4, textDecoration: 'none' }}>
-                            Download
-                          </a>
-                        )}
-                      </MetaRow>
-                    )}
-
-                    {/* Immich */}
-                    {work.source_plugin === 'immich' && (() => {
-                      const href = work.url
-                        || (work.plugin_metadata.base_url && work.plugin_metadata.asset_id
-                            ? `${work.plugin_metadata.base_url}/photos/${work.plugin_metadata.asset_id}`
-                            : null)
-                      return href ? (
-                        <MetaRow label="View in Immich">
-                          <a href={href} target="_blank" rel="noopener noreferrer"
-                            style={{ color: '#6b7de0' }}>
-                            Open in Immich ↗
-                          </a>
-                        </MetaRow>
-                      ) : null
-                    })()}
-                    {work.source_plugin === 'immich' && work.plugin_metadata.original_filename != null && (
-                      <MetaRow label="Filename">{String(work.plugin_metadata.original_filename)}</MetaRow>
-                    )}
-                    {work.source_plugin === 'immich' && work.plugin_metadata.file_created_at != null && (
-                      <MetaRow label="Captured">{String(work.plugin_metadata.file_created_at).slice(0, 10)}</MetaRow>
-                    )}
-
-                    {/* Generic fallback for any other plugin */}
-                    {!['ao3', 'filedrop', 'storage', 'immich'].includes(work.source_plugin) &&
-                      Object.entries(work.plugin_metadata).map(([k, v]) => v != null && v !== '' ? (
-                        <MetaRow key={k} label={k}>
-                          <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{String(v)}</span>
-                        </MetaRow>
-                      ) : null)
-                    }
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Chunks section */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <h4 style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    {hasChunks ? `Chunks (${chunks.length})` : work.content_is_image ? 'Image' : 'Content'}
-                  </h4>
-                  {hasChunks && chunks.length > 1 && (
-                    <button
-                      onClick={() => allCollapsed
-                        ? setCollapsedChunks(new Set())
-                        : setCollapsedChunks(new Set(chunks.map(c => c.chunk_id)))
-                      }
-                      style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-                    >
-                      {allCollapsed ? 'Expand all' : 'Collapse all'}
-                    </button>
-                  )}
-                </div>
-
-                {chunksLoading && <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading chunks…</p>}
-
-                {hasChunks ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {chunks.map(chunk => (
-                      <ChunkBlock
-                        key={chunk.chunk_id}
-                        chunk={chunk}
-                        work={work}
-                        dimensions={dimensions}
-                        projectId={projectId}
-                        collapsed={collapsedChunks.has(chunk.chunk_id)}
-                        onToggleCollapse={() => toggleChunk(chunk.chunk_id)}
-                      />
-                    ))}
-                  </div>
-                ) : !chunksLoading && (
-                  work.content_is_image && work.content ? (
-                    <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
-                      <img src={`data:image/jpeg;base64,${work.content}`} alt={work.work_title ?? 'image'} style={{ maxWidth: '100%', maxHeight: 'clamp(200px, 40vh, 480px)', objectFit: 'contain', borderRadius: 4 }} />
-                    </div>
-                  ) : work.content ? (
-                    <div style={{
-                      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
-                      padding: '12px 16px', maxHeight: 'clamp(180px, 35vh, 400px)', overflowY: 'auto',
-                      fontSize: 14, lineHeight: 1.75, whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word', overflowWrap: 'anywhere',
-                      fontFamily: 'Georgia, serif',
-                    }}>
-                      {work.content}
-                    </div>
-                  ) : (
-                    <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>(No content)</p>
-                  )
+        {/* Metadata — pinned, never scrolls away */}
+        {isLoading && <p style={{ flexShrink: 0, margin: 0, padding: '12px 20px', color: 'var(--text-muted)' }}>Loading…</p>}
+        {error && <p style={{ flexShrink: 0, margin: 0, padding: '12px 20px', color: '#c00' }}>Failed to load work details.</p>}
+        {work && (
+          <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)', padding: 'clamp(8px, 3vw, 14px) clamp(12px, 4vw, 20px)', overflowX: 'auto' }}>
+            <table style={{ fontSize: 13, borderCollapse: 'collapse', width: '100%' }}>
+              <tbody>
+                <MetaRow label="Source">{work.source_plugin}</MetaRow>
+                <MetaRow label="Status">
+                  <span style={{
+                    background: work.pipeline_phase === 'clustered' ? 'var(--badge-green-bg)' : 'var(--badge-yellow-bg)',
+                    color: work.pipeline_phase === 'clustered' ? 'var(--badge-green-text)' : 'var(--badge-yellow-text)',
+                    padding: '1px 6px', borderRadius: 3, fontSize: 11,
+                  }}>
+                    {work.pipeline_phase === 'clustered' ? 'processed' : work.pipeline_phase}
+                  </span>
+                </MetaRow>
+                <MetaRow label="Ingested">{work.ingested_at.slice(0, 10)}</MetaRow>
+                {work.content_hash && (
+                  <MetaRow label="Hash">
+                    <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{work.content_hash.slice(0, 16)}…</span>
+                  </MetaRow>
                 )}
+
+                {/* AO3 */}
+                {work.source_plugin === 'ao3' && work.plugin_metadata.work_id != null && (
+                  <MetaRow label="Work ID">{String(work.plugin_metadata.work_id)}</MetaRow>
+                )}
+                {work.source_plugin === 'ao3' && work.plugin_metadata.source_updated_at != null && (
+                  <MetaRow label="Last updated">{String(work.plugin_metadata.source_updated_at).slice(0, 10)}</MetaRow>
+                )}
+                {work.source_plugin === 'ao3' && work.url && (
+                  <MetaRow label="URL">
+                    <a href={work.url} target="_blank" rel="noopener noreferrer"
+                      style={{ color: '#6b7de0', wordBreak: 'break-all' }}>
+                      {work.url}
+                    </a>
+                  </MetaRow>
+                )}
+
+                {/* Storage / Filedrop */}
+                {(work.source_plugin === 'filedrop' || work.source_plugin === 'storage') && (
+                  <MetaRow label="File">
+                    <span style={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: 12 }}>
+                      {work.storage_path ?? work.source_path}
+                    </span>
+                    {work.storage_path && (
+                      <a href={api.storage.downloadUrl(work.storage_path)} download
+                        style={{ marginLeft: 10, fontSize: 12, padding: '2px 8px', background: '#6b7de0', color: '#fff', borderRadius: 4, textDecoration: 'none' }}>
+                        Download
+                      </a>
+                    )}
+                  </MetaRow>
+                )}
+
+                {/* Immich */}
+                {work.source_plugin === 'immich' && (() => {
+                  const href = work.url
+                    || (work.plugin_metadata.base_url && work.plugin_metadata.asset_id
+                        ? `${work.plugin_metadata.base_url}/photos/${work.plugin_metadata.asset_id}`
+                        : null)
+                  return href ? (
+                    <MetaRow label="View in Immich">
+                      <a href={href} target="_blank" rel="noopener noreferrer"
+                        style={{ color: '#6b7de0' }}>
+                        Open in Immich ↗
+                      </a>
+                    </MetaRow>
+                  ) : null
+                })()}
+                {work.source_plugin === 'immich' && work.plugin_metadata.original_filename != null && (
+                  <MetaRow label="Filename">{String(work.plugin_metadata.original_filename)}</MetaRow>
+                )}
+                {work.source_plugin === 'immich' && work.plugin_metadata.file_created_at != null && (
+                  <MetaRow label="Captured">{String(work.plugin_metadata.file_created_at).slice(0, 10)}</MetaRow>
+                )}
+
+                {/* Generic fallback for any other plugin */}
+                {!['ao3', 'filedrop', 'storage', 'immich'].includes(work.source_plugin) &&
+                  Object.entries(work.plugin_metadata).map(([k, v]) => v != null && v !== '' ? (
+                    <MetaRow key={k} label={k}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{String(v)}</span>
+                    </MetaRow>
+                  ) : null)
+                }
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Chunks — this is the only part that scrolls */}
+        {work && (
+          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: 'clamp(12px, 4vw, 20px)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <h4 style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {hasChunks ? `Chunks (${chunks.length})` : work.content_is_image ? 'Image' : 'Content'}
+              </h4>
+              {hasChunks && chunks.length > 1 && (
+                <button
+                  onClick={() => allCollapsed
+                    ? setCollapsedChunks(new Set())
+                    : setCollapsedChunks(new Set(chunks.map(c => c.chunk_id)))
+                  }
+                  style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                >
+                  {allCollapsed ? 'Expand all' : 'Collapse all'}
+                </button>
+              )}
+            </div>
+
+            {chunksLoading && <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading chunks…</p>}
+
+            {hasChunks ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {chunks.map(chunk => (
+                  <ChunkBlock
+                    key={chunk.chunk_id}
+                    chunk={chunk}
+                    work={work}
+                    dimensions={dimensions}
+                    projectId={projectId}
+                    collapsed={collapsedChunks.has(chunk.chunk_id)}
+                    onToggleCollapse={() => toggleChunk(chunk.chunk_id)}
+                  />
+                ))}
               </div>
-            </>
-          )}
-        </div>
+            ) : !chunksLoading && (
+              work.content_is_image && work.content ? (
+                <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
+                  <img src={`data:image/jpeg;base64,${work.content}`} alt={work.work_title ?? 'image'} style={{ maxWidth: '100%', maxHeight: 'clamp(200px, 40vh, 480px)', objectFit: 'contain', borderRadius: 4 }} />
+                </div>
+              ) : work.content ? (
+                <div style={{
+                  background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
+                  padding: '12px 16px', maxHeight: 'clamp(180px, 35vh, 400px)', overflowY: 'auto',
+                  fontSize: 14, lineHeight: 1.75, whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word', overflowWrap: 'anywhere',
+                  fontFamily: 'Georgia, serif',
+                }}>
+                  {work.content}
+                </div>
+              ) : (
+                <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>(No content)</p>
+              )
+            )}
+          </div>
+        )}
+
 
         {/* Footer */}
         {onRemove && (
