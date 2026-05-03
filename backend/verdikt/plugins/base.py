@@ -115,3 +115,21 @@ class PluginBase(ABC):
         {"updated": int, "skipped": int, "errors": list[str]}).
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not implement run_action()")
+
+    @classmethod
+    def supports_batched_ingest(cls) -> bool:
+        """True if this plugin implements the batched ingest protocol.
+
+        Batched ingest fetches content in small pages, runs the pipeline after each page,
+        and persists state so runs can be resumed, stopped, or reset.
+        """
+        return False
+
+    def ingest_batch(self, project_id: str, state: dict | None) -> tuple[list[MaterialItem], dict | None]:
+        """Fetch one batch of MaterialItems.
+
+        state: opaque dict returned by the previous call (None = fresh start).
+        Returns (items, next_state). next_state is None when all content has been fetched.
+        The router persists next_state between requests; its shape is entirely plugin-defined.
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not implement ingest_batch()")

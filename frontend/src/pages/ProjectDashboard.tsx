@@ -7,7 +7,7 @@ import PluginIngestDialog from '../components/PluginIngestDialog'
 import WorkDetailModal from '../components/WorkDetailModal'
 import RatedChunksModal from '../components/RatedChunksModal'
 import { useIsMobile } from '../hooks/useIsMobile'
-import type { AIRatingStatus, PipelineStreamEvent, PluginIngestEvent, UpdatePluginEvent } from '../api/types'
+import type { AIRatingStatus, BatchIngestEvent, PipelineStreamEvent, PluginIngestEvent, UpdatePluginEvent } from '../api/types'
 
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -106,6 +106,15 @@ export default function ProjectDashboard() {
   const [phaseProgress, setPhaseProgress] = useState<PhaseProgress[]>([])
   const [pipelineError, setPipelineError] = useState<string | null>(null)
 
+  // Batch ingest state
+  const [batchRunning, setBatchRunning] = useState(false)
+  const [batchLog, setBatchLog] = useState<{ work: string; status: string }[]>([])
+  const [batchCounts, setBatchCounts] = useState<{ added: number; updated: number; unchanged: number; batches: number; fetched: number } | null>(null)
+  const [batchPipelinePhases, setBatchPipelinePhases] = useState<PhaseProgress[]>([])
+  const [batchError, setBatchError] = useState<string | null>(null)
+  const [batchStopping, setBatchStopping] = useState(false)
+  const batchLogRef = useRef<HTMLDivElement>(null)
+
   // Works table sort + pagination state
   const [sortBy, setSortBy] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
@@ -184,6 +193,12 @@ export default function ProjectDashboard() {
   })
   const serverRunning = updateStatus?.running ?? false
 
+  const { data: batchStatus, refetch: refetchBatchStatus } = useQuery({
+    queryKey: ['batch-ingest-status', projectId],
+    queryFn: () => api.batchIngest.status(projectId!),
+    enabled: !!projectId,
+  })
+
   // Auto-scroll logs
   useEffect(() => {
     if (updateLogRef.current) updateLogRef.current.scrollTop = updateLogRef.current.scrollHeight
@@ -191,6 +206,9 @@ export default function ProjectDashboard() {
   useEffect(() => {
     if (ingestLogRef.current) ingestLogRef.current.scrollTop = ingestLogRef.current.scrollHeight
   }, [ingestLog])
+  useEffect(() => {
+    if (batchLogRef.current) batchLogRef.current.scrollTop = batchLogRef.current.scrollHeight
+  }, [batchLog])
 
   const runIngest = async (pluginName: string, config: Record<string, unknown>) => {
     const plugin = (await api.plugins.list()).find(p => p.name === pluginName)
@@ -268,6 +286,51 @@ export default function ProjectDashboard() {
       setUpdateRunning(false)
     }
     if (!hadError && hadChanges) runPipeline()
+  }
+
+  const runBatchIngest = async () => {
+    setBatchRunning(true)
+    setBatchError(null)
+    setBatchLog([])
+    setBatchCounts(null)
+    setBatchPipelinePhases([])
+    setBatchStopping(false)
+    try {
+      await api.batchIngest.startStream(projectId!, (event: BatchIngestEvent) => {
+        if (event.type === 'batch_start') {
+          setBatchPipelinePhases([])
+        } else if (event.type === 'item') {
+          setBatchLog(l => [...l.slice(-199), { work: event.work, status: event.status }])
+        } else if (event.type === 'batch_done') {
+          setBatchCounts({ added: event.total_added, updated: event.total_updated, unchanged: event.total_unchanged, batches: event.batch, fetched: event.total_fetched })
+        } else if (event.type === 'pipeline_start') {
+          setBatchPipelinePhases(PHASES.map(p => ({ phase: p, status: 'waiting' })))
+        } else if (event.type === 'pipeline_phase') {
+          const phaseName = event.phase
+          const st = event.status as PhaseStatus
+          setBatchPipelinePhases(prev => prev.map(p =>
+            p.phase !== phaseName ? p :
+            st === 'running' ? { ...p, status: 'running', total: event.total } :
+            st === 'progress' ? { ...p, status: 'running', current: event.current, total: event.total } :
+            st === 'done' ? { ...p, status: 'done', current: undefined } :
+            { ...p, status: 'error' }
+          ))
+        } else if (event.type === 'pipeline_done') {
+          qc.invalidateQueries({ queryKey: ['works', projectId] })
+        } else if (event.type === 'complete' || event.type === 'paused') {
+          qc.invalidateQueries({ queryKey: ['works', projectId] })
+          refetchBatchStatus()
+        } else if (event.type === 'error') {
+          setBatchError(event.error)
+        }
+      })
+    } catch (e) {
+      setBatchError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBatchRunning(false)
+      setBatchStopping(false)
+      refetchBatchStatus()
+    }
   }
 
   const runPipeline = async () => {
@@ -409,6 +472,36 @@ export default function ProjectDashboard() {
         >
           {updateRunning ? 'Updating…' : serverRunning && !updateRunning ? 'Update running…' : 'Update'}
         </button>
+        {batchStatus?.supported && (
+          <>
+            {batchRunning || batchStopping ? (
+              <button
+                onClick={async () => { setBatchStopping(true); await api.batchIngest.stop(projectId!) }}
+                disabled={batchStopping}
+                style={{ padding: '8px 18px', background: 'none', border: '1px solid #f59e0b', color: '#b45309', borderRadius: 6, cursor: batchStopping ? 'default' : 'pointer', fontSize: 14 }}
+              >
+                {batchStopping ? 'Stopping…' : 'Stop Batch'}
+              </button>
+            ) : (
+              <button
+                onClick={runBatchIngest}
+                disabled={batchStatus.status === 'done'}
+                title={batchStatus.status === 'done' ? 'Run complete — reset to start again' : undefined}
+                style={{ padding: '8px 18px', background: 'none', border: '1px solid #6b7de0', color: '#6b7de0', borderRadius: 6, cursor: batchStatus.status === 'done' ? 'default' : 'pointer', fontSize: 14 }}
+              >
+                {batchStatus.status === 'paused' ? 'Resume Batch' : batchStatus.status === 'done' ? 'Batch done ✓' : 'Batch Import'}
+              </button>
+            )}
+            {(batchStatus.status === 'paused' || batchStatus.status === 'done' || batchStatus.status === 'error') && !batchRunning && (
+              <button
+                onClick={async () => { await api.batchIngest.reset(projectId!); refetchBatchStatus(); setBatchCounts(null); setBatchError(null); setBatchLog([]) }}
+                style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', color: 'var(--text-muted)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}
+              >
+                Reset
+              </button>
+            )}
+          </>
+        )}
         <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>
         <Link to={`/projects/${projectId}/rate`}>
           <button style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>
@@ -552,6 +645,41 @@ export default function ProjectDashboard() {
               </p>
             )}
             {updateError && <p style={{ margin: '4px 0 0', color: '#c00' }}>{updateError}</p>}
+          </div>
+        )}
+
+        {/* Batch ingest progress */}
+        {(batchRunning || batchCounts || batchError) && (
+          <div style={{ width: '100%', marginTop: 8, fontSize: 13 }}>
+            {batchRunning && (
+              <p style={{ margin: '0 0 4px', color: '#6b7de0' }}>
+                Batch import — {batchCounts ? `batch ${batchCounts.batches}, ${batchCounts.fetched} fetched` : 'starting…'}
+                {batchStopping && ' (stopping after this batch…)'}
+              </p>
+            )}
+            {batchRunning && batchLog.length > 0 && (
+              <div ref={batchLogRef} style={{ height: 42, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 10px', display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 4 }}>
+                {batchLog.map((e, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, lineHeight: '19px' }}>
+                    <span style={{ color: e.status === 'added' ? '#2e7d32' : e.status === 'updated' ? '#6b7de0' : 'var(--text-muted)', width: 12 }}>
+                      {e.status === 'added' ? '+' : e.status === 'updated' ? '↑' : '·'}
+                    </span>
+                    <span style={{ color: e.status === 'unchanged' ? 'var(--text-muted)' : 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.work}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {batchRunning && batchPipelinePhases.length > 0 && (
+              <PipelineProgress phases={batchPipelinePhases} />
+            )}
+            {!batchRunning && batchCounts && !batchError && (
+              <p style={{ margin: '4px 0 0', color: batchStatus?.supported && batchStatus.status === 'paused' ? '#b45309' : '#390' }}>
+                {batchStatus?.supported && batchStatus.status === 'paused'
+                  ? `Paused after batch ${batchCounts.batches} — ${batchCounts.fetched} fetched · ${batchCounts.added} added, ${batchCounts.updated} updated`
+                  : `Done — ${batchCounts.batches} batches · ${batchCounts.added} added, ${batchCounts.updated} updated, ${batchCounts.unchanged} unchanged`}
+              </p>
+            )}
+            {batchError && <p style={{ margin: '4px 0 0', color: '#c00' }}>{batchError}</p>}
           </div>
         )}
 

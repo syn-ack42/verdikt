@@ -10,7 +10,7 @@ from verdikt.core.models import (
     PluginConfig, PreferenceProfile, Project, Rating, RatingDimension,
 )
 from verdikt.storage.base import ChunkStore, MaterialStore, PluginConfigStore, ProfileStore, ProjectStore, RatingStore
-from verdikt.storage.orm import ChunkRow, MaterialItemRow, PluginConfigRow, PreferenceProfileRow, ProjectRow, RatingRow
+from verdikt.storage.orm import ChunkRow, MaterialItemRow, PluginBatchStateRow, PluginConfigRow, PreferenceProfileRow, ProjectRow, RatingRow
 
 
 class SQLiteProjectStore(ProjectStore):
@@ -618,3 +618,59 @@ class SQLitePluginConfigStore(PluginConfigStore):
             created_at=r.created_at,
             updated_at=r.updated_at,
         )
+
+
+class SQLitePluginBatchStateStore:
+    """Persists plugin batch-ingest progress — one row per (project, plugin)."""
+
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def get(self, project_id: str, plugin_name: str) -> PluginBatchStateRow | None:
+        return (
+            self._s.query(PluginBatchStateRow)
+            .filter_by(project_id=project_id, plugin_name=plugin_name)
+            .first()
+        )
+
+    def upsert(
+        self,
+        project_id: str,
+        plugin_name: str,
+        state: dict,
+        status: str,
+        fetched: int,
+        total: int | None = None,
+    ) -> PluginBatchStateRow:
+        from datetime import timezone
+        from uuid import uuid4
+
+        now = __import__("datetime").datetime.now(timezone.utc)
+        row = self.get(project_id, plugin_name)
+        if row is None:
+            row = PluginBatchStateRow(
+                id=str(uuid4()),
+                project_id=project_id,
+                plugin_name=plugin_name,
+                state_json=json.dumps(state),
+                status=status,
+                fetched=fetched,
+                total=total,
+                updated_at=now,
+            )
+            self._s.add(row)
+        else:
+            row.state_json = json.dumps(state)
+            row.status = status
+            row.fetched = fetched
+            if total is not None:
+                row.total = total
+            row.updated_at = now
+        self._s.flush()
+        return row
+
+    def delete(self, project_id: str, plugin_name: str) -> None:
+        row = self.get(project_id, plugin_name)
+        if row:
+            self._s.delete(row)
+            self._s.flush()

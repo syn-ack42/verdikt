@@ -1,5 +1,5 @@
 import type {
-  AIRatingStatus, CrystalliseStatus, IngestResult, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
+  AIRatingStatus, BatchIngestEvent, BatchIngestStatus, CrystalliseStatus, IngestResult, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
   PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, ProjectDefaults, RatedChunkEntry, Rating, SiteSettings, StorageListing,
   TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkChunk, WorkDetail, WritebackResult, WorksListResponse,
 } from './types'
@@ -159,6 +159,16 @@ export const api = {
     help: (pluginName: string) => req<{ markdown: string }>('GET', `/plugins/${encodeURIComponent(pluginName)}/help`),
     runAction: (pluginName: string, projectId: string, actionName: string, options: Record<string, unknown>) =>
       req<WritebackResult>('POST', `/plugins/${encodeURIComponent(pluginName)}/projects/${encodeURIComponent(projectId)}/actions/${encodeURIComponent(actionName)}`, options),
+  },
+  batchIngest: {
+    status: (projectId: string) =>
+      req<BatchIngestStatus>('GET', `/projects/${projectId}/batch-ingest/status`),
+    startStream: (projectId: string, onEvent: (e: BatchIngestEvent) => void) =>
+      streamFetch(`/projects/${projectId}/batch-ingest/start/stream`, { method: 'POST' }, onEvent as (e: unknown) => void),
+    stop: (projectId: string) =>
+      req<{ ok: boolean }>('POST', `/projects/${projectId}/batch-ingest/stop`),
+    reset: (projectId: string) =>
+      req<{ status: string }>('POST', `/projects/${projectId}/batch-ingest/reset`),
   },
   pipeline: {
     run: (projectId: string) => req<PipelineResult>('POST', `/projects/${projectId}/pipeline/run`),

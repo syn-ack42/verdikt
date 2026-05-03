@@ -348,3 +348,18 @@ export type PluginIngestEvent =
   | { work: string; status: 'added' | 'updated' | 'unchanged'; added: number; updated: number; skipped: number }
   | { complete: true; added: number; updated: number; skipped: number }
   | { error: string }
+
+export type BatchIngestStatus =
+  | { supported: false }
+  | { supported: true; plugin: string; status: 'idle' | 'running' | 'paused' | 'done' | 'error'; fetched: number; total: number | null }
+
+export type BatchIngestEvent =
+  | { type: 'batch_start'; batch: number }
+  | { type: 'item'; work: string; status: 'added' | 'updated' | 'unchanged'; batch_added: number; batch_updated: number; batch_unchanged: number }
+  | { type: 'batch_done'; batch: number; added: number; updated: number; unchanged: number; total_added: number; total_updated: number; total_unchanged: number; total_fetched: number }
+  | { type: 'pipeline_start'; batch: number }
+  | { type: 'pipeline_phase'; phase: string; status: string; current?: number; total?: number }
+  | { type: 'pipeline_done'; batch: number }
+  | { type: 'complete'; batches: number; total_added: number; total_updated: number; total_unchanged: number; total_fetched: number }
+  | { type: 'paused'; batch: number; total_fetched: number }
+  | { type: 'error'; error: string }

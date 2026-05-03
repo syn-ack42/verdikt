@@ -32,6 +32,7 @@ log = logging.getLogger(__name__)
 
 _DEFAULT_MAX_ITEMS = 500
 _PAGE_SIZE = 250
+_BATCH_SIZE = 50  # items per batched-ingest page
 
 
 class ImmichPlugin(PluginBase):
@@ -150,6 +151,78 @@ class ImmichPlugin(PluginBase):
         if action_name == "writeback":
             return self.writeback(project_id, session, options)
         raise NotImplementedError(action_name)
+
+    # ── Batched ingest protocol ────────────────────────────────────────────────
+
+    @classmethod
+    def supports_batched_ingest(cls) -> bool:
+        return True
+
+    def ingest_batch(self, project_id: str, state: dict | None) -> tuple[list[MaterialItem], dict | None]:
+        """Fetch one page of Immich assets.
+
+        State shape: {"source_index": int, "page": int}
+        Returns (items, next_state). next_state is None when all sources are exhausted.
+        """
+        if state is None:
+            state = {"source_index": 0, "page": 1}
+
+        source_index: int = state.get("source_index", 0)
+        page: int = state.get("page", 1)
+
+        while source_index < len(self._sources):
+            source = self._sources[source_index]
+            src_type = source.get("type", "all")
+            max_items = int(source.get("max_items") or _DEFAULT_MAX_ITEMS)
+
+            if src_type == "album":
+                # Albums are fetched all at once (no server-side pagination)
+                if page > 1:
+                    source_index += 1
+                    page = 1
+                    continue
+                assets = self._album_assets(source.get("album_id", ""), max_items)
+                items = [i for i in (self._asset_to_item(a, project_id) for a in assets) if i]
+                next_si = source_index + 1
+                return items, ({"source_index": next_si, "page": 1} if next_si < len(self._sources) else None)
+
+            # search / all — paginated
+            max_pages = (max_items + _BATCH_SIZE - 1) // _BATCH_SIZE
+            if page > max_pages:
+                source_index += 1
+                page = 1
+                continue
+
+            batch_size = min(_BATCH_SIZE, max_items - (page - 1) * _BATCH_SIZE)
+            body: dict = {"type": "IMAGE", "page": page, "size": batch_size}
+            if src_type == "search":
+                body["query"] = source.get("query", "")
+
+            try:
+                data = self._post("/api/search/metadata", body).json()
+            except Exception as exc:
+                raise RuntimeError(f"Immich fetch failed (source {source_index}, page {page}): {exc}") from exc
+
+            raw = data.get("assets", {}).get("items", [])
+            if not raw:
+                # Source exhausted before max_items
+                source_index += 1
+                page = 1
+                continue
+
+            items = [i for i in (self._asset_to_item(a, project_id) for a in raw) if i]
+
+            has_next_page = (
+                data.get("assets", {}).get("nextPage") is not None
+                and len(raw) >= batch_size
+                and page < max_pages
+            )
+            if has_next_page:
+                return items, {"source_index": source_index, "page": page + 1}
+            next_si = source_index + 1
+            return items, ({"source_index": next_si, "page": 1} if next_si < len(self._sources) else None)
+
+        return [], None
 
     # ── Fetch ──────────────────────────────────────────────────────────────────
 

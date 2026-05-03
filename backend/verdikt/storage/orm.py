@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, LargeBinary, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -117,3 +117,18 @@ class FileManifestRow(Base):
     is_dir: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PluginBatchStateRow(Base):
+    """Persistent state for the batched ingest protocol — one row per (project, plugin)."""
+    __tablename__ = "plugin_batch_states"
+    __table_args__ = (UniqueConstraint("project_id", "plugin_name"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    plugin_name: Mapped[str] = mapped_column(String, nullable=False)
+    state_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    status: Mapped[str] = mapped_column(String, nullable=False, default="idle")  # idle|running|paused|done|error
+    fetched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
