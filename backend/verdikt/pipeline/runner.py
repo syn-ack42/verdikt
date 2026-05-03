@@ -164,6 +164,10 @@ class PipelineRunner:
         from sklearn.cluster import KMeans
 
         items = list(self._materials.list_by_project(project_id, phase=PipelinePhase.EMBEDDED))
+        if not items:
+            yield {"type": "done", "items_processed": 0}
+            return
+
         # Lightweight ID-only query — avoids loading content bytes
         id_pairs = self._chunks.list_ids_by_project(project_id)
         chunk_ids = [cid for cid, _ in id_pairs]

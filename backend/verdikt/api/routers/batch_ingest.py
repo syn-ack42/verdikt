@@ -239,30 +239,29 @@ def start_batch_stream(
                 "total_fetched": total_fetched,
             })
 
-            # ── run pipeline on newly ingested items ───────────────────────────
-            if batch_added + batch_updated > 0:
-                yield _sse({"type": "pipeline_start", "batch": batch_num})
-                pipeline_ok = True
-                for phase_name, stream_fn in [
-                    ("chunk", runner._chunk_stream),
-                    ("embed", runner._embed_stream),
-                    ("cluster", runner._cluster_stream),
-                ]:
-                    try:
-                        for event in stream_fn(proj.id):
-                            etype = event.get("type")
-                            if etype == "start":
-                                yield _sse({"type": "pipeline_phase", "phase": phase_name, "status": "running", "total": event.get("total")})
-                            elif etype == "progress":
-                                yield _sse({"type": "pipeline_phase", "phase": phase_name, "status": "progress", "current": event["current"], "total": event["total"]})
-                        session.commit()
-                        yield _sse({"type": "pipeline_phase", "phase": phase_name, "status": "done"})
-                    except Exception as exc:
-                        yield _sse({"type": "pipeline_phase", "phase": phase_name, "status": "error", "error": str(exc)})
-                        pipeline_ok = False
-                        break
-                if pipeline_ok:
-                    yield _sse({"type": "pipeline_done", "batch": batch_num})
+            # ── run pipeline phases (picks up new items AND any stuck in mid-phase) ─
+            yield _sse({"type": "pipeline_start", "batch": batch_num})
+            pipeline_ok = True
+            for phase_name, stream_fn in [
+                ("chunk", runner._chunk_stream),
+                ("embed", runner._embed_stream),
+                ("cluster", runner._cluster_stream),
+            ]:
+                try:
+                    for event in stream_fn(proj.id):
+                        etype = event.get("type")
+                        if etype == "start":
+                            yield _sse({"type": "pipeline_phase", "phase": phase_name, "status": "running", "total": event.get("total")})
+                        elif etype == "progress":
+                            yield _sse({"type": "pipeline_phase", "phase": phase_name, "status": "progress", "current": event["current"], "total": event["total"]})
+                    session.commit()
+                    yield _sse({"type": "pipeline_phase", "phase": phase_name, "status": "done"})
+                except Exception as exc:
+                    yield _sse({"type": "pipeline_phase", "phase": phase_name, "status": "error", "error": str(exc)})
+                    pipeline_ok = False
+                    break
+            if pipeline_ok:
+                yield _sse({"type": "pipeline_done", "batch": batch_num})
 
             # ── persist state and check completion / stop ──────────────────────
             current_state = next_state
