@@ -63,7 +63,7 @@ def next_chunk(
 
     material_item = mat_store.get(chunk.material_item_id)
     skipped = rating_store.count_skipped(proj.id)
-    total_chunks = len(chunk_store.list_by_project(proj.id)) - skipped
+    total_chunks = chunk_store.count_by_project(proj.id) - skipped
     rating_count = rating_store.count_by_project(proj.id)
     total_rated = rating_count - skipped
     confidence = min(1.0, rating_count / proj.crystallisation_threshold) if proj.crystallisation_threshold > 0 else 1.0

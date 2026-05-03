@@ -82,6 +82,17 @@ class ChunkStore(ABC):
     @abstractmethod
     def update_description(self, chunk_id: str, description: str) -> None: ...
 
+    def count_by_project(self, project_id: str) -> int:
+        return len(self.list_by_project(project_id))
+
+    def list_meta_by_project(self, project_id: str) -> list[tuple[str, int | None]]:
+        """Return (chunk_id, cluster_id) without loading content bytes.
+
+        Override in concrete stores for efficiency — the default falls back to
+        list_by_project which loads all content.
+        """
+        return [(c.id, c.cluster_id) for c in self.list_by_project(project_id)]
+
 
 class VectorStore(ABC):
     @abstractmethod
@@ -153,6 +164,21 @@ class RatingStore(ABC):
     def count_by_type(self, project_id: str) -> dict:
         """Returns {"human": n, "ai": n} counts for non-skipped ratings."""
         ...
+
+    def get_human_rated_chunk_ids(self, project_id: str) -> set[str]:
+        """Chunk IDs with a human (non-AI, non-skipped) rating."""
+        return {r.chunk_id for r in self.list_by_project(project_id) if not r.is_ai and not r.skipped}
+
+    def list_human_scores(self, project_id: str) -> dict[str, float]:
+        """Return {chunk_id: avg_dimension_score} for human non-skipped ratings only.
+
+        Override in concrete stores to avoid loading full Rating objects.
+        """
+        result: dict[str, float] = {}
+        for r in self.list_by_project(project_id):
+            if not r.is_ai and not r.skipped and r.dimension_scores:
+                result[r.chunk_id] = sum(r.dimension_scores.values()) / len(r.dimension_scores)
+        return result
 
 
 class ProfileStore(ABC):

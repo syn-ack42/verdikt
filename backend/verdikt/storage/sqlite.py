@@ -278,6 +278,20 @@ class SQLiteChunkStore(ChunkStore):
         )
         return [self._from_row(r) for r in rows]
 
+    def count_by_project(self, project_id: str) -> int:
+        return self._s.execute(
+            select(func.count()).select_from(ChunkRow).where(ChunkRow.project_id == project_id)
+        ).scalar() or 0
+
+    def list_meta_by_project(self, project_id: str) -> list[tuple[str, int | None]]:
+        """Return (chunk_id, cluster_id) without loading content bytes."""
+        rows = (
+            self._s.query(ChunkRow.id, ChunkRow.cluster_id)
+            .filter(ChunkRow.project_id == project_id)
+            .all()
+        )
+        return [(r.id, r.cluster_id) for r in rows]
+
     def list_ids_by_project(self, project_id: str) -> list[tuple[str, str]]:
         """Return [(chunk_id, material_item_id)] without loading content bytes."""
         rows = (
@@ -437,6 +451,32 @@ class SQLiteRatingStore(RatingStore):
             select(RatingRow.chunk_id).where(RatingRow.project_id == project_id)
         ).scalars().all()
         return set(rows)
+
+    def get_human_rated_chunk_ids(self, project_id: str) -> set[str]:
+        rows = self._s.execute(
+            select(RatingRow.chunk_id).where(
+                RatingRow.project_id == project_id,
+                RatingRow.is_ai == False,  # noqa: E712
+                RatingRow.skipped == False,  # noqa: E712
+            )
+        ).scalars().all()
+        return set(rows)
+
+    def list_human_scores(self, project_id: str) -> dict[str, float]:
+        """Return {chunk_id: avg_dimension_score} for human non-skipped ratings only."""
+        rows = self._s.execute(
+            select(RatingRow.chunk_id, RatingRow.dimension_scores).where(
+                RatingRow.project_id == project_id,
+                RatingRow.is_ai == False,  # noqa: E712
+                RatingRow.skipped == False,  # noqa: E712
+            )
+        ).all()
+        result: dict[str, float] = {}
+        for chunk_id, scores_json in rows:
+            scores = json.loads(scores_json) if isinstance(scores_json, str) else (scores_json or {})
+            if scores:
+                result[chunk_id] = sum(scores.values()) / len(scores)
+        return result
 
     def count_by_type(self, project_id: str) -> dict:
         from sqlalchemy import case
