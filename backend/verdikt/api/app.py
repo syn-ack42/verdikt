@@ -81,6 +81,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(ai_rating.router)
     app.include_router(usage.router)
 
+    @app.get("/api/config", tags=["config"])
+    def get_public_config() -> dict:
+        return {
+            "ai_preview_text": config.ai_preview_text,
+            "ai_preview_image": config.ai_preview_image,
+        }
+
     if config.frontend_dir and config.frontend_dir.is_dir():
         _frontend_root = config.frontend_dir.resolve()
 

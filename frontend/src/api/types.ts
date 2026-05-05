@@ -364,3 +364,9 @@ export type BatchIngestEvent =
   | { type: 'complete'; batches: number; total_added: number; total_updated: number; total_unchanged: number; total_fetched: number }
   | { type: 'paused'; batch: number; total_fetched: number }
   | { type: 'error'; error: string }
+
+
+export interface AppConfig {
+  ai_preview_text: boolean
+  ai_preview_image: boolean
+}

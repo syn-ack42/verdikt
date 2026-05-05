@@ -44,6 +44,12 @@ export default function RatingInterface() {
     queryFn: () => api.projects.get(projectId!),
   })
 
+  const { data: appConfig } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => api.config.get(),
+    staleTime: Infinity,
+  })
+
   const dims = project?.rating_dimensions ?? []
 
   const prefetchNext = () => {
@@ -101,14 +107,15 @@ export default function RatingInterface() {
     abortRef.current?.abort()
     abortRef.current = null
     setAiPreview(null)
-    if (mode !== 'normal' || !data || !projectId || !data.material_item.id || project?.domain === 'image') return
+    const previewEnabled = project?.domain === 'image' ? appConfig?.ai_preview_image : appConfig?.ai_preview_text
+    if (mode !== 'normal' || !data || !projectId || !data.material_item.id || previewEnabled === false) return
     const ctrl = new AbortController()
     abortRef.current = ctrl
     api.ratings.aiPreview(projectId, data.chunk.id, data.material_item.id, ctrl.signal)
       .then(result => { if (!ctrl.signal.aborted) setAiPreview(result) })
       .catch(() => {})
     return () => { ctrl.abort() }
-  }, [data?.chunk.id, mode, projectId, project?.domain])
+  }, [data?.chunk.id, mode, projectId, project?.domain, appConfig?.ai_preview_text, appConfig?.ai_preview_image])
 
   // Pre-fill scores from AI rating when in confirm mode
   useEffect(() => {
