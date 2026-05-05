@@ -39,6 +39,18 @@ _stop_flags: dict[str, list] = {}
 # project_id → current status dict
 _status: dict[str, dict] = {}
 
+# per-project lock for the preview endpoint — non-blocking acquire prevents
+# stacked concurrent Ollama calls when the user rates faster than the LLM responds
+_preview_locks: dict[str, threading.Lock] = {}
+_preview_locks_mutex = threading.Lock()
+
+
+def _get_preview_lock(project_id: str) -> threading.Lock:
+    with _preview_locks_mutex:
+        if project_id not in _preview_locks:
+            _preview_locks[project_id] = threading.Lock()
+        return _preview_locks[project_id]
+
 
 def _default_status() -> dict:
     return {
@@ -240,11 +252,17 @@ def ai_preview_rating(
     ollama_base_url, llm_model = resolve_llm_model(proj, config)
     judge = LLMJudge(ollama_base_url, llm_model, timeout=config.inference.ollama_timeout)
 
+    lock = _get_preview_lock(project_id)
+    if not lock.acquire(blocking=False):
+        raise HTTPException(status_code=503, detail="preview_busy")
+
     chunk_store = SQLiteChunkStore(session)
     try:
         scores, _, explanations, description = judge.score_chunk(chunk.content, profile, proj)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"AI rating failed: {exc}")
+    finally:
+        lock.release()
 
     if judge.usage:
         p, c = judge.usage[-1]
