@@ -101,14 +101,14 @@ export default function RatingInterface() {
     abortRef.current?.abort()
     abortRef.current = null
     setAiPreview(null)
-    if (mode !== 'normal' || !data || !projectId || !data.material_item.id) return
+    if (mode !== 'normal' || !data || !projectId || !data.material_item.id || project?.domain === 'image') return
     const ctrl = new AbortController()
     abortRef.current = ctrl
     api.ratings.aiPreview(projectId, data.chunk.id, data.material_item.id, ctrl.signal)
       .then(result => { if (!ctrl.signal.aborted) setAiPreview(result) })
       .catch(() => {})
     return () => { ctrl.abort() }
-  }, [data?.chunk.id, mode, projectId])
+  }, [data?.chunk.id, mode, projectId, project?.domain])
 
   // Pre-fill scores from AI rating when in confirm mode
   useEffect(() => {
