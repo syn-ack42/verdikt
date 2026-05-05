@@ -98,6 +98,41 @@ class ChunkStore(ABC):
         """
         return [(c.id, c.cluster_id) for c in self.list_by_project(project_id)]
 
+    def cluster_stats(self, project_id: str, human_rated_ids: set[str]) -> dict[int, tuple[int, int]]:
+        """Return {cluster_id: (human_rated_count, total_count)}.
+
+        Default: O(n) scan via list_meta_by_project. Override for a single SQL join.
+        """
+        result: dict[int, tuple[int, int]] = {}
+        for cid, clid in self.list_meta_by_project(project_id):
+            if clid is None:
+                continue
+            rated, total = result.get(clid, (0, 0))
+            result[clid] = (rated + (1 if cid in human_rated_ids else 0), total + 1)
+        return result
+
+    def cluster_ids_for_chunks(self, project_id: str, chunk_ids: list[str]) -> dict[str, int | None]:
+        """Return {chunk_id: cluster_id} for a set of chunk IDs.
+
+        Default: scans via list_meta_by_project. Override for a targeted SQL IN query.
+        """
+        if not chunk_ids:
+            return {}
+        target = set(chunk_ids)
+        return {cid: clid for cid, clid in self.list_meta_by_project(project_id) if cid in target}
+
+    def random_unrated_in_cluster(self, project_id: str, cluster_id: int, human_rated_ids: set[str]) -> str | None:
+        """Return a random unrated chunk_id from the given cluster.
+
+        Default: O(n) scan via list_meta_by_project. Override for a SQL RANDOM() query.
+        """
+        import random
+        candidates = [
+            cid for cid, clid in self.list_meta_by_project(project_id)
+            if clid == cluster_id and cid not in human_rated_ids
+        ]
+        return random.choice(candidates) if candidates else None
+
 
 class VectorStore(ABC):
     @abstractmethod

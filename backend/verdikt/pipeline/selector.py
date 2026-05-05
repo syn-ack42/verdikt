@@ -51,59 +51,45 @@ class RatingSelector:
 
     def _next_uncertainty(self, project_id: str) -> Chunk | None:
         """Return a chunk from the cluster with the highest score variance (uncertainty sampling)."""
-        meta = self._chunks.list_meta_by_project(project_id)
-        clustered = [(cid, clid) for cid, clid in meta if clid is not None]
-        if not clustered:
+        human_scores = self._ratings.list_human_scores(project_id)
+        if not human_scores:
             return None
 
-        human_scores = self._ratings.list_human_scores(project_id)
-        unrated = [(cid, clid) for cid, clid in clustered if cid not in human_scores]
-        if not unrated:
+        stats = self._chunks.cluster_stats(project_id, set(human_scores.keys()))
+        # clusters that have at least one unrated chunk
+        clusters_with_unrated = {cid for cid, (rated, total) in stats.items() if rated < total}
+        if not clusters_with_unrated:
             return None
+
+        # map rated chunk → cluster using a targeted query on the small rated set
+        cid_to_cluster = self._chunks.cluster_ids_for_chunks(project_id, list(human_scores.keys()))
 
         scores_by_cluster: dict[int, list[float]] = defaultdict(list)
-        for cid, clid in clustered:
-            if cid in human_scores:
-                scores_by_cluster[clid].append(human_scores[cid])
-
-        unrated_by_cluster: dict[int, list[str]] = defaultdict(list)
-        for cid, clid in unrated:
-            unrated_by_cluster[clid].append(cid)
-
-        if not unrated_by_cluster:
-            return None
+        for cid, score in human_scores.items():
+            clid = cid_to_cluster.get(cid)
+            if clid is not None and clid in clusters_with_unrated:
+                scores_by_cluster[clid].append(score)
 
         def _variance(cluster_id: int) -> float:
             scores = scores_by_cluster.get(cluster_id, [])
             return statistics.variance(scores) if len(scores) >= 2 else 0.0
 
-        best_cluster = max(unrated_by_cluster.keys(), key=_variance)
-        return self._chunks.get(random.choice(unrated_by_cluster[best_cluster]))
+        best_cluster = max(clusters_with_unrated, key=_variance)
+        human_rated_ids = set(human_scores.keys())
+        chunk_id = self._chunks.random_unrated_in_cluster(project_id, best_cluster, human_rated_ids)
+        return self._chunks.get(chunk_id) if chunk_id else None
 
     def _next_diversity(self, project_id: str) -> Chunk | None:
-        meta = self._chunks.list_meta_by_project(project_id)
-        clustered = [(cid, clid) for cid, clid in meta if clid is not None]
-        if not clustered:
-            return None
-
         human_rated_ids = self._ratings.get_human_rated_chunk_ids(project_id)
-        unrated = [(cid, clid) for cid, clid in clustered if cid not in human_rated_ids]
-        if not unrated:
+        stats = self._chunks.cluster_stats(project_id, human_rated_ids)
+
+        # clusters that have unrated chunks
+        clusters_with_unrated = {cid: rated for cid, (rated, total) in stats.items() if rated < total}
+        if not clusters_with_unrated:
             return None
 
-        ratings_per_cluster: dict[int, int] = defaultdict(int)
-        for cid, clid in clustered:
-            if cid in human_rated_ids:
-                ratings_per_cluster[clid] += 1
-
-        unrated_by_cluster: dict[int, list[str]] = defaultdict(list)
-        for cid, clid in unrated:
-            unrated_by_cluster[clid].append(cid)
-
-        min_rated = min(ratings_per_cluster.get(clid, 0) for _, clid in unrated)
-        candidates_clusters = [
-            clid for clid in unrated_by_cluster
-            if ratings_per_cluster.get(clid, 0) == min_rated
-        ]
-        chosen_cluster = random.choice(candidates_clusters)
-        return self._chunks.get(random.choice(unrated_by_cluster[chosen_cluster]))
+        min_rated = min(clusters_with_unrated.values())
+        candidates = [cid for cid, rated in clusters_with_unrated.items() if rated == min_rated]
+        chosen_cluster = random.choice(candidates)
+        chunk_id = self._chunks.random_unrated_in_cluster(project_id, chosen_cluster, human_rated_ids)
+        return self._chunks.get(chunk_id) if chunk_id else None

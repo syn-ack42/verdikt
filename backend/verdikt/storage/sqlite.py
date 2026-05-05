@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import delete as sql_delete, func, select, update
+import random as _random
+
+from sqlalchemy import delete as sql_delete, func, select, text as _text, update
 from sqlalchemy.orm import Session
 
 from verdikt.core.models import (
@@ -291,6 +293,47 @@ class SQLiteChunkStore(ChunkStore):
             .all()
         )
         return [(r.id, r.cluster_id) for r in rows]
+
+    def cluster_stats(self, project_id: str, human_rated_ids: set[str] = None) -> dict[int, tuple[int, int]]:  # type: ignore[override]
+        """Return {cluster_id: (human_rated_count, total_count)} via a single SQL join."""
+        rows = self._s.execute(_text("""
+            SELECT c.cluster_id,
+                   SUM(CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END) AS rated,
+                   COUNT(c.id) AS total
+            FROM chunks c
+            LEFT JOIN ratings r
+                ON r.chunk_id = c.id
+               AND r.is_ai = 0
+               AND r.skipped = 0
+               AND r.project_id = :pid
+            WHERE c.project_id = :pid AND c.cluster_id IS NOT NULL
+            GROUP BY c.cluster_id
+        """), {"pid": project_id}).all()
+        return {int(row[0]): (int(row[1]), int(row[2])) for row in rows}
+
+    def cluster_ids_for_chunks(self, project_id: str, chunk_ids: list[str]) -> dict[str, int | None]:
+        """Return {chunk_id: cluster_id} for a small set of chunk IDs."""
+        if not chunk_ids:
+            return {}
+        rows = (
+            self._s.query(ChunkRow.id, ChunkRow.cluster_id)
+            .filter(ChunkRow.id.in_(chunk_ids))
+            .all()
+        )
+        return {r.id: r.cluster_id for r in rows}
+
+    def random_unrated_in_cluster(self, project_id: str, cluster_id: int, human_rated_ids: set[str] = None) -> str | None:  # type: ignore[override]
+        """Return a random unrated chunk_id from cluster_id — fully SQL-side."""
+        row = self._s.execute(_text("""
+            SELECT c.id FROM chunks c
+            WHERE c.project_id = :pid AND c.cluster_id = :cid
+              AND NOT EXISTS (
+                SELECT 1 FROM ratings r
+                WHERE r.chunk_id = c.id AND r.is_ai = 0 AND r.skipped = 0 AND r.project_id = :pid
+              )
+            ORDER BY RANDOM() LIMIT 1
+        """), {"pid": project_id, "cid": cluster_id}).first()
+        return row[0] if row else None
 
     def list_ids_by_project(self, project_id: str) -> list[tuple[str, str]]:
         """Return [(chunk_id, material_item_id)] without loading content bytes."""
