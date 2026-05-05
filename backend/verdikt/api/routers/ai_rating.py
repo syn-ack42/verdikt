@@ -91,7 +91,7 @@ def start_ai_rating(
     vector_store = ChromaVectorStore(chroma, f"project_{project_id}")
     embedder = resolve_embedder(proj, config)
     ollama_base_url, llm_model = resolve_llm_model(proj, config)
-    judge = LLMJudge(ollama_base_url, llm_model)
+    judge = LLMJudge(ollama_base_url, llm_model, timeout=config.inference.ollama_timeout)
 
     # Take copies for the thread (session is not thread-safe; import lazily for testability)
     from sqlalchemy.orm import Session as _Session
@@ -238,7 +238,7 @@ def ai_preview_rating(
 
     config = get_config()
     ollama_base_url, llm_model = resolve_llm_model(proj, config)
-    judge = LLMJudge(ollama_base_url, llm_model)
+    judge = LLMJudge(ollama_base_url, llm_model, timeout=config.inference.ollama_timeout)
 
     chunk_store = SQLiteChunkStore(session)
     try:
@@ -292,7 +292,7 @@ def rate_chunk_ai(
 
     config = get_config()
     ollama_base_url, llm_model = resolve_llm_model(proj, config)
-    judge = LLMJudge(ollama_base_url, llm_model)
+    judge = LLMJudge(ollama_base_url, llm_model, timeout=config.inference.ollama_timeout)
 
     chunk_store = SQLiteChunkStore(session)
     rating_store = SQLiteRatingStore(session)

@@ -18,7 +18,8 @@ RUN python -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
 # Install CPU-only PyTorch first so sentence-transformers doesn't pull CUDA (saves ~2 GB)
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# torchvision must be installed together with torch so versions are guaranteed to match
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
 COPY backend/ /build/backend/
 RUN pip install --no-cache-dir /build/backend

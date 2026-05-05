@@ -118,6 +118,7 @@ class Chunk(BaseModel):
 class InferenceConfig(BaseModel):
     ollama_model: str = "llama3.1:8b"
     ollama_base_url: str = "http://localhost:11434"
+    ollama_timeout: float = 300.0  # seconds; vision models on CPU can be very slow
     embedding_model: str = "all-MiniLM-L6-v2"    # default text embedder (sentence-transformers)
     clip_model: str = "openai/clip-vit-base-patch32"  # default image embedder (CLIP via transformers)
 

@@ -21,9 +21,10 @@ def _truncate(text: str, max_words: int = _MAX_WORDS) -> str:
 
 
 class LLMJudge:
-    def __init__(self, ollama_base_url: str, model: str) -> None:
+    def __init__(self, ollama_base_url: str, model: str, timeout: float = 300.0) -> None:
         self._base_url = ollama_base_url.rstrip("/")
         self._model = model
+        self._timeout = timeout
         # Accumulates (prompt_tokens, completion_tokens) per call; flush after each run.
         self.usage: list[tuple[int, int]] = []
 
@@ -119,7 +120,7 @@ class LLMJudge:
             resp = httpx.post(
                 f"{self._base_url}/api/generate",
                 json=payload,
-                timeout=120.0,
+                timeout=self._timeout,
             )
             resp.raise_for_status()
         except httpx.ConnectError as exc:
