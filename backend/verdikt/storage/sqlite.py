@@ -316,6 +316,15 @@ class SQLiteChunkStore(ChunkStore):
         )
         self._s.flush()
 
+    def bulk_update_clusters(self, id_to_cluster: dict[str, int]) -> None:
+        if not id_to_cluster:
+            return
+        self._s.execute(
+            update(ChunkRow),
+            [{"id": cid, "cluster_id": label} for cid, label in id_to_cluster.items()],
+        )
+        self._s.flush()
+
     def delete_by_material(self, material_item_id: str) -> None:
         self._s.execute(sql_delete(ChunkRow).where(ChunkRow.material_item_id == material_item_id))
         self._s.flush()

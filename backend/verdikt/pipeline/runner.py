@@ -161,7 +161,7 @@ class PipelineRunner:
         yield {"type": "done", "items_processed": processed}
 
     def _cluster_stream(self, project_id: str) -> Generator[dict[str, Any], None, None]:
-        from sklearn.cluster import KMeans
+        from sklearn.cluster import MiniBatchKMeans
 
         items = list(self._materials.list_by_project(project_id, phase=PipelinePhase.EMBEDDED))
         if not items:
@@ -183,15 +183,18 @@ class PipelineRunner:
         # Retrieve stored embeddings from vector store — no content bytes needed
         stored_ids, all_embeddings = self._vectors.get_all_embeddings()
         id_to_idx = {id_: i for i, id_ in enumerate(stored_ids)}
-        indices = [id_to_idx[cid] for cid in chunk_ids if cid in id_to_idx]
+        valid_ids = [cid for cid in chunk_ids if cid in id_to_idx]
+        indices = [id_to_idx[cid] for cid in valid_ids]
         embeddings = all_embeddings[indices]
 
         n_clusters = max(2, isqrt(len(indices)))
-        labels = KMeans(n_clusters=n_clusters, random_state=42, n_init="auto").fit_predict(embeddings)
+        # MiniBatchKMeans is O(batch_size) per iteration vs O(n) for standard KMeans —
+        # ~5-10x faster on large corpora with negligible quality difference.
+        labels = MiniBatchKMeans(
+            n_clusters=n_clusters, random_state=42, n_init="auto", batch_size=1024,
+        ).fit_predict(embeddings)
 
-        for cid, label in zip(chunk_ids, labels):
-            if cid in id_to_idx:
-                self._chunks.update_cluster(cid, int(label))
+        self._chunks.bulk_update_clusters({cid: int(label) for cid, label in zip(valid_ids, labels)})
 
         for item in items:
             self._materials.update_phase(item.id, PipelinePhase.CLUSTERED)

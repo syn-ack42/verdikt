@@ -76,6 +76,11 @@ class ChunkStore(ABC):
     @abstractmethod
     def update_cluster(self, chunk_id: str, cluster_id: int) -> None: ...
 
+    def bulk_update_clusters(self, id_to_cluster: dict[str, int]) -> None:
+        """Update cluster_id for many chunks at once. Default: loop over update_cluster."""
+        for cid, label in id_to_cluster.items():
+            self.update_cluster(cid, label)
+
     @abstractmethod
     def delete_by_material(self, material_item_id: str) -> None: ...
 
