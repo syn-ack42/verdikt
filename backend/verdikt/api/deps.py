@@ -270,6 +270,18 @@ def _migrate_user_db(engine: Engine) -> None:
             conn.commit()
             log.info("migration: added description to chunks")
 
+        existing_indexes = {row[1] for row in conn.execute(_text("PRAGMA index_list(chunks)"))}
+        if "ix_chunks_project_cluster" not in existing_indexes:
+            conn.execute(_text("CREATE INDEX IF NOT EXISTS ix_chunks_project_cluster ON chunks (project_id, cluster_id)"))
+            conn.commit()
+            log.info("migration: created ix_chunks_project_cluster index")
+
+        existing_rating_indexes = {row[1] for row in conn.execute(_text("PRAGMA index_list(ratings)"))}
+        if "ix_ratings_chunk_project_ai_skipped" not in existing_rating_indexes:
+            conn.execute(_text("CREATE INDEX IF NOT EXISTS ix_ratings_chunk_project_ai_skipped ON ratings (chunk_id, project_id, is_ai, skipped)"))
+            conn.commit()
+            log.info("migration: created ix_ratings_chunk_project_ai_skipped index")
+
         if "work_id" in existing:
             rows = conn.execute(_text(
                 "SELECT id, work_id, plugin_metadata_json FROM material_items "

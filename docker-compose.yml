@@ -20,6 +20,8 @@ services:
       # Uncomment to set a stable JWT secret instead of auto-generating on first run:
       # VERDIKT_JWT_SECRET: "change-me-to-a-long-random-string"
       VERDIKT_ROOT_PATH: /verdikt
+    cap_add:
+      - SYS_PTRACE
     extra_hosts:
       # Allows host.docker.internal to resolve on Linux
       - "host.docker.internal:host-gateway"

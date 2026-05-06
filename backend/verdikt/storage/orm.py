@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, Index, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -52,6 +52,7 @@ class MaterialItemRow(Base):
 
 class ChunkRow(Base):
     __tablename__ = "chunks"
+    __table_args__ = (Index("ix_chunks_project_cluster", "project_id", "cluster_id"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     material_item_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
@@ -68,6 +69,7 @@ class ChunkRow(Base):
 
 class RatingRow(Base):
     __tablename__ = "ratings"
+    __table_args__ = (Index("ix_ratings_chunk_project_ai_skipped", "chunk_id", "project_id", "is_ai", "skipped"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
