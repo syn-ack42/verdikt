@@ -505,9 +505,9 @@ export default function ProjectDashboard() {
           </button>
         )}
         <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>
-        <Link to={`/projects/${projectId}/rate`}>
+        <Link to={`/projects/${projectId}/rate${(aiRatingStatus?.unconfirmed_ai_count ?? 0) > 0 ? '?mode=confirm_ai' : ''}`}>
           <button style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>
-            Rate
+            Rate{(aiRatingStatus?.unconfirmed_ai_count ?? 0) > 0 ? ` (${aiRatingStatus!.unconfirmed_ai_count} AI)` : ''}
           </button>
         </Link>
         <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import RatingSlider from '../components/RatingSlider'
@@ -9,10 +9,13 @@ export default function RatingInterface() {
   const isMobile = useIsMobile()
   const { projectId } = useParams<{ projectId: string }>()!
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const qc = useQueryClient()
   const [scores, setScores] = useState<Record<string, number>>({})
   const [activeIdx, setActiveIdx] = useState(0)
-  const [mode, setMode] = useState<'normal' | 'confirm_ai'>('normal')
+  const [mode, setMode] = useState<'normal' | 'confirm_ai'>(
+    searchParams.get('mode') === 'confirm_ai' ? 'confirm_ai' : 'normal'
+  )
   const aiOriginalScores = useRef<Record<string, number>>({})
   const chunkBoxRef = useRef<HTMLDivElement>(null)
   const [explExpanded, setExplExpanded] = useState(false)

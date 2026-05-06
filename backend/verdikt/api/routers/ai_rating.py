@@ -364,4 +364,6 @@ def get_ai_rating_status(
         if latest and latest.version != state["profile_version"]:
             state["profile_stale"] = True
 
+    state["unconfirmed_ai_count"] = len(SQLiteRatingStore(session).list_unconfirmed_ai(project_id))
+
     return state

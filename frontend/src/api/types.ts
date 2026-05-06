@@ -328,6 +328,7 @@ export interface AIRatingStatus {
   stopped_reason: 'diminishing_returns' | 'user_stopped' | 'complete' | 'error' | null
   tokens_prompt: number
   tokens_completion: number
+  unconfirmed_ai_count: number
 }
 
 export interface CrystalliseStatus {
