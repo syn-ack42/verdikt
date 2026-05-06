@@ -71,6 +71,7 @@ export interface Project {
   confidence?: number
   profile_confirmed_count?: number
   profile_confidence?: number | null
+  has_profile?: boolean
 }
 
 export interface ModelCatalogEntry {

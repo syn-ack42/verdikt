@@ -385,7 +385,8 @@ export default function ProjectDashboard() {
   const pipelineDone = phaseProgress.length > 0 && !pipelineRunning && !pipelineError
 
   const humanCount = ratings?.filter(r => !r.skipped && !r.is_ai).length ?? 0
-  const hasConfidence = (project.profile_confirmed_count ?? 0) > 0 && project.profile_confidence != null
+  const hasProfile = project.has_profile === true
+  const hasConfidence = hasProfile && (project.profile_confirmed_count ?? 0) > 0 && project.profile_confidence != null
   const pct = hasConfidence ? Math.round((project.profile_confidence as number) * 100) : null
   const unconfirmedAiCount = aiRatingStatus?.unconfirmed_ai_count ?? 0
 
@@ -528,16 +529,16 @@ export default function ProjectDashboard() {
           <Link to={`/projects/${projectId}/profile`}>
             <button style={{
               padding: '8px 18px', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14,
-              border: hasConfidence ? '1px solid #6b7de0' : '1px solid var(--border, #ddd)',
+              border: hasProfile ? '1px solid #6b7de0' : '1px solid var(--border, #ddd)',
             }}>
               {crystalliseStatus?.running ? 'Building…' : 'Profile'}
             </button>
           </Link>
           {(() => {
             const need = project.crystallisation_threshold - humanCount
-            if (hasConfidence) return (
+            if (hasProfile) return (
               <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: '#2e7d32', whiteSpace: 'nowrap' }}>
-                {pct}% accuracy
+                {pct !== null ? `${pct}% accuracy` : 'profile ready'}
               </span>
             )
             if (need <= 0) return (
@@ -594,14 +595,14 @@ export default function ProjectDashboard() {
                   setAiRatingStarting(false)
                 }
               }}
-              disabled={aiRatingStarting || !hasConfidence}
-              style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', borderRadius: 6, cursor: hasConfidence ? 'pointer' : 'default', fontSize: 14 }}
+              disabled={aiRatingStarting || !hasProfile}
+              style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', borderRadius: 6, cursor: hasProfile ? 'pointer' : 'default', fontSize: 14 }}
             >
               {aiRatingStarting ? 'Starting…' : 'Auto-Rate ▶'}
             </button>
             <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, whiteSpace: 'nowrap',
-              color: hasConfidence ? 'var(--text-muted)' : '#b45309' }}>
-              {hasConfidence ? 'scores chunks in background' : 'build a profile first'}
+              color: hasProfile ? 'var(--text-muted)' : '#b45309' }}>
+              {hasProfile ? 'scores chunks in background' : 'build a profile first'}
             </span>
           </div>
         )}

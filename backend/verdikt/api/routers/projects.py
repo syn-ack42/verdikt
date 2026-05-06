@@ -132,6 +132,7 @@ def get_project(project_id: str, session: Session = Depends(get_session)) -> dic
         "confidence": round(confidence, 3),
         "profile_confirmed_count": profile_confirmed_count,
         "profile_confidence": profile_confidence,
+        "has_profile": profile is not None,
     }
 
 
