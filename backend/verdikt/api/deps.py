@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from functools import lru_cache
 from typing import Generator
 
@@ -24,8 +25,22 @@ log = logging.getLogger(__name__)
 # Per-user engine cache: user_id → Engine
 _user_engines: dict[str, Engine] = {}
 
+# Per-user migration state: present = all schema migrations applied this process lifetime
+_migrations_complete: set[str] = set()
+
+# Per-user locks for serialising engine creation and migration
+_user_engine_locks: dict[str, threading.Lock] = {}
+_user_engine_locks_lock = threading.Lock()
+
 # Track which users have had their files migrated this process lifetime
 _files_migrated: set[str] = set()
+
+
+def _get_engine_lock(user_id: str) -> threading.Lock:
+    with _user_engine_locks_lock:
+        if user_id not in _user_engine_locks:
+            _user_engine_locks[user_id] = threading.Lock()
+        return _user_engine_locks[user_id]
 
 
 def _derive_file_key(db_key: str) -> bytes:
@@ -199,14 +214,31 @@ def _get_user_storage_limit(user_id: str) -> int | None:
 
 def get_user_engine(user: AuthenticatedUser) -> Engine:
     if user.id not in _user_engines:
-        config = get_config()
-        config.ensure_user_dirs(user.id)
-        db_path = str(config.user_db_path(user.id))
-        engine = _make_user_engine(db_path, user.db_key)
-        Base.metadata.create_all(engine)
-        _migrate_user_db(engine)
-        _user_engines[user.id] = engine
-    return _user_engines[user.id]
+        lock = _get_engine_lock(user.id)
+        with lock:
+            if user.id not in _user_engines:
+                config = get_config()
+                config.ensure_user_dirs(user.id)
+                db_path = str(config.user_db_path(user.id))
+                engine = _make_user_engine(db_path, user.db_key)
+                Base.metadata.create_all(engine)
+                _user_engines[user.id] = engine
+
+    engine = _user_engines[user.id]
+
+    if user.id not in _migrations_complete:
+        lock = _get_engine_lock(user.id)
+        with lock:
+            if user.id not in _migrations_complete:
+                try:
+                    _migrate_user_db(engine)
+                    _migrations_complete.add(user.id)
+                except Exception as exc:
+                    # DB may be locked by a long-running pipeline task. Migration is
+                    # idempotent — it will be retried on the next request.
+                    log.warning("Schema migration deferred for user %s (%s) — will retry", user.id, exc)
+
+    return engine
 
 
 def _migrate_user_db(engine: Engine) -> None:
