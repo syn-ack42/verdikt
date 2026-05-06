@@ -384,6 +384,11 @@ export default function ProjectDashboard() {
 
   const pipelineDone = phaseProgress.length > 0 && !pipelineRunning && !pipelineError
 
+  const humanCount = ratings?.filter(r => !r.skipped && !r.is_ai).length ?? 0
+  const hasConfidence = (project.profile_confirmed_count ?? 0) > 0 && project.profile_confidence != null
+  const pct = hasConfidence ? Math.round((project.profile_confidence as number) * 100) : null
+  const unconfirmedAiCount = aiRatingStatus?.unconfirmed_ai_count ?? 0
+
   const handleSort = (col: string | null) => {
     if (sortBy === col) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); setWorksPage(0); return }
     setSortBy(col)
@@ -426,10 +431,7 @@ export default function ProjectDashboard() {
         </div>
         {(() => {
           const nonSkipped = ratings?.filter(r => !r.skipped) ?? []
-          const humanCount = nonSkipped.filter(r => !r.is_ai).length
           const aiCount = nonSkipped.filter(r => r.is_ai).length
-          const hasConfidence = (project.profile_confirmed_count ?? 0) > 0 && project.profile_confidence != null
-          const pct = hasConfidence ? Math.round((project.profile_confidence as number) * 100) : null
           const minConf = project.min_profile_confidence ?? 0.9
           const hasEnough = (project.profile_confirmed_count ?? 0) >= project.crystallisation_threshold
           return (
@@ -505,32 +507,55 @@ export default function ProjectDashboard() {
           </button>
         )}
         <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>
-        <Link to={`/projects/${projectId}/rate${(aiRatingStatus?.unconfirmed_ai_count ?? 0) > 0 ? '?mode=confirm_ai' : ''}`}>
-          <button style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>
-            Rate{(aiRatingStatus?.unconfirmed_ai_count ?? 0) > 0 ? ` (${aiRatingStatus!.unconfirmed_ai_count} AI)` : ''}
-          </button>
-        </Link>
+        <div style={{ position: 'relative' }}>
+          <Link to={`/projects/${projectId}/rate${unconfirmedAiCount > 0 ? '?mode=confirm_ai' : ''}`}>
+            <button style={{
+              padding: '8px 18px', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14,
+              border: unconfirmedAiCount > 0 ? '1px solid #6b7de0' : '1px solid var(--border, #ddd)',
+              color: unconfirmedAiCount > 0 ? '#6b7de0' : 'inherit',
+            }}>
+              {unconfirmedAiCount > 0 ? `Review AI (${unconfirmedAiCount})` : 'Rate'}
+            </button>
+          </Link>
+          {humanCount === 0 && unconfirmedAiCount === 0 && (
+            <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: '#2e7d32', whiteSpace: 'nowrap' }}>
+              start here
+            </span>
+          )}
+        </div>
         <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>
         <div style={{ position: 'relative' }}>
           <Link to={`/projects/${projectId}/profile`}>
-            <button style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>
-              Profile
+            <button style={{
+              padding: '8px 18px', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14,
+              border: hasConfidence ? '1px solid #6b7de0' : '1px solid var(--border, #ddd)',
+            }}>
+              {crystalliseStatus?.running ? 'Building…' : 'Profile'}
             </button>
           </Link>
           {(() => {
-            const humanCount = ratings?.filter(r => !r.skipped && !r.is_ai).length ?? 0
             const need = project.crystallisation_threshold - humanCount
-            return need > 0 ? (
-              <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                {need} more to crystallise
+            if (hasConfidence) return (
+              <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: '#2e7d32', whiteSpace: 'nowrap' }}>
+                {pct}% accuracy
               </span>
-            ) : null
+            )
+            if (need <= 0) return (
+              <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: '#6b7de0', whiteSpace: 'nowrap' }}>
+                ready to build
+              </span>
+            )
+            return (
+              <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                {need} more ratings to build
+              </span>
+            )
           })()}
         </div>
 
         <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>
 
-        {/* AI Rating controls */}
+        {/* Auto-Rate controls */}
         {aiRatingStatus?.running || aiRatingStopping ? (
           <button
             onClick={async () => {
@@ -545,35 +570,40 @@ export default function ProjectDashboard() {
             disabled={aiRatingStopping}
             style={{ padding: '8px 18px', background: 'none', border: '1px solid #f59e0b', color: '#b45309', borderRadius: 6, cursor: aiRatingStopping ? 'default' : 'pointer', fontSize: 14 }}
           >
-            {aiRatingStopping ? 'Stopping…' : 'Stop AI Rating'}
+            {aiRatingStopping ? 'Stopping…' : 'Stop Auto-Rate'}
           </button>
         ) : (
-          <button
-            onClick={async () => {
-              setAiRatingStarting(true)
-              setAiRatingError(null)
-              try {
-                await api.aiRating.start(projectId!)
-                refetchAiStatus()
-              } catch (e: any) {
-                const msg = e?.message ?? String(e)
-                if (msg.includes('No crystallised profile')) {
-                  setAiRatingError('Crystallise a profile first before starting AI rating.')
-                } else if (e?.status === 409) {
-                  setAiRatingError('AI rating is already running.')
-                } else {
-                  setAiRatingError(msg)
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={async () => {
+                setAiRatingStarting(true)
+                setAiRatingError(null)
+                try {
+                  await api.aiRating.start(projectId!)
+                  refetchAiStatus()
+                } catch (e: any) {
+                  const msg = e?.message ?? String(e)
+                  if (msg.includes('No crystallised profile')) {
+                    setAiRatingError('Crystallise a profile first before starting AI rating.')
+                  } else if (e?.status === 409) {
+                    setAiRatingError('AI rating is already running.')
+                  } else {
+                    setAiRatingError(msg)
+                  }
+                } finally {
+                  setAiRatingStarting(false)
                 }
-              } finally {
-                setAiRatingStarting(false)
-              }
-            }}
-            disabled={aiRatingStarting || !ratings}
-            title={!ratings ? 'Load profile first' : 'Start AI background rating'}
-            style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}
-          >
-            {aiRatingStarting ? 'Starting…' : 'AI Rating'}
-          </button>
+              }}
+              disabled={aiRatingStarting || !hasConfidence}
+              style={{ padding: '8px 18px', background: 'none', border: '1px solid var(--border, #ddd)', borderRadius: 6, cursor: hasConfidence ? 'pointer' : 'default', fontSize: 14 }}
+            >
+              {aiRatingStarting ? 'Starting…' : 'Auto-Rate ▶'}
+            </button>
+            <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, whiteSpace: 'nowrap',
+              color: hasConfidence ? 'var(--text-muted)' : '#b45309' }}>
+              {hasConfidence ? 'scores chunks in background' : 'build a profile first'}
+            </span>
+          </div>
         )}
 
         {/* Ingest progress */}
