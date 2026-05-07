@@ -5,6 +5,8 @@ import RatingSlider from './RatingSlider'
 import { useIsMobile } from '../hooks/useIsMobile'
 import type { RatedChunkEntry } from '../api/types'
 
+const PAGE_SIZE = 50
+
 interface Props {
   projectId: string
   filterWorkSeq?: number
@@ -33,16 +35,18 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
   const [sortBy, setSortBy] = useState<string>('chunk_position')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(0)
-  const PAGE_SIZE = 50
 
-  const { data: entries, isLoading } = useQuery({
-    queryKey: ['rated-chunks', projectId, filterWorkSeq],
-    queryFn: () => api.ratings.ratedChunks(projectId, filterWorkSeq),
+  const { data, isLoading } = useQuery({
+    queryKey: ['rated-chunks', projectId, filterWorkSeq, sortBy, sortDir, page],
+    queryFn: () => api.ratings.ratedChunks(projectId, filterWorkSeq, sortBy, sortDir, PAGE_SIZE, page * PAGE_SIZE),
+    placeholderData: (prev) => prev,
   })
+  const entries = data?.items ?? []
+  const total = data?.total ?? 0
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['rated-chunks', projectId] })
-    qc.invalidateQueries({ queryKey: ['ratings', projectId] })
+    qc.invalidateQueries({ queryKey: ['rating-counts', projectId] })
     qc.invalidateQueries({ queryKey: ['work-chunks', projectId] })
     qc.invalidateQueries({ queryKey: ['works', projectId] })
   }
@@ -71,23 +75,6 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
 
   const allScored = dimensions.length > 0 && dimensions.every(d => scores[d.name] !== undefined)
 
-  const getVal = (entry: RatedChunkEntry, col: string): any => {
-    if (col.startsWith('dim:')) return entry.dimension_scores[col.slice(4)] ?? null
-    return (entry as any)[col]
-  }
-
-  const sortedEntries = entries ? [...entries].sort((a, b) => {
-    const av = getVal(a, sortBy)
-    const bv = getVal(b, sortBy)
-    if (av == null && bv == null) return 0
-    if (av == null) return 1
-    if (bv == null) return -1
-    if (av < bv) return sortDir === 'asc' ? -1 : 1
-    if (av > bv) return sortDir === 'asc' ? 1 : -1
-    return 0
-  }) : []
-
-  const pagedEntries = sortedEntries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   const title = filterWorkTitle
     ? `Ratings — ${filterWorkTitle}`
@@ -115,9 +102,9 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
               </button>
             )}
             <h3 style={{ margin: 0, fontSize: 16 }}>{editing ? (isNewRating ? 'Rate Chunk' : 'Edit Rating') : title}</h3>
-            {!editing && entries && (
+            {!editing && data && (
               <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                {entries.length} rated{sortedEntries.length > PAGE_SIZE && ` · page ${page + 1} of ${Math.ceil(sortedEntries.length / PAGE_SIZE)}`}
+                {total} rated{total > PAGE_SIZE && ` · page ${page + 1} of ${Math.ceil(total / PAGE_SIZE)}`}
               </span>
             )}
           </div>
@@ -221,7 +208,7 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
           )}
 
           {/* Sort bar */}
-          {!editing && entries && entries.length > 0 && (
+          {!editing && total > 0 && (
             <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, alignItems: 'center', fontSize: 12 }}>
               <span style={{ color: 'var(--text-muted)' }}>Sort</span>
               <select
@@ -236,7 +223,7 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
                 {dimensions.map(d => <option key={d.name} value={`dim:${d.name}`}>{d.name}</option>)}
               </select>
               <button
-                onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                onClick={() => { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); setPage(0) }}
                 style={{ fontSize: 11, padding: '2px 7px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: 'var(--text)', cursor: 'pointer' }}
               >
                 {sortDir === 'asc' ? '▴' : '▾'}
@@ -245,12 +232,12 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
           )}
 
           {/* List view — cards */}
-          {!editing && entries && entries.length === 0 && (
+          {!editing && data && total === 0 && (
             <p style={{ padding: 20, color: 'var(--text-muted)' }}>No ratings yet.</p>
           )}
-          {!editing && entries && entries.length > 0 && (
+          {!editing && entries.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {pagedEntries.map(entry => {
+              {entries.map(entry => {
                 const hasExpl = entry.explanations && Object.keys(entry.explanations).length > 0
                 const explExpanded = expandedExpl === entry.rating_id
                 // Combine all explanations into one summary line
@@ -336,18 +323,18 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
               })}
             </div>
           )}
-          {!editing && sortedEntries.length > PAGE_SIZE && (
+          {!editing && total > PAGE_SIZE && (
             <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }}>
               <button
                 onClick={() => setPage(p => Math.max(0, p - 1))}
                 disabled={page === 0}
                 style={{ padding: '4px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: page === 0 ? 'var(--text-muted)' : 'var(--text)', cursor: page === 0 ? 'default' : 'pointer' }}
               >← Prev</button>
-              <span>{page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sortedEntries.length)} of {sortedEntries.length}</span>
+              <span>{page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}</span>
               <button
                 onClick={() => setPage(p => p + 1)}
-                disabled={(page + 1) * PAGE_SIZE >= sortedEntries.length}
-                style={{ padding: '4px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: (page + 1) * PAGE_SIZE >= sortedEntries.length ? 'var(--text-muted)' : 'var(--text)', cursor: (page + 1) * PAGE_SIZE >= sortedEntries.length ? 'default' : 'pointer' }}
+                disabled={(page + 1) * PAGE_SIZE >= total}
+                style={{ padding: '4px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: (page + 1) * PAGE_SIZE >= total ? 'var(--text-muted)' : 'var(--text)', cursor: (page + 1) * PAGE_SIZE >= total ? 'default' : 'pointer' }}
               >Next →</button>
             </div>
           )}

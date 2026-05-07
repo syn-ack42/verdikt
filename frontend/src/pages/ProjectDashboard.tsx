@@ -169,9 +169,9 @@ export default function ProjectDashboard() {
     }
   }, [aiRatingStopping, aiRatingStatus])
 
-  const { data: ratings } = useQuery({
-    queryKey: ['ratings', projectId],
-    queryFn: () => api.ratings.list(projectId!),
+  const { data: ratingCounts } = useQuery({
+    queryKey: ['rating-counts', projectId],
+    queryFn: () => api.ratings.counts(projectId!),
     enabled: !!projectId,
   })
 
@@ -179,7 +179,7 @@ export default function ProjectDashboard() {
     mutationFn: (ref: string) => api.works.delete(projectId!, ref),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['works', projectId] })
-      qc.invalidateQueries({ queryKey: ['ratings', projectId] })
+      qc.invalidateQueries({ queryKey: ['rating-counts', projectId] })
     },
   })
 
@@ -384,7 +384,7 @@ export default function ProjectDashboard() {
 
   const pipelineDone = phaseProgress.length > 0 && !pipelineRunning && !pipelineError
 
-  const humanCount = ratings?.filter(r => !r.skipped && !r.is_ai).length ?? 0
+  const humanCount = ratingCounts?.human ?? 0
   const hasProfile = project.has_profile === true
   const hasConfidence = hasProfile && (project.profile_confirmed_count ?? 0) > 0 && project.profile_confidence != null
   const pct = hasConfidence ? Math.round((project.profile_confidence as number) * 100) : null
@@ -431,8 +431,8 @@ export default function ProjectDashboard() {
           <div style={{ color: 'var(--text-muted)' }}>Works</div>
         </div>
         {(() => {
-          const nonSkipped = ratings?.filter(r => !r.skipped) ?? []
-          const aiCount = nonSkipped.filter(r => r.is_ai).length
+          const aiCount = ratingCounts?.ai ?? 0
+          const totalCount = humanCount + aiCount
           const minConf = project.min_profile_confidence ?? 0.9
           const hasEnough = (project.profile_confirmed_count ?? 0) >= project.crystallisation_threshold
           return (
@@ -443,7 +443,7 @@ export default function ProjectDashboard() {
               onMouseLeave={e => (e.currentTarget.style.background = '')}
             >
               <div>
-                <div style={{ fontSize: 28, fontWeight: 700 }}>{nonSkipped.length}</div>
+                <div style={{ fontSize: 28, fontWeight: 700 }}>{totalCount}</div>
                 <div style={{ color: 'var(--text-muted)' }}>Ratings</div>
               </div>
               <div style={{ textAlign: 'right', fontSize: 12, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
@@ -1078,7 +1078,6 @@ export default function ProjectDashboard() {
       {showSettings && project && (
         <ProjectSettingsDialog
           project={project}
-          ratings={ratings ?? []}
           onClose={() => setShowSettings(false)}
         />
       )}

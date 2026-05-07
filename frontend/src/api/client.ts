@@ -1,6 +1,6 @@
 import type {
   AIRatingStatus, AppConfig, BatchIngestEvent, BatchIngestStatus, CrystalliseStatus, IngestResult, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
-  PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, ProjectDefaults, RatedChunkEntry, Rating, SiteSettings, StorageListing,
+  PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, ProjectDefaults, RatedChunkEntry, RatedChunksResponse, RatingCounts, Rating, SiteSettings, StorageListing,
   TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkChunk, WorkDetail, WritebackResult, WorksListResponse,
 } from './types'
 
@@ -198,8 +198,16 @@ export const api = {
         { chunk_id: chunkId, material_item_id: materialItemId },
       ),
     list: (projectId: string) => req<Rating[]>('GET', `/projects/${projectId}/ratings`),
-    ratedChunks: (projectId: string, workSeq?: number) =>
-      req<RatedChunkEntry[]>('GET', `/projects/${projectId}/ratings/rated-chunks${workSeq != null ? `?work_seq=${workSeq}` : ''}`),
+    counts: (projectId: string) => req<RatingCounts>('GET', `/projects/${projectId}/ratings/counts`),
+    ratedChunks: (projectId: string, workSeq?: number, sortBy = 'chunk_position', sortDir = 'asc', limit = 50, offset = 0) => {
+      const p = new URLSearchParams()
+      if (workSeq != null) p.set('work_seq', String(workSeq))
+      p.set('sort_by', sortBy)
+      p.set('sort_dir', sortDir)
+      p.set('limit', String(limit))
+      p.set('offset', String(offset))
+      return req<RatedChunksResponse>('GET', `/projects/${projectId}/ratings/rated-chunks?${p}`)
+    },
     updateRating: (projectId: string, ratingId: string, dimensionScores: Record<string, number>) =>
       req<Rating>('PUT', `/projects/${projectId}/ratings/${ratingId}`, { dimension_scores: dimensionScores }),
   },

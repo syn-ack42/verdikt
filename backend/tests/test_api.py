@@ -629,41 +629,157 @@ def test_next_chunk_confirm_ai_mode_404_when_none(client, project_id):
     assert resp.json()["detail"] == "no_ai_chunks"
 
 
-def test_rated_chunks_returns_explanations(client, project_id, mem_engine):
-    """GET /ratings/rated-chunks returns explanations field for each entry."""
+def _insert_rated_chunk(session, project_id, mat_id, chunk_content, dim_scores, *, is_ai=False, explanations=None, position=0, project_seq=1):
+    """Helper: insert MaterialItem + Chunk + Rating and return (chunk, rating)."""
     from datetime import datetime, timezone
-
     from verdikt.core.models import Chunk, Rating
+    from verdikt.storage.orm import MaterialItemRow
     from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteRatingStore
 
+    session.add(MaterialItemRow(
+        id=mat_id,
+        project_id=project_id,
+        project_seq=project_seq,
+        source_plugin="filedrop",
+        source_path=f"/fake/{mat_id}.txt",
+        content=chunk_content.encode() if isinstance(chunk_content, str) else chunk_content,
+        content_is_bytes=False,
+        domain="text",
+        content_type="text/plain",
+        pipeline_phase="clustered",
+        ingested_at=datetime.now(timezone.utc),
+    ))
+    chunk = Chunk(
+        project_id=project_id,
+        material_item_id=mat_id,
+        content=chunk_content,
+        position=position,
+        size=len(chunk_content.split()) if isinstance(chunk_content, str) else 1,
+        cluster_id=0,
+    )
+    SQLiteChunkStore(session).save_many([chunk])
+    rating = Rating(
+        project_id=project_id,
+        chunk_id=chunk.id,
+        material_item_id=mat_id,
+        dimension_scores=dim_scores,
+        is_ai=is_ai,
+        explanations=explanations or {},
+        rated_at=datetime.now(timezone.utc),
+    )
+    SQLiteRatingStore(session).save(rating)
+    return chunk, rating
+
+
+def test_rated_chunks_returns_paginated_response(client, project_id, mem_engine):
+    """GET /ratings/rated-chunks returns {total, items} shape with correct data."""
     with Session(mem_engine) as s:
-        chunk = Chunk(
-            project_id=project_id,
-            material_item_id="m_expl",
-            content="Some chunk content.",
-            position=0,
-            size=3,
-            cluster_id=0,
-        )
-        SQLiteChunkStore(s).save_many([chunk])
-        rating = Rating(
-            project_id=project_id,
-            chunk_id=chunk.id,
-            material_item_id="m_expl",
-            dimension_scores={"Prose": 4.0},
-            is_ai=True,
-            explanations={"Prose": "Vivid and precise prose."},
-            rated_at=datetime.now(timezone.utc),
-        )
-        SQLiteRatingStore(s).save(rating)
+        _insert_rated_chunk(s, project_id, "m_expl", "Some chunk content.", {"Prose": 4.0},
+                            is_ai=True, explanations={"Prose": "Vivid and precise prose."})
         s.commit()
 
     resp = client.get(f"/api/projects/{project_id}/ratings/rated-chunks")
     assert resp.status_code == 200
-    entries = resp.json()
-    assert len(entries) == 1
-    assert entries[0]["explanations"] == {"Prose": "Vivid and precise prose."}
-    assert entries[0]["avg_score"] == pytest.approx(4.0)
+    body = resp.json()
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+    entry = body["items"][0]
+    assert entry["explanations"] == {"Prose": "Vivid and precise prose."}
+    assert entry["avg_score"] == pytest.approx(4.0)
+    assert entry["chunk_domain"] == "text"
+    assert entry["chunk_content"] == "Some chunk content."
+
+
+def test_rated_chunks_counts_endpoint(client, project_id, mem_engine):
+    """GET /ratings/counts returns {human, ai} breakdown."""
+    with Session(mem_engine) as s:
+        _insert_rated_chunk(s, project_id, "m_h", "human rated chunk", {"Prose": 3.0}, is_ai=False, project_seq=1)
+        _insert_rated_chunk(s, project_id, "m_a1", "ai rated chunk 1", {"Prose": 4.0}, is_ai=True, project_seq=2)
+        _insert_rated_chunk(s, project_id, "m_a2", "ai rated chunk 2", {"Prose": 2.0}, is_ai=True, project_seq=3)
+        s.commit()
+
+    resp = client.get(f"/api/projects/{project_id}/ratings/counts")
+    assert resp.status_code == 200
+    counts = resp.json()
+    assert counts["human"] == 1
+    assert counts["ai"] == 2
+
+
+def test_rated_chunks_deduplicates_human_over_ai(client, project_id, mem_engine):
+    """When a chunk has both human and AI ratings, only the human rating appears and also_ai_rated=True."""
+    from datetime import datetime, timezone
+    from verdikt.core.models import Chunk, Rating
+    from verdikt.storage.orm import MaterialItemRow
+    from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteRatingStore
+
+    with Session(mem_engine) as s:
+        s.add(MaterialItemRow(
+            id="m_dedup", project_id=project_id, project_seq=1, source_plugin="filedrop",
+            source_path="/fake/dedup.txt", content=b"dedup chunk", content_is_bytes=False,
+            domain="text", content_type="text/plain", pipeline_phase="clustered",
+            ingested_at=datetime.now(timezone.utc),
+        ))
+        chunk = Chunk(project_id=project_id, material_item_id="m_dedup", content="dedup chunk", position=0, size=2, cluster_id=0)
+        SQLiteChunkStore(s).save_many([chunk])
+        SQLiteRatingStore(s).save(Rating(project_id=project_id, chunk_id=chunk.id, material_item_id="m_dedup",
+                                         dimension_scores={"Prose": 4.0}, is_ai=False, rated_at=datetime.now(timezone.utc)))
+        SQLiteRatingStore(s).save(Rating(project_id=project_id, chunk_id=chunk.id, material_item_id="m_dedup",
+                                         dimension_scores={"Prose": 2.0}, is_ai=True, rated_at=datetime.now(timezone.utc)))
+        s.commit()
+
+    resp = client.get(f"/api/projects/{project_id}/ratings/rated-chunks")
+    body = resp.json()
+    assert body["total"] == 1
+    entry = body["items"][0]
+    assert entry["is_ai"] is False
+    assert entry["also_ai_rated"] is True
+    assert entry["dimension_scores"]["Prose"] == pytest.approx(4.0)
+
+
+def test_rated_chunks_pagination(client, project_id, mem_engine):
+    """limit/offset parameters page through results correctly."""
+    with Session(mem_engine) as s:
+        for i in range(5):
+            _insert_rated_chunk(s, project_id, f"m_pg{i}", f"chunk number {i}", {"Prose": float(i + 1)}, project_seq=i + 1)
+        s.commit()
+
+    resp_all = client.get(f"/api/projects/{project_id}/ratings/rated-chunks?limit=100&offset=0")
+    assert resp_all.json()["total"] == 5
+
+    resp_p1 = client.get(f"/api/projects/{project_id}/ratings/rated-chunks?limit=2&offset=0")
+    resp_p2 = client.get(f"/api/projects/{project_id}/ratings/rated-chunks?limit=2&offset=2")
+    assert len(resp_p1.json()["items"]) == 2
+    assert len(resp_p2.json()["items"]) == 2
+
+    ids_p1 = {e["rating_id"] for e in resp_p1.json()["items"]}
+    ids_p2 = {e["rating_id"] for e in resp_p2.json()["items"]}
+    assert ids_p1.isdisjoint(ids_p2)
+
+
+def test_rated_chunks_sort_by_avg_score(client, project_id, mem_engine):
+    """sort_by=avg_score&sort_dir=desc returns highest-scored chunk first."""
+    with Session(mem_engine) as s:
+        _insert_rated_chunk(s, project_id, "m_lo", "low score chunk", {"Prose": 1.0}, project_seq=1)
+        _insert_rated_chunk(s, project_id, "m_hi", "high score chunk", {"Prose": 5.0}, project_seq=2)
+        s.commit()
+
+    resp = client.get(f"/api/projects/{project_id}/ratings/rated-chunks?sort_by=avg_score&sort_dir=desc")
+    items = resp.json()["items"]
+    assert items[0]["avg_score"] == pytest.approx(5.0)
+    assert items[1]["avg_score"] == pytest.approx(1.0)
+
+
+def test_rated_chunks_work_seq_filter(client, project_id, mem_engine):
+    """work_seq filter returns only chunks from that work."""
+    with Session(mem_engine) as s:
+        _insert_rated_chunk(s, project_id, "m_w1", "work 1 chunk", {"Prose": 3.0}, project_seq=1)
+        _insert_rated_chunk(s, project_id, "m_w2", "work 2 chunk", {"Prose": 4.0}, project_seq=2)
+        s.commit()
+
+    resp = client.get(f"/api/projects/{project_id}/ratings/rated-chunks?work_seq=1")
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["items"][0]["work_seq"] == 1
 
 
 def test_update_rating_confirms_ai(client, project_id, ai_rated_chunk):

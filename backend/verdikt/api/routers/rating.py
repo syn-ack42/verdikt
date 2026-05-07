@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import text as _text
 from sqlalchemy.orm import Session
 
 from verdikt.api.deps import get_session
@@ -159,85 +160,149 @@ def list_ratings(
     return [_rating_response(r) for r in SQLiteRatingStore(session).list_by_project(project_id)]
 
 
+_SORT_COLS: dict[str, str] = {
+    "chunk_position": "c.position",
+    "work_seq": "COALESCE(m.project_seq, 0)",
+    "avg_score": "(SELECT AVG(j.value) FROM json_each(r.dimension_scores) j)",
+    "is_ai": "r.is_ai",
+}
+
+
+@router.get("/counts")
+def rating_counts(
+    project_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    _get_project_or_404(project_id, session)
+    return SQLiteRatingStore(session).count_by_type(project_id)
+
+
 @router.get("/rated-chunks")
 def list_rated_chunks(
     project_id: str,
     work_seq: int | None = None,
+    sort_by: str = "chunk_position",
+    sort_dir: str = "asc",
+    limit: int = 50,
+    offset: int = 0,
     session: Session = Depends(get_session),
-) -> list[dict]:
+) -> dict:
+    import base64 as _b64
+    import json as _json
+
     _get_project_or_404(project_id, session)
-    rating_store = SQLiteRatingStore(session)
-    chunk_store = SQLiteChunkStore(session)
-    mat_store = SQLiteMaterialStore(session)
 
-    all_ratings = [r for r in rating_store.list_by_project(project_id) if not r.skipped]
+    # Build safe sort column — never interpolate user input directly
+    if sort_by in _SORT_COLS:
+        sort_col = _SORT_COLS[sort_by]
+    elif sort_by.startswith("dim:"):
+        dim_name = sort_by[4:].replace('"', "")
+        sort_col = f'json_extract(r.dimension_scores, \'$.\"{dim_name}\"\')'
+    else:
+        sort_col = "c.position"
 
-    if work_seq is not None:
-        material = mat_store.get_by_seq(project_id, work_seq)
-        if material is None:
-            return []
-        target_id = material.id
-        all_ratings = [r for r in all_ratings if r.material_item_id == target_id]
+    direction = "ASC" if sort_dir.lower() != "desc" else "DESC"
 
-    # Deduplicate: prefer human over AI for the same chunk
-    best_by_chunk: dict = {}
-    for r in all_ratings:
-        existing = best_by_chunk.get(r.chunk_id)
-        if existing is None or (existing.is_ai and not r.is_ai):
-            best_by_chunk[r.chunk_id] = r
+    work_filter = "AND m.project_seq = :work_seq" if work_seq is not None else ""
 
-    # Track chunks that also have an AI rating (even when human wins)
-    ai_rated_chunk_ids = {r.chunk_id for r in all_ratings if r.is_ai}
-
-    # Cache material info and chunk counts to avoid N+1
-    mat_cache: dict = {}
-    chunk_count_cache: dict = {}
-
-    result = []
-    for r in best_by_chunk.values():
-        mid = r.material_item_id
-        if mid not in mat_cache:
-            mat = mat_store.get(mid)
-            mat_cache[mid] = mat
-            if mat:
-                chunk_count_cache[mid] = len(chunk_store.list_by_material(mid))
-        mat = mat_cache.get(mid)
-        chunk = chunk_store.get(r.chunk_id)
-        if chunk is None:
-            continue
-        avg_score = (
-            sum(r.dimension_scores.values()) / len(r.dimension_scores)
-            if r.dimension_scores else None
+    base_where = f"""
+        r.project_id = :pid AND r.skipped = 0
+        AND (
+            r.is_ai = 0
+            OR NOT EXISTS (
+                SELECT 1 FROM ratings r2
+                WHERE r2.chunk_id = r.chunk_id
+                  AND r2.project_id = :pid
+                  AND r2.is_ai = 0
+                  AND r2.skipped = 0
+            )
         )
-        import base64 as _b64
-        if isinstance(chunk.content, bytes):
-            chunk_content = _b64.b64encode(chunk.content).decode()
-            chunk_domain = "image"
-        else:
-            chunk_content = chunk.content
+        {work_filter}
+    """
+
+    count_sql = _text(f"""
+        SELECT COUNT(*)
+        FROM ratings r
+        JOIN chunks c ON c.id = r.chunk_id
+        JOIN material_items m ON m.id = r.material_item_id
+        WHERE {base_where}
+    """)
+
+    items_sql = _text(f"""
+        SELECT
+            r.id            AS rating_id,
+            r.chunk_id,
+            r.is_ai,
+            r.dimension_scores,
+            r.explanations,
+            r.rated_at,
+            c.position      AS chunk_position,
+            c.content       AS chunk_content,
+            c.content_is_str AS chunk_content_is_str,
+            c.description   AS chunk_description,
+            (SELECT COUNT(*) FROM chunks c2
+             WHERE c2.material_item_id = c.material_item_id) AS chunk_count,
+            m.id            AS material_item_id,
+            m.project_seq   AS work_seq,
+            m.work_title,
+            m.author,
+            EXISTS(
+                SELECT 1 FROM ratings ra
+                WHERE ra.chunk_id = r.chunk_id
+                  AND ra.project_id = :pid
+                  AND ra.is_ai = 1
+                  AND ra.skipped = 0
+            ) AS also_ai_rated
+        FROM ratings r
+        JOIN chunks c ON c.id = r.chunk_id
+        JOIN material_items m ON m.id = r.material_item_id
+        WHERE {base_where}
+        ORDER BY {sort_col} {direction}
+        LIMIT :limit OFFSET :offset
+    """)
+
+    params: dict = {"pid": project_id, "limit": limit, "offset": offset}
+    if work_seq is not None:
+        params["work_seq"] = work_seq
+
+    total: int = session.execute(count_sql, params).scalar_one()
+    rows = session.execute(items_sql, params).fetchall()
+
+    items = []
+    for row in rows:
+        dim_scores: dict = _json.loads(row.dimension_scores) if row.dimension_scores else {}
+        explanations: dict = _json.loads(row.explanations) if row.explanations else {}
+        avg_score = round(sum(dim_scores.values()) / len(dim_scores), 2) if dim_scores else None
+
+        content = row.chunk_content
+        if row.chunk_content_is_str:
+            chunk_content = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else content
             chunk_domain = "text"
-        result.append({
-            "rating_id": r.id,
-            "chunk_id": r.chunk_id,
-            "chunk_position": chunk.position,
-            "chunk_count": chunk_count_cache.get(mid, 0),
+        else:
+            chunk_content = _b64.b64encode(content).decode() if isinstance(content, bytes) else content
+            chunk_domain = "image"
+
+        items.append({
+            "rating_id": row.rating_id,
+            "chunk_id": row.chunk_id,
+            "chunk_position": row.chunk_position,
+            "chunk_count": row.chunk_count,
             "chunk_content": chunk_content,
             "chunk_domain": chunk_domain,
-            "chunk_description": chunk.description,
-            "material_item_id": mid,
-            "work_seq": mat.project_seq if mat else None,
-            "work_title": mat.work_title if mat else None,
-            "author": mat.author if mat else None,
-            "dimension_scores": r.dimension_scores,
-            "avg_score": round(avg_score, 2) if avg_score is not None else None,
-            "is_ai": r.is_ai,
-            "also_ai_rated": (not r.is_ai) and (r.chunk_id in ai_rated_chunk_ids),
-            "explanations": r.explanations,
-            "rated_at": r.rated_at.isoformat(),
+            "chunk_description": row.chunk_description,
+            "material_item_id": row.material_item_id,
+            "work_seq": row.work_seq,
+            "work_title": row.work_title,
+            "author": row.author,
+            "dimension_scores": dim_scores,
+            "avg_score": avg_score,
+            "is_ai": bool(row.is_ai),
+            "also_ai_rated": bool(row.also_ai_rated) and not bool(row.is_ai),
+            "explanations": explanations,
+            "rated_at": row.rated_at.isoformat() if hasattr(row.rated_at, "isoformat") else row.rated_at,
         })
 
-    result.sort(key=lambda x: (x["work_seq"] or 0, x["chunk_position"]))
-    return result
+    return {"total": total, "items": items}
 
 
 class RatingUpdate(BaseModel):

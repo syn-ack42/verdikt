@@ -33,7 +33,7 @@ def test_project_defaults():
     assert p.created_at is not None
     assert p.chunk_min_size == 600
     assert p.chunk_max_size == 800
-    assert p.crystallisation_threshold == 50
+    assert p.crystallisation_threshold == 10
 
 
 def test_pipeline_phase_values_are_strings():

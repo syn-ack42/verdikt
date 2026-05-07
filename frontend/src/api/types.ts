@@ -372,3 +372,13 @@ export interface AppConfig {
   ai_preview_text: boolean
   ai_preview_image: boolean
 }
+
+export interface RatingCounts {
+  human: number
+  ai: number
+}
+
+export interface RatedChunksResponse {
+  total: number
+  items: RatedChunkEntry[]
+}

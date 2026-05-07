@@ -69,8 +69,9 @@ Confidence is prediction accuracy, not a rating count. After a profile exists:
 
 - Early sessions use diversity sampling (cluster-based) to maximise corpus coverage.
 - Later sessions use uncertainty sampling (active learning) to target maximally informative chunks (switches after `crystallisation_threshold` ratings).
-- Background AI preview fires on chunk load (normal mode, post-profile); result shown as flash bar after submit.
-- Two rating modes: `normal` (rate new chunks) and `confirm_ai` (review AI-scored chunks).
+- Background AI preview fires on chunk load (normal mode, post-profile); result shown as flash bar after submit. Configurable via `VERDIKT_AI_PREVIEW_TEXT` (default `true`) and `VERDIKT_AI_PREVIEW_IMAGE` (default `false`); exposed to the frontend via `GET /api/config` → `AppConfig`. A per-project non-blocking mutex prevents stacked concurrent Ollama preview calls (returns 503 `preview_busy` if one is already in flight).
+- Two rating modes: `normal` (rate new chunks) and `confirm_ai` (review AI-scored chunks). The dashboard Rate button navigates to `/rate?mode=confirm_ai` when unconfirmed AI chunks exist; `RatingInterface` reads this via `useSearchParams`.
+- `GET /api/projects/{id}/ai-rating/status` includes `unconfirmed_ai_count` — number of AI ratings not yet confirmed by a human.
 - A session of 20–30 ratings must feel fast: keyboard shortcuts, instant progression, no spinners between ratings.
 
 ## Recommendation engine
@@ -146,6 +147,13 @@ The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.y
 - Config: `VERDIKT_GOOGLE_CLIENT_ID`, `VERDIKT_GOOGLE_CLIENT_SECRET`, `VERDIKT_GITHUB_CLIENT_ID`, `VERDIKT_GITHUB_CLIENT_SECRET`, `VERDIKT_OAUTH_REDIRECT_BASE`
 - Login page shows OAuth buttons when providers are configured; OAuth errors surfaced via `?error=` query param
 
+## Performance notes
+
+- **Clustering**: `MiniBatchKMeans` (batch_size=1024) instead of `KMeans`; cluster assignments written via `SQLiteChunkStore.bulk_update_clusters()` which issues a single `executemany` UPDATE instead of per-row calls.
+- **Cluster sampling** (`RatingSelector._next_diversity`): uses `SQLiteChunkStore.cluster_stats()` (LEFT JOIN aggregation SQL) instead of loading all chunk metadata into Python. `random_unrated_in_cluster` uses `NOT EXISTS + ORDER BY RANDOM() LIMIT 1` in SQL.
+- **Composite indexes**: `ix_chunks_project_cluster` on `(project_id, cluster_id)`; `ix_ratings_chunk_project_ai_skipped` on `(chunk_id, project_id, is_ai, skipped)`. Applied via migration in `get_user_engine` DCLP block in `deps.py`.
+- **`has_profile`**: Project `GET /api/projects/{id}` response includes `has_profile: bool` (`profile is not None`). Frontend uses this instead of inferring from `profile_confidence` (which is `null` both when no profile exists and when a profile exists with zero AI confirmations).
+
 ## Build order (milestones)
 
 1. ✅ `MaterialItem` dataclass + SQLite schema + `FileDropPlugin` + chunk/embed/cluster pipeline (no UI)
@@ -179,6 +187,12 @@ In the work detail modal, each chunk block is collapsible: clicking the header (
 - `POST /api/projects/{id}/ai-rating/rate-chunk` — explicit user-triggered AI rating of a single chunk. Unlike `/preview`, has no `already_rated` guard: calling it on an already-rated chunk deletes the existing AI rating and saves a fresh one. Returns `{ai_rating_id, dimension_scores, explanations}`. Budgeted via `check_token_budget`.
 - The work detail modal shows a `↺ AI` button in each chunk header. While the request is in flight the `↺` icon spins (CSS `@keyframes spin`). After completion the chunk list auto-refreshes via `invalidateQueries`.
 - `SQLiteRatingStore.delete(rating_id)` — deletes a single rating row; used by `rate-chunk` to remove the previous AI rating before saving the new one.
+
+## Ratings API performance
+
+`GET /ratings/rated-chunks` is implemented as a single SQL query with `JOIN chunks JOIN material_items`, NOT EXISTS deduplication (human preferred over AI per chunk), server-side `ORDER BY` and `LIMIT/OFFSET`. Response shape: `{"total": int, "items": [...]}`. Query params: `limit`, `offset`, `sort_by` (`chunk_position` | `work_seq` | `avg_score` | `is_ai` | `dim:<name>`), `sort_dir` (`asc` | `desc`), `work_seq`. Sort column is validated against an allowlist; `dim:<name>` uses `json_extract`; direction is clamped to `ASC`/`DESC`. The `chunk_domain` field uses `c.content_is_str` to distinguish text (decode bytes to str) from image (base64-encode bytes).
+
+`GET /ratings/counts` returns `{"human": N, "ai": N}` for the stat card on the dashboard. The dashboard uses this lightweight endpoint instead of loading all ratings. The full `GET /ratings` list is only fetched lazily inside `ProjectSettingsDialog` when the dialog opens.
 
 ## `also_ai_rated` flag
 

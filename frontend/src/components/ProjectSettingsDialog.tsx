@@ -3,15 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import DimensionEditor from './DimensionEditor'
-import type { Project, Rating, RatingDimension } from '../api/types'
+import type { Project, RatingDimension } from '../api/types'
 
 interface Props {
   project: Project
-  ratings: Rating[]
   onClose: () => void
 }
 
-export default function ProjectSettingsDialog({ project, ratings, onClose }: Props) {
+export default function ProjectSettingsDialog({ project, onClose }: Props) {
+  const { data: ratings } = useQuery({
+    queryKey: ['ratings', project.id],
+    queryFn: () => api.ratings.list(project.id),
+  })
   const qc = useQueryClient()
   const navigate = useNavigate()
 
@@ -29,7 +32,7 @@ export default function ProjectSettingsDialog({ project, ratings, onClose }: Pro
 
   const originalNames = project.rating_dimensions.map(d => d.name)
   const originalDescriptions = project.rating_dimensions.map(d => d.description)
-  const ratedNames = new Set(ratings.flatMap(r => Object.keys(r.dimension_scores)))
+  const ratedNames = new Set((ratings ?? []).flatMap(r => Object.keys(r.dimension_scores)))
 
   const { data: modelDefaults } = useQuery({
     queryKey: ['model-defaults'],
