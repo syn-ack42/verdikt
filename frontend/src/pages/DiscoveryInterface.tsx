@@ -242,7 +242,7 @@ export default function DiscoveryInterface() {
                 cursor: preference === null ? 'default' : 'pointer',
                 borderRadius: 6,
                 border: 'none',
-                background: preference === null ? 'var(--border)' : 'var(--accent)',
+                background: preference === null ? 'rgba(128,128,128,0.15)' : '#6b7de0',
                 color: preference === null ? 'var(--text-muted)' : '#fff',
                 opacity: submitting ? 0.6 : 1,
               }}
@@ -266,7 +266,7 @@ export default function DiscoveryInterface() {
               padding: '12px 28px',
               fontSize: 15,
               fontWeight: 600,
-              background: 'var(--accent)',
+              background: '#6b7de0',
               color: '#fff',
               border: 'none',
               borderRadius: 8,

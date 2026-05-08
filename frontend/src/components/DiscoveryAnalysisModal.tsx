@@ -170,7 +170,7 @@ export default function DiscoveryAnalysisModal({ projectId, onClose, onApplied }
               <p style={{ color: 'var(--text-muted)', margin: '0 0 12px' }}>{progressLabel}</p>
               <div style={{ background: 'var(--border)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
                 <div style={{
-                  background: 'var(--accent)',
+                  background: '#6b7de0',
                   height: '100%',
                   width: progressTotal > 0 ? `${Math.round((progressDone / progressTotal) * 100)}%` : '0%',
                   transition: 'width 0.3s',
@@ -302,7 +302,7 @@ export default function DiscoveryAnalysisModal({ projectId, onClose, onApplied }
                 padding: '8px 22px',
                 borderRadius: 6,
                 border: 'none',
-                background: 'var(--accent)',
+                background: '#6b7de0',
                 color: '#fff',
                 fontSize: 14,
                 fontWeight: 600,
