@@ -282,7 +282,7 @@ export default function DiscoveryAnalysisModal({ projectId, analysisStatus, onCl
               Cancel analysis
             </button>
           )}
-          {analysisStatus.error && !running && !result && (
+          {!running && (analysisStatus.error || (result && result.proposed_dimensions.length === 0 && (result.irrelevant_existing?.length ?? 0) === 0)) && (
             <button
               onClick={async () => {
                 await api.discovery.clearAnalysisResult(projectId)
@@ -297,7 +297,7 @@ export default function DiscoveryAnalysisModal({ projectId, analysisStatus, onCl
           <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', fontSize: 14 }}>
             {running ? 'Continue in background' : 'Close'}
           </button>
-          {result && !applying && (
+          {result && result.proposed_dimensions.length > 0 && !applying && (
             <button
               onClick={handleApply}
               disabled={!included.some(Boolean)}

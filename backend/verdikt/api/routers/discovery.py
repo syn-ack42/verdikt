@@ -73,6 +73,9 @@ def discovery_next(
         def get_human_rated_chunk_ids(self, pid: str) -> set[str]:
             return already_rated
 
+        def get_complete_human_rated_chunk_ids(self, pid: str, dim_names: set[str]) -> set[str]:
+            return already_rated
+
         def count_by_project(self, pid: str) -> int:
             return len(already_rated)
 

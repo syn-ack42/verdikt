@@ -288,7 +288,7 @@ export default function DiscoveryInterface() {
       )}
 
       {/* Result ready indicator */}
-      {analysisStatus?.result && !analysisStatus.running && (
+      {analysisStatus?.result && (analysisStatus.result.proposed_dimensions.length > 0 || (analysisStatus.result.irrelevant_existing?.length ?? 0) > 0) && !analysisStatus.running && (
         <div style={{ marginTop: 24, textAlign: 'center' }}>
           <button
             onClick={() => setShowAnalysis(true)}
@@ -299,10 +299,12 @@ export default function DiscoveryInterface() {
         </div>
       )}
 
-      {/* Error state with retry */}
-      {analysisStatus?.error && !analysisStatus.running && !analysisStatus.result && (
+      {/* Error / empty-result state with retry */}
+      {!analysisStatus?.running && (analysisStatus?.error || (analysisStatus?.result && analysisStatus.result.proposed_dimensions.length === 0 && (analysisStatus.result.irrelevant_existing?.length ?? 0) === 0)) && (
         <div style={{ marginTop: 24, padding: '12px 16px', background: 'var(--card-bg)', border: '1px solid #c00', borderRadius: 8 }}>
-          <p style={{ margin: '0 0 10px', fontSize: 13, color: '#c00' }}>{analysisStatus.error}</p>
+          <p style={{ margin: '0 0 10px', fontSize: 13, color: '#c00' }}>
+            {analysisStatus?.error ?? 'Analysis returned no dimensions. Try rating more samples with strong reactions.'}
+          </p>
           <button
             onClick={async () => {
               await api.discovery.clearAnalysisResult(projectId!)
