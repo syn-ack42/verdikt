@@ -517,22 +517,6 @@ export default function ProjectDashboard() {
         )}
         <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>
         <div style={{ position: 'relative' }}>
-          <Link to={`/projects/${projectId}/rate${unconfirmedAiCount > 0 ? '?mode=confirm_ai' : ''}`}>
-            <button style={{
-              padding: '8px 18px', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14,
-              border: unconfirmedAiCount > 0 ? '1px solid #6b7de0' : '1px solid var(--border, #ddd)',
-              color: unconfirmedAiCount > 0 ? '#6b7de0' : 'inherit',
-            }}>
-              {unconfirmedAiCount > 0 ? `Review AI (${unconfirmedAiCount})` : 'Rate'}
-            </button>
-          </Link>
-          {humanCount === 0 && unconfirmedAiCount === 0 && (
-            <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: '#2e7d32', whiteSpace: 'nowrap' }}>
-              start here
-            </span>
-          )}
-        </div>
-        <div style={{ position: 'relative' }}>
           <button
             onClick={() => navigate(`/projects/${projectId}/discover`)}
             style={{
@@ -557,6 +541,22 @@ export default function ProjectDashboard() {
           {!discoveryStatus?.analysis?.running && (discoveryStatus?.total ?? 0) > 0 && (
             <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
               {discoveryStatus!.liked}♥ {discoveryStatus!.disliked}✗
+            </span>
+          )}
+        </div>
+        <div style={{ position: 'relative' }}>
+          <Link to={`/projects/${projectId}/rate${unconfirmedAiCount > 0 ? '?mode=confirm_ai' : ''}`}>
+            <button style={{
+              padding: '8px 18px', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14,
+              border: unconfirmedAiCount > 0 ? '1px solid #6b7de0' : '1px solid var(--border, #ddd)',
+              color: unconfirmedAiCount > 0 ? '#6b7de0' : 'inherit',
+            }}>
+              {unconfirmedAiCount > 0 ? `Review AI (${unconfirmedAiCount})` : 'Rate'}
+            </button>
+          </Link>
+          {humanCount === 0 && unconfirmedAiCount === 0 && (
+            <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: '#2e7d32', whiteSpace: 'nowrap' }}>
+              start here
             </span>
           )}
         </div>
