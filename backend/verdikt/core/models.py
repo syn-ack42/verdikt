@@ -162,3 +162,27 @@ class PluginConfig(BaseModel):
     config: dict
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class DiscoveryRating(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str
+    chunk_id: str
+    material_item_id: str
+    preference: float   # -2.0 (strongly avoid) … +2.0 (strongly seek); 0 = neutral / skip
+    reason: Optional[str] = None
+    rated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class DimensionProposal(BaseModel):
+    name: str
+    description: str
+    weight: float = 1.0
+    is_new: bool = True
+    existing_name: Optional[str] = None  # which existing dim this replaces/matches
+
+
+class DiscoveryAnalysisResult(BaseModel):
+    proposed_dimensions: list[DimensionProposal]
+    irrelevant_existing: list[str]  # names of existing dims that never surfaced
+    analysis_notes: Optional[str] = None

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import ProjectSettingsDialog from '../components/ProjectSettingsDialog'
@@ -79,6 +79,7 @@ function PipelineProgress({ phases, error }: { phases: PhaseProgress[]; error?: 
 
 export default function ProjectDashboard() {
   const { projectId } = useParams<{ projectId: string }>()!
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const [showSettings, setShowSettings] = useState(false)
   const [showPluginIngest, setShowPluginIngest] = useState(false)
@@ -172,6 +173,12 @@ export default function ProjectDashboard() {
   const { data: ratingCounts } = useQuery({
     queryKey: ['rating-counts', projectId],
     queryFn: () => api.ratings.counts(projectId!),
+    enabled: !!projectId,
+  })
+
+  const { data: discoveryStatus } = useQuery({
+    queryKey: ['discovery-status', projectId],
+    queryFn: () => api.discovery.status(projectId!),
     enabled: !!projectId,
   })
 
@@ -521,6 +528,23 @@ export default function ProjectDashboard() {
           {humanCount === 0 && unconfirmedAiCount === 0 && (
             <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: '#2e7d32', whiteSpace: 'nowrap' }}>
               start here
+            </span>
+          )}
+        </div>
+        <div style={{ position: 'relative' }}>
+          <button
+            onClick={() => navigate(`/projects/${projectId}/discover`)}
+            style={{
+              padding: '8px 18px', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14,
+              border: discoveryStatus?.ready ? '1px solid #6b7de0' : '1px solid var(--border, #ddd)',
+              color: discoveryStatus?.ready ? '#6b7de0' : 'inherit',
+            }}
+          >
+            Discover
+          </button>
+          {(discoveryStatus?.total ?? 0) > 0 && (
+            <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+              {discoveryStatus!.liked}♥ {discoveryStatus!.disliked}✗
             </span>
           )}
         </div>

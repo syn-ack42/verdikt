@@ -66,6 +66,18 @@ export default function DimensionEditor({
               />
               {descChanged && <p style={warnStyle}>{WARNING}</p>}
             </div>
+            <div style={{ width: 60, flexShrink: 0 }}>
+              <input
+                type="number"
+                min={0.1}
+                max={5.0}
+                step={0.1}
+                title="Importance weight (1.0 = normal)"
+                value={dim.weight ?? 1.0}
+                onChange={e => update(i, { weight: parseFloat(e.target.value) || 1.0 })}
+                style={{ width: '100%', boxSizing: 'border-box', color: (dim.weight ?? 1.0) !== 1.0 ? 'var(--accent)' : undefined }}
+              />
+            </div>
             <button type="button" onClick={() => remove(i)} style={{ marginTop: 2 }} aria-label="Remove dimension">×</button>
           </div>
         )

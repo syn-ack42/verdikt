@@ -121,6 +121,18 @@ class FileManifestRow(Base):
     modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class DiscoveryRatingRow(Base):
+    __tablename__ = "discovery_ratings"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    chunk_id: Mapped[str] = mapped_column(String, nullable=False)
+    material_item_id: Mapped[str] = mapped_column(String, nullable=False)
+    preference: Mapped[float] = mapped_column(Float, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class PluginBatchStateRow(Base):
     """Persistent state for the batched ingest protocol — one row per (project, plugin)."""
     __tablename__ = "plugin_batch_states"

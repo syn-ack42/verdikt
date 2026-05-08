@@ -3,6 +3,7 @@ import ProjectList from './pages/ProjectList'
 import ProjectCreate from './pages/ProjectCreate'
 import ProjectDashboard from './pages/ProjectDashboard'
 import RatingInterface from './pages/RatingInterface'
+import DiscoveryInterface from './pages/DiscoveryInterface'
 import ProfileView from './pages/ProfileView'
 import Login from './pages/Login'
 import Register from './pages/Register'
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/projects/new" element={<ProjectCreate />} />
         <Route path="/projects/:projectId" element={<ProjectDashboard />} />
         <Route path="/projects/:projectId/rate" element={<RatingInterface />} />
+        <Route path="/projects/:projectId/discover" element={<DiscoveryInterface />} />
         <Route path="/projects/:projectId/profile" element={<ProfileView />} />
         <Route path="/admin/users" element={<AdminUsers />} />
         <Route path="/admin/models" element={<AdminModels />} />

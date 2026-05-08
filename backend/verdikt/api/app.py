@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from verdikt.api.routers import admin, ai_rating, auth, batch_ingest, export, models, pipeline, plugins, profile, projects, rating, storage, usage, works
+from verdikt.api.routers import admin, ai_rating, auth, batch_ingest, discovery, export, models, pipeline, plugins, profile, projects, rating, storage, usage, works
 from verdikt.core.config import AppConfig
 
 
@@ -79,6 +79,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(profile.router)
     app.include_router(storage.router)
     app.include_router(ai_rating.router)
+    app.include_router(discovery.router)
     app.include_router(usage.router)
 
     @app.get("/api/config", tags=["config"])

@@ -8,11 +8,11 @@ from sqlalchemy import delete as sql_delete, func, select, text as _text, update
 from sqlalchemy.orm import Session
 
 from verdikt.core.models import (
-    Chunk, DimensionProfile, MaterialItem, PipelinePhase,
+    Chunk, DimensionProfile, DiscoveryRating, MaterialItem, PipelinePhase,
     PluginConfig, PreferenceProfile, Project, Rating, RatingDimension,
 )
 from verdikt.storage.base import ChunkStore, MaterialStore, PluginConfigStore, ProfileStore, ProjectStore, RatingStore
-from verdikt.storage.orm import ChunkRow, MaterialItemRow, PluginBatchStateRow, PluginConfigRow, PreferenceProfileRow, ProjectRow, RatingRow
+from verdikt.storage.orm import ChunkRow, DiscoveryRatingRow, MaterialItemRow, PluginBatchStateRow, PluginConfigRow, PreferenceProfileRow, ProjectRow, RatingRow
 
 
 class SQLiteProjectStore(ProjectStore):
@@ -778,3 +778,59 @@ class SQLitePluginBatchStateStore:
         if row:
             self._s.delete(row)
             self._s.flush()
+
+
+class SQLiteDiscoveryRatingStore:
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def save(self, dr: DiscoveryRating) -> DiscoveryRating:
+        self._s.add(DiscoveryRatingRow(
+            id=dr.id,
+            project_id=dr.project_id,
+            chunk_id=dr.chunk_id,
+            material_item_id=dr.material_item_id,
+            preference=dr.preference,
+            reason=dr.reason,
+            rated_at=dr.rated_at,
+        ))
+        self._s.flush()
+        return dr
+
+    def list_by_project(self, project_id: str) -> list[DiscoveryRating]:
+        rows = self._s.execute(
+            select(DiscoveryRatingRow).where(DiscoveryRatingRow.project_id == project_id)
+        ).scalars().all()
+        return [self._from_row(r) for r in rows]
+
+    def get_rated_chunk_ids(self, project_id: str) -> set[str]:
+        rows = self._s.execute(
+            select(DiscoveryRatingRow.chunk_id).where(DiscoveryRatingRow.project_id == project_id)
+        ).scalars().all()
+        return set(rows)
+
+    def counts(self, project_id: str) -> dict:
+        rows = self._s.execute(
+            select(DiscoveryRatingRow.preference).where(DiscoveryRatingRow.project_id == project_id)
+        ).scalars().all()
+        liked = sum(1 for p in rows if p > 0)
+        disliked = sum(1 for p in rows if p < 0)
+        return {"total": len(rows), "liked": liked, "disliked": disliked}
+
+    def delete_by_project(self, project_id: str) -> None:
+        self._s.execute(
+            sql_delete(DiscoveryRatingRow).where(DiscoveryRatingRow.project_id == project_id)
+        )
+        self._s.flush()
+
+    @staticmethod
+    def _from_row(r: DiscoveryRatingRow) -> DiscoveryRating:
+        return DiscoveryRating(
+            id=r.id,
+            project_id=r.project_id,
+            chunk_id=r.chunk_id,
+            material_item_id=r.material_item_id,
+            preference=r.preference,
+            reason=r.reason,
+            rated_at=r.rated_at,
+        )

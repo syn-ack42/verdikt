@@ -164,6 +164,21 @@ The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.y
 6. ✅ Image domain support — CLIP embedder, vision LLM judging, identity chunker, domain-filtered plugins, per-domain model catalog with admin-managed defaults
 7. ✅ Token usage tracking + budget grants, admin promote/demote, OAuth (Google/GitHub), sentence-transformer catalog
 8. ✅ `ImmichPlugin` + remote content protocol + chunk descriptions from LLM judge + Immich writeback (star ratings + `#verdikt:` descriptions)
+9. ✅ Discovery mode — dimension discovery from like/dislike reactions; dimension weights surfaced in UI
+
+## Discovery mode
+
+Helps users who struggle to define rating dimensions upfront. Flow: rate samples on a single −2/+2 preference axis with optional reason → two-stage LLM analysis → proposed dimensions for review.
+
+- **`DiscoveryRating`** model in `core/models.py`: `preference: float` (−2 to +2), `reason: str | None`
+- **`discovery_ratings`** SQLite table; new rows picked up automatically by `Base.metadata.create_all`
+- **`SQLiteDiscoveryRatingStore`** in `storage/sqlite.py`: `save`, `list_by_project`, `get_rated_chunk_ids`, `counts`, `delete_by_project`
+- **`DimensionDiscoverer`** in `inference/dimension_discoverer.py`: Stage 1 calls LLM per chunk to describe characteristic qualities (weighted by `|preference|`); Stage 2 synthesises proposed dimensions from liked vs. disliked quality descriptions; flags existing dims that never surfaced as `irrelevant_existing`
+- **Router** `api/routers/discovery.py`, prefix `/api/projects/{id}/discovery`: `GET /next` (cluster-diversity sampling, excludes already-discovery-rated chunks), `POST /ratings`, `GET /status`, `POST /analyse/stream` (SSE), `POST /apply`, `POST /reset`
+- **Ready threshold**: `liked >= 5 AND disliked >= 5` before analysis is enabled
+- **Frontend**: `/projects/:id/discover` route (`DiscoveryInterface.tsx`); `DiscoveryAnalysisModal.tsx` for streaming analysis + proposal review with per-dim name/description/weight editing and irrelevant-existing keep/downweight/remove controls
+- **Dimension weights** now surfaced in `DimensionEditor.tsx` (compact numeric input, highlighted when ≠ 1.0)
+- Dashboard "Discover" button shows `{liked}♥ {disliked}✗` counter; turns accent-coloured when ready
 
 ## Remote content protocol
 

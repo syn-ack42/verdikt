@@ -382,3 +382,29 @@ export interface RatedChunksResponse {
   total: number
   items: RatedChunkEntry[]
 }
+
+export interface DiscoveryStatus {
+  total: number
+  liked: number
+  disliked: number
+  ready: boolean
+}
+
+export interface DimensionProposal {
+  name: string
+  description: string
+  weight: number
+  is_new: boolean
+  existing_name: string | null
+}
+
+export interface DiscoveryAnalysisResult {
+  proposed_dimensions: DimensionProposal[]
+  irrelevant_existing: string[]
+  analysis_notes: string | null
+}
+
+export type DiscoveryAnalysisEvent =
+  | { type: 'progress'; phase: string; done: number; total: number }
+  | { type: 'complete'; result: DiscoveryAnalysisResult }
+  | { type: 'error'; message: string }

@@ -821,6 +821,87 @@ def test_update_rating_confirms_ai(client, project_id, ai_rated_chunk):
     assert data["is_ai"] is False
 
 
+# ── Discovery endpoints ───────────────────────────────────────────────────────
+
+
+def test_discovery_status_empty(client, project_id):
+    """GET /discovery/status returns zero counts when no discovery ratings exist."""
+    resp = client.get(f"/api/projects/{project_id}/discovery/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 0
+    assert data["liked"] == 0
+    assert data["disliked"] == 0
+    assert data["ready"] is False
+
+
+def test_discovery_submit_and_status(client, project_id, mem_engine):
+    """POST /discovery/ratings updates status counts correctly."""
+    with Session(mem_engine) as s:
+        chunk, _ = _insert_rated_chunk(s, project_id, "m_disc", "Discovery test chunk.", {"Prose": 3.0})
+        chunk_id = chunk.id
+        mat_id = chunk.material_item_id
+        s.commit()
+
+    resp = client.post(f"/api/projects/{project_id}/discovery/ratings", json={
+        "chunk_id": chunk_id,
+        "material_item_id": mat_id,
+        "preference": 2.0,
+        "reason": "Really liked it",
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["liked"] == 1
+    assert data["disliked"] == 0
+    assert data["total"] == 1
+
+    status = client.get(f"/api/projects/{project_id}/discovery/status").json()
+    assert status["liked"] == 1
+
+
+def test_discovery_reset(client, project_id, mem_engine):
+    """POST /discovery/reset clears all discovery ratings."""
+    with Session(mem_engine) as s:
+        chunk, _ = _insert_rated_chunk(s, project_id, "m_disc2", "Another chunk.", {"Prose": 3.0})
+        s.commit()
+        chunk_id = chunk.id
+        mat_id = chunk.material_item_id
+
+    client.post(f"/api/projects/{project_id}/discovery/ratings", json={
+        "chunk_id": chunk_id, "material_item_id": mat_id, "preference": -1.0,
+    })
+    resp = client.post(f"/api/projects/{project_id}/discovery/reset")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+    status = client.get(f"/api/projects/{project_id}/discovery/status").json()
+    assert status["total"] == 0
+
+
+def test_discovery_apply(client, project_id):
+    """POST /discovery/apply writes new dimensions to the project."""
+    resp = client.post(f"/api/projects/{project_id}/discovery/apply", json={
+        "dimensions": [
+            {"name": "Prose Quality", "description": "Clear and engaging prose.", "weight": 1.5},
+            {"name": "Pacing", "description": "Appropriate story tempo.", "weight": 1.0},
+        ]
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["rating_dimensions"]) == 2
+    assert data["rating_dimensions"][0]["name"] == "Prose Quality"
+    assert data["rating_dimensions"][0]["weight"] == pytest.approx(1.5)
+
+    # Verify it persisted
+    project = client.get(f"/api/projects/{project_id}").json()
+    assert len(project["rating_dimensions"]) == 2
+
+
+def test_discovery_apply_rejects_empty(client, project_id):
+    """POST /discovery/apply returns 422 when no valid dimensions are given."""
+    resp = client.post(f"/api/projects/{project_id}/discovery/apply", json={"dimensions": []})
+    assert resp.status_code == 422
+
+
 # ── Model catalog endpoints ───────────────────────────────────────────────────
 
 from sqlalchemy.pool import StaticPool as _StaticPool

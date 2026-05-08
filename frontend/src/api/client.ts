@@ -1,5 +1,5 @@
 import type {
-  AIRatingStatus, AppConfig, BatchIngestEvent, BatchIngestStatus, CrystalliseStatus, IngestResult, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
+  AIRatingStatus, AppConfig, BatchIngestEvent, BatchIngestStatus, CrystalliseStatus, DiscoveryAnalysisEvent, DiscoveryStatus, IngestResult, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
   PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, ProjectDefaults, RatedChunksResponse, RatingCounts, Rating, SiteSettings, StorageListing,
   TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkChunk, WorkDetail, WritebackResult, WorksListResponse,
 } from './types'
@@ -252,5 +252,19 @@ export const api = {
   },
   config: {
     get: () => req<AppConfig>('GET', '/config'),
+  },
+  discovery: {
+    next: (projectId: string) =>
+      req<NextChunkResponse>('GET', `/projects/${projectId}/discovery/next`),
+    submitRating: (projectId: string, body: { chunk_id: string; material_item_id: string; preference: number; reason?: string }) =>
+      req<{ ok: boolean; total: number; liked: number; disliked: number; ready: boolean }>('POST', `/projects/${projectId}/discovery/ratings`, body),
+    status: (projectId: string) =>
+      req<DiscoveryStatus>('GET', `/projects/${projectId}/discovery/status`),
+    analyseStream: (projectId: string, onEvent: (e: DiscoveryAnalysisEvent) => void) =>
+      streamFetch(`/projects/${projectId}/discovery/analyse/stream`, { method: 'POST' }, onEvent as (e: unknown) => void),
+    apply: (projectId: string, body: { dimensions: { name: string; description: string; weight: number }[] }) =>
+      req<{ id: string; name: string; rating_dimensions: { name: string; description: string; weight: number }[] }>('POST', `/projects/${projectId}/discovery/apply`, body),
+    reset: (projectId: string) =>
+      req<{ ok: boolean }>('POST', `/projects/${projectId}/discovery/reset`),
   },
 }
