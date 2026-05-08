@@ -454,6 +454,17 @@ class SQLiteRatingStore(RatingStore):
         ).scalar() or 0
 
     def update_scores(self, rating_id: str, dimension_scores: dict) -> None:
+        row = self._s.get(RatingRow, rating_id)
+        if row and row.is_ai:
+            # Delete any existing human rating for the same chunk before confirming
+            self._s.execute(
+                sql_delete(RatingRow).where(
+                    RatingRow.chunk_id == row.chunk_id,
+                    RatingRow.project_id == row.project_id,
+                    RatingRow.is_ai == False,  # noqa: E712
+                    RatingRow.id != rating_id,
+                )
+            )
         self._s.execute(
             update(RatingRow)
             .where(RatingRow.id == rating_id)
@@ -485,11 +496,29 @@ class SQLiteRatingStore(RatingStore):
         self._s.flush()
 
     def list_unconfirmed_ai(self, project_id: str) -> list[Rating]:
-        rows = self._s.execute(
-            select(RatingRow).where(
+        from sqlalchemy import exists as sql_exists
+        human_exists = sql_exists(
+            select(RatingRow.id).where(
+                RatingRow.chunk_id == RatingRow.chunk_id,  # correlated below
                 RatingRow.project_id == project_id,
-                RatingRow.is_ai == True,  # noqa: E712
+                RatingRow.is_ai == False,  # noqa: E712
                 RatingRow.skipped == False,  # noqa: E712
+            )
+        )
+        ai_alias = RatingRow
+        rows = self._s.execute(
+            select(ai_alias).where(
+                ai_alias.project_id == project_id,
+                ai_alias.is_ai == True,  # noqa: E712
+                ai_alias.skipped == False,  # noqa: E712
+                ~sql_exists(
+                    select(RatingRow.id).where(
+                        RatingRow.chunk_id == ai_alias.chunk_id,
+                        RatingRow.project_id == project_id,
+                        RatingRow.is_ai == False,  # noqa: E712
+                        RatingRow.skipped == False,  # noqa: E712
+                    )
+                ),
             )
         ).scalars().all()
         # Sort by avg dimension score descending

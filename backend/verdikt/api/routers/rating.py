@@ -216,6 +216,14 @@ def list_rated_chunks(
                   AND r2.skipped = 0
             )
         )
+        AND NOT EXISTS (
+            SELECT 1 FROM ratings r3
+            WHERE r3.chunk_id = r.chunk_id
+              AND r3.project_id = :pid
+              AND r3.is_ai = r.is_ai
+              AND r3.skipped = 0
+              AND r3.rated_at > r.rated_at
+        )
         {work_filter}
     """
 
