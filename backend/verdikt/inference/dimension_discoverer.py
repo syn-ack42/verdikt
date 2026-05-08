@@ -203,9 +203,7 @@ class DimensionDiscoverer:
                 analysis_notes=notes,
             ), pt, ct
 
-        except Exception:
-            return DiscoveryAnalysisResult(
-                proposed_dimensions=[],
-                irrelevant_existing=[],
-                analysis_notes="Analysis failed — LLM could not be reached or returned unparseable output.",
-            ), 0, 0
+        except Exception as exc:
+            raise RuntimeError(
+                "Analysis failed — LLM could not be reached or returned unparseable output."
+            ) from exc

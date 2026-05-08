@@ -297,9 +297,10 @@ def start_analysis(
             except Exception:
                 log.warning("discovery: failed to record token usage")
 
-        except Exception:
+        except Exception as exc:
             log.exception("discovery analysis thread error for project %s", project_id)
-            _analysis_status[project_id]["error"] = "Analysis failed — see server logs"
+            msg = str(exc) if str(exc) else "Analysis failed — see server logs"
+            _analysis_status[project_id]["error"] = msg
         finally:
             _analysis_status[project_id]["running"] = False
             _stop_flags.pop(project_id, None)
