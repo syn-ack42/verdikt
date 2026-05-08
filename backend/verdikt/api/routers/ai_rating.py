@@ -33,6 +33,13 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects/{project_id}/ai-rating", tags=["ai-rating"])
 
+
+def _dims_match(profile, proj) -> bool:
+    """Return True if the profile's dimension names match the project's current dimensions."""
+    profile_names = {d.name for d in profile.dimensions}
+    project_names = {d.name for d in proj.rating_dimensions}
+    return profile_names == project_names
+
 # project_id → stop flag list (append any value to request stop)
 _stop_flags: dict[str, list] = {}
 
@@ -97,6 +104,8 @@ def start_ai_rating(
     profile = SQLiteProfileStore(session).get_latest(project_id)
     if profile is None:
         raise HTTPException(status_code=503, detail="No crystallised profile found. Crystallise first.")
+    if not _dims_match(profile, proj):
+        raise HTTPException(status_code=409, detail="Profile dimensions don't match project dimensions. Re-crystallise first.")
 
     config = get_config()
     chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
@@ -243,6 +252,8 @@ def ai_preview_rating(
     profile = SQLiteProfileStore(session).get_latest(project_id)
     if profile is None:
         raise HTTPException(status_code=503, detail="No profile found")
+    if not _dims_match(profile, proj):
+        raise HTTPException(status_code=409, detail="Profile dimensions don't match project dimensions. Re-crystallise first.")
 
     chunk = SQLiteChunkStore(session).get(body.chunk_id)
     if chunk is None:
@@ -303,6 +314,8 @@ def rate_chunk_ai(
     profile = SQLiteProfileStore(session).get_latest(project_id)
     if profile is None:
         raise HTTPException(status_code=503, detail="No profile found")
+    if not _dims_match(profile, proj):
+        raise HTTPException(status_code=409, detail="Profile dimensions don't match project dimensions. Re-crystallise first.")
 
     chunk = SQLiteChunkStore(session).get(body.chunk_id)
     if chunk is None:
@@ -355,14 +368,20 @@ def get_ai_rating_status(
     project_id: str,
     session: Session = Depends(get_session),
 ) -> dict:
-    _get_project_or_404(project_id, session)
+    proj = _get_project_or_404(project_id, session)
     state = dict(_status.get(project_id, _default_status()))
 
-    # Check profile staleness if we have a stored profile_version
+    profile_store = SQLiteProfileStore(session)
+    latest = profile_store.get_latest(project_id)
+
+    # Check version staleness
     if state.get("profile_version") is not None and not state.get("running"):
-        latest = SQLiteProfileStore(session).get_latest(project_id)
         if latest and latest.version != state["profile_version"]:
             state["profile_stale"] = True
+
+    # Check dimension mismatch even when no run is in progress
+    if latest and not _dims_match(latest, proj):
+        state["profile_stale"] = True
 
     state["unconfirmed_ai_count"] = len(SQLiteRatingStore(session).list_unconfirmed_ai(project_id))
 

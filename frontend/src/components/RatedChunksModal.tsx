@@ -299,9 +299,17 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
                         {dimensions.map(d => {
                           const score = entry.dimension_scores[d.name]
+                          const w = d.weight ?? 1.0
                           return (
                             <div key={d.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface, rgba(128,128,128,0.06))', borderRadius: 4, padding: '4px 8px' }}>
-                              <span style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{d.name}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', minWidth: 0 }}>
+                                <span style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
+                                {w !== 1.0 && (
+                                  <span style={{ fontSize: 10, padding: '1px 3px', borderRadius: 2, background: w >= 1.5 ? 'rgba(251,191,36,0.15)' : 'rgba(148,163,184,0.15)', color: w >= 1.5 ? '#b45309' : 'var(--text-muted)', flexShrink: 0, fontWeight: 600 }}>
+                                    {w >= 1.5 ? '▲' : '▼'}
+                                  </span>
+                                )}
+                              </div>
                               <span style={{ fontSize: 13, fontWeight: 600, flexShrink: 0, color: score != null ? scoreColor(score) : 'var(--text-muted)' }}>
                                 {score != null ? score.toFixed(1) : '—'}
                               </span>

@@ -4,13 +4,14 @@ import { useIsMobile } from '../hooks/useIsMobile'
 interface Props {
   name: string
   description?: string
+  weight?: number
   score: number | undefined
   active: boolean
   onScore: (score: number) => void
   onFocus: () => void
 }
 
-export default function RatingSlider({ name, description, score, active, onScore, onFocus }: Props) {
+export default function RatingSlider({ name, description, weight, score, active, onScore, onFocus }: Props) {
   const isMobile = useIsMobile()
   const [showDesc, setShowDesc] = useState(false)
 
@@ -46,6 +47,19 @@ export default function RatingSlider({ name, description, score, active, onScore
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}>{name}</span>
+          {weight !== undefined && weight !== 1.0 && (
+            <span style={{
+              fontSize: 10,
+              padding: '1px 4px',
+              borderRadius: 3,
+              background: weight >= 1.5 ? 'rgba(251,191,36,0.15)' : 'rgba(148,163,184,0.15)',
+              color: weight >= 1.5 ? '#b45309' : 'var(--text-muted)',
+              flexShrink: 0,
+              fontWeight: 600,
+            }}>
+              {weight >= 1.5 ? '▲' : '▼'} ×{weight.toFixed(1)}
+            </span>
+          )}
           {description && (
             <button
               onClick={e => { e.stopPropagation(); setShowDesc(v => !v) }}

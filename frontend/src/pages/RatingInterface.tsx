@@ -292,6 +292,7 @@ export default function RatingInterface() {
             key={dim.name}
             name={dim.name}
             description={dim.description}
+            weight={dim.weight}
             score={scores[dim.name]}
             active={activeIdx === i}
             onScore={v => setScores(s => ({ ...s, [dim.name]: v }))}

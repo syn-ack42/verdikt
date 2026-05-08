@@ -809,7 +809,7 @@ export default function ProjectDashboard() {
             )}
             {aiRatingStatus.profile_stale && (
               <p style={{ margin: '2px 0 0', color: '#b45309', fontSize: 12 }}>
-                Profile updated — AI scores may be stale. Restart AI Rating to refresh.
+                Dimensions or profile changed — re-crystallise, then restart AI Rating.
               </p>
             )}
           </div>
