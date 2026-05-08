@@ -207,12 +207,12 @@ def list_rated_chunks(
     base_where = f"""
         r.project_id = :pid AND r.skipped = 0
         AND (
-            r.is_ai = 0
+            r.is_ai = 1
             OR NOT EXISTS (
                 SELECT 1 FROM ratings r2
                 WHERE r2.chunk_id = r.chunk_id
                   AND r2.project_id = :pid
-                  AND r2.is_ai = 0
+                  AND r2.is_ai = 1
                   AND r2.skipped = 0
             )
         )
@@ -256,9 +256,9 @@ def list_rated_chunks(
                 SELECT 1 FROM ratings ra
                 WHERE ra.chunk_id = r.chunk_id
                   AND ra.project_id = :pid
-                  AND ra.is_ai = 1
+                  AND ra.is_ai = 0
                   AND ra.skipped = 0
-            ) AS also_ai_rated
+            ) AS also_human_rated
         FROM ratings r
         JOIN chunks c ON c.id = r.chunk_id
         JOIN material_items m ON m.id = r.material_item_id
@@ -297,7 +297,7 @@ def list_rated_chunks(
             "dimension_scores": dim_scores,
             "avg_score": avg_score,
             "is_ai": bool(row.is_ai),
-            "also_ai_rated": bool(row.also_ai_rated) and not bool(row.is_ai),
+            "also_human_rated": bool(row.also_human_rated) and bool(row.is_ai),
             "explanations": explanations,
             "rated_at": row.rated_at.isoformat() if hasattr(row.rated_at, "isoformat") else row.rated_at,
         })

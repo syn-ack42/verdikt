@@ -705,8 +705,8 @@ def test_rated_chunks_counts_endpoint(client, project_id, mem_engine):
     assert counts["ai"] == 2
 
 
-def test_rated_chunks_deduplicates_human_over_ai(client, project_id, mem_engine):
-    """When a chunk has both human and AI ratings, only the human rating appears and also_ai_rated=True."""
+def test_rated_chunks_deduplicates_ai_over_human(client, project_id, mem_engine):
+    """When a chunk has both human and AI ratings, the AI rating appears with also_human_rated=True."""
     from datetime import datetime, timezone
     from verdikt.core.models import Chunk, Rating
     from verdikt.storage.orm import MaterialItemRow
@@ -731,9 +731,9 @@ def test_rated_chunks_deduplicates_human_over_ai(client, project_id, mem_engine)
     body = resp.json()
     assert body["total"] == 1
     entry = body["items"][0]
-    assert entry["is_ai"] is False
-    assert entry["also_ai_rated"] is True
-    assert entry["dimension_scores"]["Prose"] == pytest.approx(4.0)
+    assert entry["is_ai"] is True
+    assert entry["also_human_rated"] is True
+    assert entry["dimension_scores"]["Prose"] == pytest.approx(2.0)
 
 
 def test_rated_chunks_pagination(client, project_id, mem_engine):

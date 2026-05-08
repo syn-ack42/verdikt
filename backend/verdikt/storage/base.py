@@ -209,6 +209,16 @@ class RatingStore(ABC):
         """Chunk IDs with a human (non-AI, non-skipped) rating."""
         return {r.chunk_id for r in self.list_by_project(project_id) if not r.is_ai and not r.skipped}
 
+    def get_complete_human_rated_chunk_ids(self, project_id: str, dim_names: set[str]) -> set[str]:
+        """Chunk IDs where the human rating covers all of dim_names."""
+        result: set[str] = set()
+        for r in self.list_by_project(project_id):
+            if r.is_ai or r.skipped:
+                continue
+            if dim_names.issubset(r.dimension_scores.keys()):
+                result.add(r.chunk_id)
+        return result
+
     def list_human_scores(self, project_id: str) -> dict[str, float]:
         """Return {chunk_id: avg_dimension_score} for human non-skipped ratings only.
 

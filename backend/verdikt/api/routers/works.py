@@ -187,10 +187,10 @@ def list_works(
                 MIN(j.value) AS overall_min
             FROM ratings r, json_each(r.dimension_scores) j
             WHERE r.project_id = :pid AND r.skipped = 0
-              AND (r.is_ai = 0 OR NOT EXISTS (
+              AND (r.is_ai = 1 OR NOT EXISTS (
                   SELECT 1 FROM ratings r2
                   WHERE r2.chunk_id = r.chunk_id AND r2.project_id = :pid
-                    AND r2.is_ai = 0 AND r2.skipped = 0
+                    AND r2.is_ai = 1 AND r2.skipped = 0
               ))
               AND NOT EXISTS (
                   SELECT 1 FROM ratings r3
@@ -248,11 +248,11 @@ def list_works(
         ratings_by_mat.setdefault(rr.material_item_id, []).append(rr)
 
     def _dedup_ratings(rrs: list) -> list:
-        """Per chunk, keep the human rating if one exists, otherwise the AI rating."""
+        """Per chunk, keep the AI rating if one exists, otherwise the human rating."""
         best: dict[str, object] = {}
         for rr in rrs:
             existing = best.get(rr.chunk_id)
-            if existing is None or (existing.is_ai and not rr.is_ai):
+            if existing is None or (not existing.is_ai and rr.is_ai):
                 best[rr.chunk_id] = rr
         return list(best.values())
 
@@ -793,16 +793,16 @@ def get_work_chunks(
     chunks = sorted(chunk_store.list_by_material(item.id), key=lambda c: c.position)
     chunk_count = len(chunks)
 
-    # Build rating index: chunk_id → best rating (prefer human over AI)
+    # Build rating index: chunk_id → best rating (prefer AI over human)
     all_ratings = [r for r in rating_store.list_by_project(project_id) if not r.skipped and r.material_item_id == item.id]
     rating_by_chunk: dict[str, object] = {}
     for r in all_ratings:
         existing = rating_by_chunk.get(r.chunk_id)
-        if existing is None or (existing.is_ai and not r.is_ai):
+        if existing is None or (not existing.is_ai and r.is_ai):
             rating_by_chunk[r.chunk_id] = r
 
-    # Track which chunks also have an AI rating (even when human rating is shown)
-    ai_rated_chunk_ids = {r.chunk_id for r in all_ratings if r.is_ai}
+    # Track which chunks also have a human rating (shown when AI is displayed)
+    human_rated_chunk_ids = {r.chunk_id for r in all_ratings if not r.is_ai}
 
     result = []
     for chunk in chunks:
@@ -824,7 +824,7 @@ def get_work_chunks(
                 "is_ai": r.is_ai,
                 "explanations": r.explanations,
                 "rated_at": r.rated_at.isoformat(),
-                "also_ai_rated": (not r.is_ai) and (chunk.id in ai_rated_chunk_ids),
+                "also_human_rated": r.is_ai and (chunk.id in human_rated_chunk_ids),
             }
 
         result.append({

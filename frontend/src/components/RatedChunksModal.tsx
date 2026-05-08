@@ -284,14 +284,14 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
                           <span>Chunk {entry.chunk_position + 1} of {entry.chunk_count}</span>
                         )}
                         {entry.is_ai ? (
-                          <span style={{ background: 'rgba(180,83,9,0.12)', color: '#b45309', fontSize: 10, padding: '2px 5px', borderRadius: 3, fontWeight: 600 }}>AI</span>
-                        ) : (
                           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            Human
-                            {entry.also_ai_rated && (
-                              <span style={{ border: '1px dashed #b45309', color: '#b45309', fontSize: 10, padding: '0px 4px', borderRadius: 3, fontWeight: 600, opacity: 0.7 }} title="This chunk was also rated by AI">AI</span>
+                            <span style={{ background: 'rgba(180,83,9,0.12)', color: '#b45309', fontSize: 10, padding: '2px 5px', borderRadius: 3, fontWeight: 600 }}>AI</span>
+                            {entry.also_human_rated && (
+                              <span style={{ border: '1px dashed #2e7d32', color: '#2e7d32', fontSize: 10, padding: '0px 4px', borderRadius: 3, fontWeight: 600, opacity: 0.7 }} title="This chunk was also rated by a human">Human</span>
                             )}
                           </span>
+                        ) : (
+                          <span>Human</span>
                         )}
                       </div>
 

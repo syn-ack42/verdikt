@@ -85,8 +85,13 @@ class AIRater:
                 log.exception("ai_rater: failed to re-score chunk %s", existing_rating.chunk_id)
             yield {"type": "rescore", "chunk_id": existing_rating.chunk_id, "current": i + 1, "total": total_unconfirmed}
 
-        # Phase 2: score new unrated chunks in batches
-        rated_ids = self._ratings.get_all_rated_chunk_ids(project_id)
+        # Phase 2: score chunks that lack a complete human rating.
+        # Complete human-rated chunks (all current dims present) are excluded.
+        # AI-only rated chunks are also excluded — Phase 1 handles re-scoring those.
+        dim_names = {d.name for d in project.rating_dimensions}
+        complete_human_ids = self._ratings.get_complete_human_rated_chunk_ids(project_id, dim_names)
+        ai_rated_ids = {r.chunk_id for r in self._ratings.list_unconfirmed_ai(project_id)}
+        rated_ids = complete_human_ids | ai_rated_ids
 
         # Load only chunk IDs — avoids pulling all content bytes into memory
         all_id_pairs = self._chunks.list_ids_by_project(project_id)

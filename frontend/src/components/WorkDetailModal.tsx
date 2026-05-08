@@ -111,14 +111,14 @@ function ChunkBlock({
                 }}
               >
                 {r.is_ai ? (
-                  <span style={{ background: 'rgba(180,83,9,0.15)', color: '#b45309', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>AI</span>
-                ) : (
                   <>
-                    <span style={{ background: 'rgba(46,125,50,0.12)', color: '#2e7d32', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>Human</span>
-                    {r.also_ai_rated && (
-                      <span style={{ border: '1px dashed #b45309', color: '#b45309', fontSize: 10, padding: '0px 4px', borderRadius: 3, fontWeight: 600, opacity: 0.7 }} title="This chunk was also rated by AI">AI</span>
+                    <span style={{ background: 'rgba(180,83,9,0.15)', color: '#b45309', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>AI</span>
+                    {r.also_human_rated && (
+                      <span style={{ border: '1px dashed #2e7d32', color: '#2e7d32', fontSize: 10, padding: '0px 4px', borderRadius: 3, fontWeight: 600, opacity: 0.7 }} title="This chunk was also rated by a human">Human</span>
                     )}
                   </>
+                ) : (
+                  <span style={{ background: 'rgba(46,125,50,0.12)', color: '#2e7d32', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>Human</span>
                 )}
                 {r.avg_score != null && (
                   <span style={{ fontWeight: 700, color: scoreColor(r.avg_score) }}>{r.avg_score.toFixed(1)}</span>

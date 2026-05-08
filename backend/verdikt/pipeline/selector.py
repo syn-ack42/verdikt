@@ -80,7 +80,11 @@ class RatingSelector:
         return self._chunks.get(chunk_id) if chunk_id else None
 
     def _next_diversity(self, project_id: str) -> Chunk | None:
-        human_rated_ids = self._ratings.get_human_rated_chunk_ids(project_id)
+        if self._project and self._project.rating_dimensions:
+            dim_names = {d.name for d in self._project.rating_dimensions}
+            human_rated_ids = self._ratings.get_complete_human_rated_chunk_ids(project_id, dim_names)
+        else:
+            human_rated_ids = self._ratings.get_human_rated_chunk_ids(project_id)
         stats = self._chunks.cluster_stats(project_id, human_rated_ids)
 
         # clusters that have unrated chunks

@@ -525,6 +525,25 @@ class SQLiteRatingStore(RatingStore):
         ).scalars().all()
         return set(rows)
 
+    def get_complete_human_rated_chunk_ids(self, project_id: str, dim_names: set[str]) -> set[str]:
+        """Return chunk IDs where a non-skipped human rating covers ALL of dim_names."""
+        rows = self._s.execute(
+            select(RatingRow.chunk_id, RatingRow.dimension_scores).where(
+                RatingRow.project_id == project_id,
+                RatingRow.is_ai == False,  # noqa: E712
+                RatingRow.skipped == False,  # noqa: E712
+            )
+        ).all()
+        result: set[str] = set()
+        for chunk_id, scores_json in rows:
+            try:
+                scores = json.loads(scores_json) if isinstance(scores_json, str) else (scores_json or {})
+                if dim_names.issubset(scores.keys()):
+                    result.add(chunk_id)
+            except Exception:
+                pass
+        return result
+
     def list_human_scores(self, project_id: str) -> dict[str, float]:
         """Return {chunk_id: avg_dimension_score} for human non-skipped ratings only."""
         rows = self._s.execute(
