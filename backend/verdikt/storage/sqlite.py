@@ -496,29 +496,11 @@ class SQLiteRatingStore(RatingStore):
         self._s.flush()
 
     def list_unconfirmed_ai(self, project_id: str) -> list[Rating]:
-        from sqlalchemy import exists as sql_exists
-        human_exists = sql_exists(
-            select(RatingRow.id).where(
-                RatingRow.chunk_id == RatingRow.chunk_id,  # correlated below
-                RatingRow.project_id == project_id,
-                RatingRow.is_ai == False,  # noqa: E712
-                RatingRow.skipped == False,  # noqa: E712
-            )
-        )
-        ai_alias = RatingRow
         rows = self._s.execute(
-            select(ai_alias).where(
-                ai_alias.project_id == project_id,
-                ai_alias.is_ai == True,  # noqa: E712
-                ai_alias.skipped == False,  # noqa: E712
-                ~sql_exists(
-                    select(RatingRow.id).where(
-                        RatingRow.chunk_id == ai_alias.chunk_id,
-                        RatingRow.project_id == project_id,
-                        RatingRow.is_ai == False,  # noqa: E712
-                        RatingRow.skipped == False,  # noqa: E712
-                    )
-                ),
+            select(RatingRow).where(
+                RatingRow.project_id == project_id,
+                RatingRow.is_ai == True,  # noqa: E712
+                RatingRow.skipped == False,  # noqa: E712
             )
         ).scalars().all()
         # Sort by avg dimension score descending
