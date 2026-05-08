@@ -299,8 +299,25 @@ export default function DiscoveryInterface() {
         </div>
       )}
 
+      {/* Error state with retry */}
+      {analysisStatus?.error && !analysisStatus.running && !analysisStatus.result && (
+        <div style={{ marginTop: 24, padding: '12px 16px', background: 'var(--card-bg)', border: '1px solid #c00', borderRadius: 8 }}>
+          <p style={{ margin: '0 0 10px', fontSize: 13, color: '#c00' }}>{analysisStatus.error}</p>
+          <button
+            onClick={async () => {
+              await api.discovery.clearAnalysisResult(projectId!)
+              await api.discovery.startAnalysis(projectId!)
+              qc.invalidateQueries({ queryKey: ['discovery-status', projectId] })
+            }}
+            style={{ padding: '6px 16px', fontSize: 13, fontWeight: 600, background: '#6b7de0', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+          >
+            Retry analysis
+          </button>
+        </div>
+      )}
+
       {/* Analyse button */}
-      {ready && !analysisStatus?.running && !analysisStatus?.result && (
+      {ready && !analysisStatus?.running && !analysisStatus?.result && !analysisStatus?.error && (
         <div style={{ marginTop: 32, textAlign: 'center' }}>
           <button
             onClick={async () => {

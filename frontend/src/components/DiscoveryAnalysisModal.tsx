@@ -282,6 +282,18 @@ export default function DiscoveryAnalysisModal({ projectId, analysisStatus, onCl
               Cancel analysis
             </button>
           )}
+          {analysisStatus.error && !running && !result && (
+            <button
+              onClick={async () => {
+                await api.discovery.clearAnalysisResult(projectId)
+                await api.discovery.startAnalysis(projectId)
+                qc.invalidateQueries({ queryKey: ['discovery-status', projectId] })
+              }}
+              style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: '#6b7de0', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}
+            >
+              Retry analysis
+            </button>
+          )}
           <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', fontSize: 14 }}>
             {running ? 'Continue in background' : 'Close'}
           </button>
