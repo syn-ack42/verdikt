@@ -253,6 +253,7 @@ export interface ChunkRating {
   avg_score: number | null
   is_ai: boolean
   also_ai_rated?: boolean
+  also_human_rated?: boolean
   explanations: Record<string, string>
   rated_at: string
 }
