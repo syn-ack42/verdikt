@@ -8,6 +8,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import update as _sql_update
 from sqlalchemy.orm import Session
 
 from verdikt.api.deps import get_auth_engine, get_auth_session, get_config, get_current_user, get_session
@@ -17,6 +18,7 @@ from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.dimension_discoverer import DimensionDiscoverer
 from verdikt.inference.resolver import resolve_llm_model
 from verdikt.pipeline.selector import RatingSelector
+from verdikt.storage.orm import ProjectRow
 from verdikt.storage.sqlite import (
     SQLiteChunkStore, SQLiteDiscoveryRatingStore, SQLiteMaterialStore, SQLiteProjectStore, SQLiteRatingStore,
 )
@@ -157,9 +159,17 @@ def discovery_status(
     project_id: str,
     session: Session = Depends(get_session),
 ) -> dict:
-    _get_project_or_404(project_id, session)
+    proj_row = session.get(ProjectRow, project_id)
+    if proj_row is None:
+        raise HTTPException(status_code=404, detail="Project not found")
     counts = SQLiteDiscoveryRatingStore(session).counts(project_id)
     analysis = dict(_analysis_status.get(project_id, _default_analysis_status()))
+    # If no in-memory result but a persisted result exists, surface it
+    if analysis["result"] is None and proj_row.discovery_analysis_result:
+        try:
+            analysis["result"] = json.loads(proj_row.discovery_analysis_result)
+        except Exception:
+            pass
     return {
         "total": counts["total"],
         "liked": counts["liked"],
@@ -260,12 +270,25 @@ def start_analysis(
             prompt_tokens += pt
             completion_tokens += ct
 
+            result_dict = result.model_dump()
             _analysis_status[project_id].update({
                 "done": 1,
                 "tokens_prompt": prompt_tokens,
                 "tokens_completion": completion_tokens,
-                "result": result.model_dump(),
+                "result": result_dict,
             })
+
+            # Persist result to DB so it survives container restarts
+            try:
+                with _Session(engine) as user_sess:
+                    user_sess.execute(
+                        _sql_update(ProjectRow)
+                        .where(ProjectRow.id == project_id)
+                        .values(discovery_analysis_result=json.dumps(result_dict))
+                    )
+                    user_sess.commit()
+            except Exception:
+                log.warning("discovery: failed to persist analysis result for project %s", project_id)
 
             try:
                 with _Session(get_auth_engine()) as auth_sess:
@@ -303,9 +326,16 @@ def cancel_analysis(
 def clear_analysis_result(
     project_id: str,
     _: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Session = Depends(get_session),
 ) -> dict:
     """Discard the stored analysis result so a fresh analysis can be started."""
     _analysis_status.pop(project_id, None)
+    session.execute(
+        _sql_update(ProjectRow)
+        .where(ProjectRow.id == project_id)
+        .values(discovery_analysis_result=None)
+    )
+    session.commit()
     return {"ok": True}
 
 
@@ -320,9 +350,6 @@ def apply_proposal(
     session: Session = Depends(get_session),
 ) -> dict:
     """Apply the approved dimension proposal to the project."""
-    from sqlalchemy import update as sql_update
-    from verdikt.storage.orm import ProjectRow
-
     proj = _get_project_or_404(project_id, session)
 
     new_dims = []
@@ -339,7 +366,7 @@ def apply_proposal(
         raise HTTPException(status_code=422, detail="No valid dimensions in proposal")
 
     session.execute(
-        sql_update(ProjectRow)
+        _sql_update(ProjectRow)
         .where(ProjectRow.id == project_id)
         .values(rating_dimensions=json.dumps([d.model_dump() for d in new_dims]))
     )
@@ -360,8 +387,13 @@ def reset_discovery(
 ) -> dict:
     _get_project_or_404(project_id, session)
     SQLiteDiscoveryRatingStore(session).delete_by_project(project_id)
-    # Also clear any stored analysis result
+    # Clear analysis result from memory and DB
     _analysis_status.pop(project_id, None)
     _stop_flags.pop(project_id, None)
+    session.execute(
+        _sql_update(ProjectRow)
+        .where(ProjectRow.id == project_id)
+        .values(discovery_analysis_result=None)
+    )
     session.commit()
     return {"ok": True}

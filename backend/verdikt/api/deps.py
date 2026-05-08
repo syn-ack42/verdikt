@@ -278,6 +278,10 @@ def _migrate_user_db(engine: Engine) -> None:
             conn.execute(_text("ALTER TABLE projects ADD COLUMN embedding_model TEXT"))
             conn.commit()
             log.info("migration: added embedding_model to projects")
+        if "discovery_analysis_result" not in _project_cols():
+            conn.execute(_text("ALTER TABLE projects ADD COLUMN discovery_analysis_result TEXT"))
+            conn.commit()
+            log.info("migration: added discovery_analysis_result to projects")
 
         def _profile_cols() -> set[str]:
             return {row[1] for row in conn.execute(_text("PRAGMA table_info(preference_profiles)"))}

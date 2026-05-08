@@ -25,6 +25,7 @@ class ProjectRow(Base):
     llm_model: Mapped[str | None] = mapped_column(String, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    discovery_analysis_result: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON, persisted across restarts
 
 
 class MaterialItemRow(Base):

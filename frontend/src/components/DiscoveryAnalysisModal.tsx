@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { DimensionProposal, DiscoveryAnalysisResult, DiscoveryAnalysisStatus } from '../api/types'
@@ -32,14 +32,17 @@ export default function DiscoveryAnalysisModal({ projectId, analysisStatus, onCl
     () => Object.fromEntries((result?.irrelevant_existing ?? []).map(n => [n, 'keep' as IrrelevantAction]))
   )
 
-  // If result just arrived and we haven't initialised yet, do so
-  const hasResult = result !== null
-  const hasProposals = proposals.length > 0 || (result?.irrelevant_existing.length ?? 0) > 0
-  if (hasResult && !hasProposals) {
-    setProposals(result!.proposed_dimensions)
-    setIncluded(result!.proposed_dimensions.map(() => true))
-    setIrrelevantActions(Object.fromEntries(result!.irrelevant_existing.map(n => [n, 'keep' as IrrelevantAction])))
-  }
+  // When the modal mounts while analysis is still running (result=null), sync state
+  // once the result arrives. Using a ref+effect avoids calling setState during render.
+  const needsResultInit = useRef(result === null)
+  useEffect(() => {
+    if (result !== null && needsResultInit.current) {
+      needsResultInit.current = false
+      setProposals(result.proposed_dimensions)
+      setIncluded(result.proposed_dimensions.map(() => true))
+      setIrrelevantActions(Object.fromEntries(result.irrelevant_existing.map(n => [n, 'keep' as IrrelevantAction])))
+    }
+  }, [result])
 
   const updateProposal = (i: number, patch: Partial<DimensionProposal>) => {
     setProposals(prev => prev.map((p, idx) => idx === i ? { ...p, ...patch } : p))
