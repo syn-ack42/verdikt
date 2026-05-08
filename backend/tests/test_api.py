@@ -687,7 +687,7 @@ def test_rated_chunks_returns_paginated_response(client, project_id, mem_engine)
     assert entry["explanations"] == {"Prose": "Vivid and precise prose."}
     assert entry["avg_score"] == pytest.approx(4.0)
     assert entry["chunk_domain"] == "text"
-    assert entry["chunk_content"] == "Some chunk content."
+    assert entry["chunk_content"] is None  # content omitted from list; fetched on demand via /works/chunk/{id}
 
 
 def test_rated_chunks_counts_endpoint(client, project_id, mem_engine):
@@ -780,6 +780,31 @@ def test_rated_chunks_work_seq_filter(client, project_id, mem_engine):
     body = resp.json()
     assert body["total"] == 1
     assert body["items"][0]["work_seq"] == 1
+
+
+def test_chunk_content_endpoint(client, project_id, mem_engine):
+    """GET /works/chunk/{chunk_id} returns content and domain for a single chunk."""
+    with Session(mem_engine) as s:
+        chunk, _ = _insert_rated_chunk(s, project_id, "m_cc", "Hello world content.", {"Prose": 3.0})
+        chunk_id = chunk.id
+        s.commit()
+
+    resp = client.get(f"/api/projects/{project_id}/works/chunk/{chunk_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["content"] == "Hello world content."
+    assert data["domain"] == "text"
+
+
+def test_chunk_content_endpoint_404_wrong_project(client, project_id, mem_engine):
+    """GET /works/chunk/{chunk_id} returns 404 when chunk belongs to a different project."""
+    with Session(mem_engine) as s:
+        chunk, _ = _insert_rated_chunk(s, project_id, "m_cc2", "Some text.", {"Prose": 3.0})
+        chunk_id = chunk.id
+        s.commit()
+
+    resp = client.get(f"/api/projects/nonexistent-project/works/chunk/{chunk_id}")
+    assert resp.status_code == 404
 
 
 def test_update_rating_confirms_ai(client, project_id, ai_rated_chunk):

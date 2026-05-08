@@ -129,6 +129,8 @@ export const api = {
       params.set('offset', String(offset))
       return req<WorksListResponse>('GET', `/projects/${projectId}/works?${params}`)
     },
+    chunkContent: (projectId: string, chunkId: string) =>
+      req<{ content: string | null; domain: 'text' | 'image' }>('GET', `/projects/${projectId}/works/chunk/${encodeURIComponent(chunkId)}`),
     ingest: (projectId: string, storagePaths: string[]) =>
       req<IngestResult>('POST', `/projects/${projectId}/works/ingest`, { storage_paths: storagePaths }),
     detail: (projectId: string, ref: string) =>

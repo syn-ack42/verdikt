@@ -5,7 +5,7 @@ import RatingSlider from './RatingSlider'
 import { useIsMobile } from '../hooks/useIsMobile'
 import type { RatedChunkEntry } from '../api/types'
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 20
 
 interface Props {
   projectId: string
@@ -29,6 +29,7 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
   const isMobile = useIsMobile()
   const qc = useQueryClient()
   const [editing, setEditing] = useState<RatedChunkEntry | null>(initialEditing ?? null)
+  const [loadingChunkId, setLoadingChunkId] = useState<string | null>(null)
   const [expandedExpl, setExpandedExpl] = useState<string | null>(null)
   const [scores, setScores] = useState<Record<string, number>>(initialEditing?.dimension_scores ?? {})
   const [activeIdx, setActiveIdx] = useState(0)
@@ -63,9 +64,21 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
     onSuccess: () => { invalidate(); initialEditing ? onClose() : setEditing(null) },
   })
 
-  const openEdit = (entry: RatedChunkEntry) => {
-    setEditing(entry)
-    setScores({ ...entry.dimension_scores })
+  const openEdit = async (entry: RatedChunkEntry) => {
+    let fullEntry = entry
+    if (entry.chunk_content === null) {
+      setLoadingChunkId(entry.chunk_id)
+      try {
+        const { content, domain } = await api.works.chunkContent(projectId, entry.chunk_id)
+        fullEntry = { ...entry, chunk_content: content, chunk_domain: domain }
+      } catch {
+        // show edit view anyway; content will show as "(no content)"
+      } finally {
+        setLoadingChunkId(null)
+      }
+    }
+    setEditing(fullEntry)
+    setScores({ ...fullEntry.dimension_scores })
     setActiveIdx(0)
   }
 
@@ -247,8 +260,8 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
                 return (
                   <div key={entry.rating_id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <div
-                      onClick={() => openEdit(entry)}
-                      style={{ padding: '12px 16px', cursor: 'pointer' }}
+                      onClick={() => { if (loadingChunkId === null) openEdit(entry) }}
+                      style={{ padding: '12px 16px', cursor: loadingChunkId === entry.chunk_id ? 'wait' : 'pointer', opacity: loadingChunkId === entry.chunk_id ? 0.6 : 1 }}
                       onMouseEnter={e => (e.currentTarget.style.background = 'var(--hover, rgba(128,128,128,0.06))')}
                       onMouseLeave={e => (e.currentTarget.style.background = '')}
                     >

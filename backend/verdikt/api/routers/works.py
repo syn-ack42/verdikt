@@ -663,6 +663,23 @@ def update_from_plugin_stream(
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+@router.get("/chunk/{chunk_id}")
+def get_chunk_content(
+    project_id: str,
+    chunk_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return content + domain for a single chunk. Used by the ratings modal edit view."""
+    import base64
+    chunk_store = SQLiteChunkStore(session)
+    chunk = chunk_store.get(chunk_id)
+    if chunk is None or chunk.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+    if isinstance(chunk.content, bytes):
+        return {"content": base64.b64encode(chunk.content).decode(), "domain": "image"}
+    return {"content": chunk.content, "domain": "text"}
+
+
 @router.get("/{work_ref}/detail")
 def get_work_detail(
     project_id: str,

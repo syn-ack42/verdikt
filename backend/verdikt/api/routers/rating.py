@@ -187,7 +187,6 @@ def list_rated_chunks(
     offset: int = 0,
     session: Session = Depends(get_session),
 ) -> dict:
-    import base64 as _b64
     import json as _json
 
     _get_project_or_404(project_id, session)
@@ -237,7 +236,6 @@ def list_rated_chunks(
             r.explanations,
             r.rated_at,
             c.position      AS chunk_position,
-            c.content       AS chunk_content,
             c.content_is_str AS chunk_content_is_str,
             c.description   AS chunk_description,
             (SELECT COUNT(*) FROM chunks c2
@@ -274,20 +272,14 @@ def list_rated_chunks(
         explanations: dict = _json.loads(row.explanations) if row.explanations else {}
         avg_score = round(sum(dim_scores.values()) / len(dim_scores), 2) if dim_scores else None
 
-        content = row.chunk_content
-        if row.chunk_content_is_str:
-            chunk_content = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else content
-            chunk_domain = "text"
-        else:
-            chunk_content = _b64.b64encode(content).decode() if isinstance(content, bytes) else content
-            chunk_domain = "image"
+        chunk_domain = "text" if row.chunk_content_is_str else "image"
 
         items.append({
             "rating_id": row.rating_id,
             "chunk_id": row.chunk_id,
             "chunk_position": row.chunk_position,
             "chunk_count": row.chunk_count,
-            "chunk_content": chunk_content,
+            "chunk_content": None,
             "chunk_domain": chunk_domain,
             "chunk_description": row.chunk_description,
             "material_item_id": row.material_item_id,
