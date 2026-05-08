@@ -1,5 +1,5 @@
 import type {
-  AIRatingStatus, AppConfig, BatchIngestEvent, BatchIngestStatus, CrystalliseStatus, DiscoveryAnalysisEvent, DiscoveryStatus, IngestResult, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
+  AIRatingStatus, AppConfig, BatchIngestEvent, BatchIngestStatus, CrystalliseStatus, DiscoveryStatus, IngestResult, ModelCatalogEntry, NextChunkResponse, PipelineResult, PipelineStreamEvent,
   PluginConfig, PluginConfigMap, PluginIngestEvent, PluginInfo, PreferenceProfile, Project, ProjectDefaults, RatedChunksResponse, RatingCounts, Rating, SiteSettings, StorageListing,
   TokenGrant, UpdatePluginEvent, UpdatePluginStatus, UsageSummary, User, WorkChunk, WorkDetail, WritebackResult, WorksListResponse,
 } from './types'
@@ -260,8 +260,12 @@ export const api = {
       req<{ ok: boolean; total: number; liked: number; disliked: number; ready: boolean }>('POST', `/projects/${projectId}/discovery/ratings`, body),
     status: (projectId: string) =>
       req<DiscoveryStatus>('GET', `/projects/${projectId}/discovery/status`),
-    analyseStream: (projectId: string, onEvent: (e: DiscoveryAnalysisEvent) => void) =>
-      streamFetch(`/projects/${projectId}/discovery/analyse/stream`, { method: 'POST' }, onEvent as (e: unknown) => void),
+    startAnalysis: (projectId: string) =>
+      req<{ status: string }>('POST', `/projects/${projectId}/discovery/analyse/start`),
+    cancelAnalysis: (projectId: string) =>
+      req<{ ok: boolean }>('POST', `/projects/${projectId}/discovery/analyse/cancel`),
+    clearAnalysisResult: (projectId: string) =>
+      req<{ ok: boolean }>('DELETE', `/projects/${projectId}/discovery/analyse/result`),
     apply: (projectId: string, body: { dimensions: { name: string; description: string; weight: number }[] }) =>
       req<{ id: string; name: string; rating_dimensions: { name: string; description: string; weight: number }[] }>('POST', `/projects/${projectId}/discovery/apply`, body),
     reset: (projectId: string) =>

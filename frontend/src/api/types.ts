@@ -383,13 +383,6 @@ export interface RatedChunksResponse {
   items: RatedChunkEntry[]
 }
 
-export interface DiscoveryStatus {
-  total: number
-  liked: number
-  disliked: number
-  ready: boolean
-}
-
 export interface DimensionProposal {
   name: string
   description: string
@@ -404,7 +397,21 @@ export interface DiscoveryAnalysisResult {
   analysis_notes: string | null
 }
 
-export type DiscoveryAnalysisEvent =
-  | { type: 'progress'; phase: string; done: number; total: number }
-  | { type: 'complete'; result: DiscoveryAnalysisResult }
-  | { type: 'error'; message: string }
+export interface DiscoveryAnalysisStatus {
+  running: boolean
+  phase: 'describing' | 'synthesising' | null
+  done: number
+  total: number
+  tokens_prompt: number
+  tokens_completion: number
+  result: DiscoveryAnalysisResult | null
+  error: string | null
+}
+
+export interface DiscoveryStatus {
+  total: number
+  liked: number
+  disliked: number
+  ready: boolean
+  analysis: DiscoveryAnalysisStatus
+}

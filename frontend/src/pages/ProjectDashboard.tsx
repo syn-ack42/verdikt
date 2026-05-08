@@ -180,6 +180,7 @@ export default function ProjectDashboard() {
     queryKey: ['discovery-status', projectId],
     queryFn: () => api.discovery.status(projectId!),
     enabled: !!projectId,
+    refetchInterval: (query) => query.state.data?.analysis?.running ? 2000 : false,
   })
 
   const removeWork = useMutation({
@@ -536,13 +537,24 @@ export default function ProjectDashboard() {
             onClick={() => navigate(`/projects/${projectId}/discover`)}
             style={{
               padding: '8px 18px', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14,
-              border: discoveryStatus?.ready ? '1px solid #6b7de0' : '1px solid var(--border, #ddd)',
-              color: discoveryStatus?.ready ? '#6b7de0' : 'inherit',
+              border: (discoveryStatus?.ready || discoveryStatus?.analysis?.running || discoveryStatus?.analysis?.result)
+                ? '1px solid #6b7de0' : '1px solid var(--border, #ddd)',
+              color: (discoveryStatus?.ready || discoveryStatus?.analysis?.running || discoveryStatus?.analysis?.result)
+                ? '#6b7de0' : 'inherit',
             }}
           >
-            Discover
+            {discoveryStatus?.analysis?.running ? 'Analysing…' : discoveryStatus?.analysis?.result ? 'Review dims →' : 'Discover'}
           </button>
-          {(discoveryStatus?.total ?? 0) > 0 && (
+          {discoveryStatus?.analysis?.running && (
+            <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: '#6b7de0', whiteSpace: 'nowrap' }}>
+              {discoveryStatus.analysis.phase === 'describing'
+                ? `${discoveryStatus.analysis.done}/${discoveryStatus.analysis.total} chunks`
+                : discoveryStatus.analysis.phase === 'synthesising' ? 'synthesising…' : '…'}
+              {tokenLabel(discoveryStatus.analysis.tokens_prompt, discoveryStatus.analysis.tokens_completion)
+                ? ` · ${tokenLabel(discoveryStatus.analysis.tokens_prompt, discoveryStatus.analysis.tokens_completion)} tokens` : ''}
+            </span>
+          )}
+          {!discoveryStatus?.analysis?.running && (discoveryStatus?.total ?? 0) > 0 && (
             <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
               {discoveryStatus!.liked}♥ {discoveryStatus!.disliked}✗
             </span>

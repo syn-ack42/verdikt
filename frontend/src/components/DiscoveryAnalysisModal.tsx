@@ -1,67 +1,45 @@
-import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
-import type { DimensionProposal, DiscoveryAnalysisResult } from '../api/types'
+import type { DimensionProposal, DiscoveryAnalysisResult, DiscoveryAnalysisStatus } from '../api/types'
+
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return String(n)
+}
 
 interface Props {
   projectId: string
+  analysisStatus: DiscoveryAnalysisStatus
   onClose: () => void
   onApplied: () => void
 }
 
 type IrrelevantAction = 'keep' | 'downweight' | 'remove'
 
-export default function DiscoveryAnalysisModal({ projectId, onClose, onApplied }: Props) {
+export default function DiscoveryAnalysisModal({ projectId, analysisStatus, onClose, onApplied }: Props) {
   const qc = useQueryClient()
+  const [applying, setApplying] = useState(false)
+  const [applyError, setApplyError] = useState('')
 
-  const [phase, setPhase] = useState<'running' | 'review' | 'applying' | 'error'>('running')
-  const [progressLabel, setProgressLabel] = useState('Preparing…')
-  const [progressDone, setProgressDone] = useState(0)
-  const [progressTotal, setProgressTotal] = useState(1)
-  const [result, setResult] = useState<DiscoveryAnalysisResult | null>(null)
-  const [errorMsg, setErrorMsg] = useState('')
+  const result: DiscoveryAnalysisResult | null = analysisStatus.result
 
-  // Editable proposal state
-  const [proposals, setProposals] = useState<DimensionProposal[]>([])
-  const [included, setIncluded] = useState<boolean[]>([])
-  const [irrelevantActions, setIrrelevantActions] = useState<Record<string, IrrelevantAction>>({})
+  // Editable proposal state — initialised from result once available
+  const [proposals, setProposals] = useState<DimensionProposal[]>(() => result?.proposed_dimensions ?? [])
+  const [included, setIncluded] = useState<boolean[]>(() => result?.proposed_dimensions.map(() => true) ?? [])
+  const [irrelevantActions, setIrrelevantActions] = useState<Record<string, IrrelevantAction>>(
+    () => Object.fromEntries((result?.irrelevant_existing ?? []).map(n => [n, 'keep' as IrrelevantAction]))
+  )
 
-  const abortRef = useRef(false)
-
-  useEffect(() => {
-    abortRef.current = false
-    let cancelled = false
-
-    api.discovery.analyseStream(projectId, (event) => {
-      if (cancelled) return
-      if (event.type === 'progress') {
-        const phaseLabel = event.phase === 'describing'
-          ? `Describing chunks (${event.done} / ${event.total})…`
-          : 'Synthesising dimensions…'
-        setProgressLabel(phaseLabel)
-        setProgressDone(event.done)
-        setProgressTotal(event.total)
-      } else if (event.type === 'complete') {
-        setResult(event.result)
-        setProposals(event.result.proposed_dimensions)
-        setIncluded(event.result.proposed_dimensions.map(() => true))
-        setIrrelevantActions(
-          Object.fromEntries(event.result.irrelevant_existing.map(n => [n, 'keep' as IrrelevantAction]))
-        )
-        setPhase('review')
-      } else if (event.type === 'error') {
-        setErrorMsg(event.message)
-        setPhase('error')
-      }
-    }).catch(err => {
-      if (!cancelled) {
-        setErrorMsg(err?.message ?? 'Analysis failed')
-        setPhase('error')
-      }
-    })
-
-    return () => { cancelled = true }
-  }, [projectId])
+  // If result just arrived and we haven't initialised yet, do so
+  const hasResult = result !== null
+  const hasProposals = proposals.length > 0 || (result?.irrelevant_existing.length ?? 0) > 0
+  if (hasResult && !hasProposals) {
+    setProposals(result!.proposed_dimensions)
+    setIncluded(result!.proposed_dimensions.map(() => true))
+    setIrrelevantActions(Object.fromEntries(result!.irrelevant_existing.map(n => [n, 'keep' as IrrelevantAction])))
+  }
 
   const updateProposal = (i: number, patch: Partial<DimensionProposal>) => {
     setProposals(prev => prev.map((p, idx) => idx === i ? { ...p, ...patch } : p))
@@ -69,38 +47,27 @@ export default function DiscoveryAnalysisModal({ projectId, onClose, onApplied }
 
   const handleApply = async () => {
     if (!result) return
-    setPhase('applying')
+    setApplying(true)
+    setApplyError('')
 
-    // Build the final dimension list:
-    // 1. Selected proposed dims (with edits)
     const finalDims: { name: string; description: string; weight: number }[] = []
     proposals.forEach((p, i) => {
       if (!included[i] || !p.name.trim()) return
       finalDims.push({ name: p.name.trim(), description: p.description.trim(), weight: p.weight })
     })
 
-    // 2. Irrelevant existing dims according to user actions (keep/downweight survive, remove drops)
-    // These come from the project's existing dimensions, not from proposals.
-    // The apply endpoint only takes the new dimension list, so we need to fetch the project
-    // to get current non-irrelevant dims and merge.
-    // Simpler: the apply endpoint replaces all dims. We should pass everything we want to keep.
-    // Since we only have the irrelevant names here (not the full existing dims), we fetch the project.
     let existingToKeep: { name: string; description: string; weight: number }[] = []
     try {
       const project = await api.projects.get(projectId)
       const irrelevantNames = new Set(result.irrelevant_existing)
       for (const dim of project.rating_dimensions) {
-        // Skip dims that are being replaced by a matched proposal
         const matchedByProposal = proposals.some(
           (p, i) => included[i] && !p.is_new && p.existing_name === dim.name
         )
         if (matchedByProposal) continue
-        // Skip truly new proposals that aren't mapped to existing dims
         if (!irrelevantNames.has(dim.name)) {
-          // It's an existing dim not flagged as irrelevant — keep it
           existingToKeep.push({ name: dim.name, description: dim.description, weight: dim.weight })
         } else {
-          // It's flagged irrelevant
           const action = irrelevantActions[dim.name] ?? 'keep'
           if (action === 'remove') continue
           existingToKeep.push({
@@ -110,31 +77,44 @@ export default function DiscoveryAnalysisModal({ projectId, onClose, onApplied }
           })
         }
       }
-    } catch {
-      // If we can't fetch the project, just use what we have
-    }
+    } catch { /* ignore */ }
 
     const allDims = [...existingToKeep, ...finalDims]
     if (allDims.length === 0) {
-      setPhase('review')
+      setApplyError('Select at least one dimension to apply.')
+      setApplying(false)
       return
     }
 
     try {
       await api.discovery.apply(projectId, { dimensions: allDims })
+      await api.discovery.clearAnalysisResult(projectId)
       qc.invalidateQueries({ queryKey: ['projects', projectId] })
       qc.invalidateQueries({ queryKey: ['project', projectId] })
+      qc.invalidateQueries({ queryKey: ['discovery-status', projectId] })
       onApplied()
     } catch (err: unknown) {
-      setErrorMsg((err as Error)?.message ?? 'Apply failed')
-      setPhase('error')
+      setApplyError((err as Error)?.message ?? 'Apply failed')
+      setApplying(false)
     }
   }
+
+  const running = analysisStatus.running
+  const phaseDone = analysisStatus.done
+  const phaseTotal = analysisStatus.total
+  const tokens = analysisStatus.tokens_prompt + analysisStatus.tokens_completion
+
+  const progressPct = phaseTotal > 0 ? Math.round((phaseDone / phaseTotal) * 100) : 0
+  const phaseLabel = analysisStatus.phase === 'describing'
+    ? `Describing chunks (${phaseDone} / ${phaseTotal})…`
+    : analysisStatus.phase === 'synthesising'
+    ? 'Synthesising dimensions…'
+    : running ? 'Preparing…' : ''
 
   return (
     <div
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
-      onClick={e => { if (e.target === e.currentTarget && phase !== 'running') onClose() }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div style={{
         background: 'var(--modal-bg)',
@@ -150,47 +130,48 @@ export default function DiscoveryAnalysisModal({ projectId, onClose, onApplied }
       }}>
         {/* Header */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0, fontSize: 16 }}>
-            {phase === 'running' ? 'Analysing preferences…'
-              : phase === 'review' ? 'Proposed dimensions'
-              : phase === 'applying' ? 'Applying…'
-              : 'Analysis error'}
-          </h3>
-          {phase !== 'running' && (
-            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)' }}>×</button>
-          )}
+          <div>
+            <h3 style={{ margin: 0, fontSize: 16 }}>
+              {running ? 'Analysing preferences…' : result ? 'Proposed dimensions' : 'Analysis'}
+            </h3>
+            {tokens > 0 && (
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtTokens(tokens)} tokens</span>
+            )}
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)' }}>×</button>
         </div>
 
         {/* Body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
 
-          {/* Running */}
-          {phase === 'running' && (
-            <div>
-              <p style={{ color: 'var(--text-muted)', margin: '0 0 12px' }}>{progressLabel}</p>
+          {/* Running progress */}
+          {running && (
+            <div style={{ marginBottom: 20 }}>
+              <p style={{ color: 'var(--text-muted)', margin: '0 0 8px', fontSize: 14 }}>{phaseLabel}</p>
               <div style={{ background: 'var(--border)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
                 <div style={{
                   background: '#6b7de0',
                   height: '100%',
-                  width: progressTotal > 0 ? `${Math.round((progressDone / progressTotal) * 100)}%` : '0%',
-                  transition: 'width 0.3s',
+                  width: `${progressPct}%`,
+                  transition: 'width 0.5s',
                 }} />
               </div>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                Running in the background — you can close this and come back later.
+              </p>
             </div>
           )}
 
           {/* Error */}
-          {phase === 'error' && (
-            <p style={{ color: '#c00' }}>{errorMsg || 'An error occurred during analysis.'}</p>
+          {analysisStatus.error && !running && (
+            <p style={{ color: '#c00', margin: 0 }}>{analysisStatus.error}</p>
           )}
 
           {/* Applying */}
-          {phase === 'applying' && (
-            <p style={{ color: 'var(--text-muted)' }}>Saving dimensions…</p>
-          )}
+          {applying && <p style={{ color: 'var(--text-muted)' }}>Saving dimensions…</p>}
 
           {/* Review */}
-          {phase === 'review' && result && (
+          {!applying && result && (
             <>
               {result.analysis_notes && (
                 <p style={{ fontStyle: 'italic', color: 'var(--text-muted)', fontSize: 13, margin: '0 0 16px' }}>
@@ -235,7 +216,7 @@ export default function DiscoveryAnalysisModal({ projectId, onClose, onApplied }
                         value={p.description}
                         onChange={e => updateProposal(i, { description: e.target.value })}
                         disabled={!included[i]}
-                        placeholder="Description (what does a high score mean?)"
+                        placeholder="Description"
                         style={{ width: '100%', fontSize: 13, boxSizing: 'border-box', marginBottom: 6 }}
                       />
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}>
@@ -248,21 +229,18 @@ export default function DiscoveryAnalysisModal({ projectId, onClose, onApplied }
                           disabled={!included[i]}
                           style={{ width: 60, fontSize: 13 }}
                         />
-                        <span style={{ color: 'var(--text-muted)' }}>
-                          {p.weight >= 1.5 ? '(high)' : p.weight <= 0.6 ? '(low)' : '(normal)'}
-                        </span>
+                        <span>{p.weight >= 1.5 ? '(high)' : p.weight <= 0.6 ? '(low)' : '(normal)'}</span>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Irrelevant existing dims */}
               {result.irrelevant_existing.length > 0 && (
                 <>
                   <h4 style={{ margin: '0 0 6px', fontSize: 14 }}>Existing dimensions that didn't surface</h4>
                   <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px' }}>
-                    These dimensions were never a distinctive quality in your liked or disliked samples.
+                    These never appeared as a distinctive quality in your reactions.
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
                     {result.irrelevant_existing.map(name => (
@@ -285,16 +263,26 @@ export default function DiscoveryAnalysisModal({ projectId, onClose, onApplied }
                   </div>
                 </>
               )}
+
+              {applyError && <p style={{ color: '#c00', marginTop: 8, fontSize: 13 }}>{applyError}</p>}
             </>
           )}
         </div>
 
         {/* Footer */}
-        {phase === 'review' && (
-          <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', fontSize: 14 }}>
-              Cancel
+        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          {running && (
+            <button
+              onClick={async () => { await api.discovery.cancelAnalysis(projectId); qc.invalidateQueries({ queryKey: ['discovery-status', projectId] }); onClose() }}
+              style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', fontSize: 14, color: '#c00' }}
+            >
+              Cancel analysis
             </button>
+          )}
+          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', fontSize: 14 }}>
+            {running ? 'Continue in background' : 'Close'}
+          </button>
+          {result && !applying && (
             <button
               onClick={handleApply}
               disabled={!included.some(Boolean)}
@@ -312,8 +300,8 @@ export default function DiscoveryAnalysisModal({ projectId, onClose, onApplied }
             >
               Apply to project
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

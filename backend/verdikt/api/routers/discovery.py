@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
+import threading
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_auth_session, get_config, get_current_user, get_session
+from verdikt.api.deps import get_auth_engine, get_auth_session, get_config, get_current_user, get_session
 from verdikt.api.token_budget import check_token_budget, record_usage
 from verdikt.core.models import DiscoveryRating, RatingDimension
 from verdikt.core.user_models import AuthenticatedUser
@@ -20,10 +21,30 @@ from verdikt.storage.sqlite import (
     SQLiteChunkStore, SQLiteDiscoveryRatingStore, SQLiteMaterialStore, SQLiteProjectStore, SQLiteRatingStore,
 )
 
+log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/projects/{project_id}/discovery", tags=["discovery"])
 
 _READY_LIKED = 5
 _READY_DISLIKED = 5
+
+# project_id → analysis status dict (in-memory, same pattern as ai_rating)
+_analysis_status: dict[str, dict] = {}
+# project_id → stop flag list
+_stop_flags: dict[str, list] = {}
+
+
+def _default_analysis_status() -> dict:
+    return {
+        "running": False,
+        "phase": None,        # "describing" | "synthesising" | None
+        "done": 0,
+        "total": 0,
+        "tokens_prompt": 0,
+        "tokens_completion": 0,
+        "result": None,       # DiscoveryAnalysisResult.model_dump() when complete
+        "error": None,
+    }
 
 
 def _get_project_or_404(project_id: str, session: Session):
@@ -41,20 +62,14 @@ def discovery_next(
     """Return the next chunk for discovery rating using cluster-diversity sampling."""
     proj = _get_project_or_404(project_id, session)
     chunk_store = SQLiteChunkStore(session)
-    rating_store = SQLiteRatingStore(session)
     discovery_store = SQLiteDiscoveryRatingStore(session)
     mat_store = SQLiteMaterialStore(session)
 
-    # Exclude chunks already discovery-rated; delegate to RatingSelector for cluster diversity
     already_rated = discovery_store.get_rated_chunk_ids(project_id)
 
-    # Use a lightweight proxy RatingStore so the selector treats discovery-rated chunks as "rated"
     class _ProxyRatingStore:
         def get_human_rated_chunk_ids(self, pid: str) -> set[str]:
             return already_rated
-
-        def cluster_stats(self, *a, **kw):  # not used by _next_diversity directly
-            return {}
 
         def count_by_project(self, pid: str) -> int:
             return len(already_rated)
@@ -144,23 +159,28 @@ def discovery_status(
 ) -> dict:
     _get_project_or_404(project_id, session)
     counts = SQLiteDiscoveryRatingStore(session).counts(project_id)
+    analysis = dict(_analysis_status.get(project_id, _default_analysis_status()))
     return {
         "total": counts["total"],
         "liked": counts["liked"],
         "disliked": counts["disliked"],
         "ready": counts["liked"] >= _READY_LIKED and counts["disliked"] >= _READY_DISLIKED,
+        "analysis": analysis,
     }
 
 
-@router.post("/analyse/stream")
-def analyse_stream(
+@router.post("/analyse/start", status_code=202)
+def start_analysis(
     project_id: str,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     session: Session = Depends(get_session),
     auth_session: Session = Depends(get_auth_session),
-) -> StreamingResponse:
-    """SSE stream: describes each chunk then synthesises dimension proposals."""
+) -> dict:
+    """Launch analysis in a background thread. Returns 202 immediately."""
     check_token_budget(user.id, auth_session)
+
+    if project_id in _stop_flags:
+        raise HTTPException(status_code=409, detail="Analysis already running for this project")
 
     proj = _get_project_or_404(project_id, session)
     discovery_store = SQLiteDiscoveryRatingStore(session)
@@ -176,60 +196,117 @@ def analyse_stream(
 
     config = get_config()
     ollama_base_url, llm_model = resolve_llm_model(proj, config)
-    discoverer = DimensionDiscoverer(model=llm_model, base_url=ollama_base_url)
 
-    # Copy data needed by the generator before session may close
+    from verdikt.api.deps import get_user_engine
+    from sqlalchemy.orm import Session as _Session
+    engine = get_user_engine(user)
+
+    stop_flag: list = []
+    _stop_flags[project_id] = stop_flag
+    _analysis_status[project_id] = {
+        **_default_analysis_status(),
+        "running": True,
+        "phase": "describing",
+        "total": len(active),
+    }
+
     _project = proj
     _ratings = active
     _chunks = chunks_by_id
     _user_id = user.id
-    _project_id = project_id
     _model = llm_model
 
-    def event_stream():
+    def _run() -> None:
+        discoverer = DimensionDiscoverer(model=_model, base_url=ollama_base_url)
         prompt_tokens = 0
         completion_tokens = 0
-
-        active_ratings = _ratings
-        total_active = len(active_ratings)
         descriptions: list[tuple[float, str]] = []
 
-        for i, dr in enumerate(active_ratings):
-            chunk = _chunks.get(dr.chunk_id)
-            if chunk is None:
-                continue
-            try:
-                qualities, pt, ct = discoverer._describe_chunk(chunk, dr, _project.domain)  # noqa: SLF001
-                prompt_tokens += pt
-                completion_tokens += ct
-                if qualities:
-                    descriptions.append((dr.preference, qualities))
-            except Exception:
-                pass
-            yield f"data: {json.dumps({'type': 'progress', 'phase': 'describing', 'done': i + 1, 'total': total_active})}\n\n"
-
-        yield f"data: {json.dumps({'type': 'progress', 'phase': 'synthesising', 'done': 0, 'total': 1})}\n\n"
-
         try:
+            for i, dr in enumerate(_ratings):
+                if stop_flag:
+                    _analysis_status[project_id]["error"] = "Cancelled"
+                    return
+
+                chunk = _chunks.get(dr.chunk_id)
+                if chunk is None:
+                    continue
+                try:
+                    qualities, pt, ct = discoverer._describe_chunk(chunk, dr, _project.domain)  # noqa: SLF001
+                    prompt_tokens += pt
+                    completion_tokens += ct
+                    if qualities:
+                        descriptions.append((dr.preference, qualities))
+                except Exception:
+                    pass
+
+                _analysis_status[project_id].update({
+                    "done": i + 1,
+                    "tokens_prompt": prompt_tokens,
+                    "tokens_completion": completion_tokens,
+                })
+
+            if stop_flag:
+                _analysis_status[project_id]["error"] = "Cancelled"
+                return
+
+            _analysis_status[project_id].update({
+                "phase": "synthesising",
+                "done": 0,
+                "total": 1,
+            })
+
             result, pt, ct = discoverer._extract_dimensions(descriptions, _project)  # noqa: SLF001
             prompt_tokens += pt
             completion_tokens += ct
-        except Exception as exc:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
-            return
 
-        try:
-            from sqlalchemy.orm import Session as _Session
-            from verdikt.api.deps import get_auth_engine
-            with _Session(get_auth_engine()) as _auth:
-                record_usage(_user_id, _project_id, _model, "discovery_analyse", prompt_tokens, completion_tokens, _auth)
+            _analysis_status[project_id].update({
+                "done": 1,
+                "tokens_prompt": prompt_tokens,
+                "tokens_completion": completion_tokens,
+                "result": result.model_dump(),
+            })
+
+            try:
+                with _Session(get_auth_engine()) as auth_sess:
+                    record_usage(_user_id, project_id, _model, "discovery_analyse",
+                                 prompt_tokens, completion_tokens, auth_sess)
+            except Exception:
+                log.warning("discovery: failed to record token usage")
+
         except Exception:
-            pass
+            log.exception("discovery analysis thread error for project %s", project_id)
+            _analysis_status[project_id]["error"] = "Analysis failed — see server logs"
+        finally:
+            _analysis_status[project_id]["running"] = False
+            _stop_flags.pop(project_id, None)
 
-        yield f"data: {json.dumps({'type': 'progress', 'phase': 'synthesising', 'done': 1, 'total': 1})}\n\n"
-        yield f"data: {json.dumps({'type': 'complete', 'result': result.model_dump()})}\n\n"
+    thread = threading.Thread(target=_run, daemon=True, name=f"discovery-{project_id}")
+    thread.start()
+    return {"status": "started"}
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+@router.post("/analyse/cancel")
+def cancel_analysis(
+    project_id: str,
+    _: Annotated[AuthenticatedUser, Depends(get_current_user)],
+) -> dict:
+    flag = _stop_flags.get(project_id)
+    if flag is not None:
+        flag.append(True)
+    if project_id in _analysis_status:
+        _analysis_status[project_id]["running"] = False
+    return {"ok": True}
+
+
+@router.delete("/analyse/result")
+def clear_analysis_result(
+    project_id: str,
+    _: Annotated[AuthenticatedUser, Depends(get_current_user)],
+) -> dict:
+    """Discard the stored analysis result so a fresh analysis can be started."""
+    _analysis_status.pop(project_id, None)
+    return {"ok": True}
 
 
 class ApplyProposalBody(BaseModel):
@@ -283,5 +360,8 @@ def reset_discovery(
 ) -> dict:
     _get_project_or_404(project_id, session)
     SQLiteDiscoveryRatingStore(session).delete_by_project(project_id)
+    # Also clear any stored analysis result
+    _analysis_status.pop(project_id, None)
+    _stop_flags.pop(project_id, None)
     session.commit()
     return {"ok": True}

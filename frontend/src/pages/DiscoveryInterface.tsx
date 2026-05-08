@@ -37,7 +37,7 @@ export default function DiscoveryInterface() {
   const { data: status } = useQuery({
     queryKey: ['discovery-status', projectId],
     queryFn: () => api.discovery.status(projectId!),
-    refetchInterval: false,
+    refetchInterval: (query) => query.state.data?.analysis?.running ? 2000 : false,
   })
 
   // Show reason box when preference is non-zero and non-null
@@ -88,6 +88,7 @@ export default function DiscoveryInterface() {
   const disliked = status?.disliked ?? 0
   const total = status?.total ?? 0
   const ready = status?.ready ?? false
+  const analysisStatus = status?.analysis ?? null
 
   const maxWidth = isMobile ? '100%' : 720
 
@@ -257,11 +258,56 @@ export default function DiscoveryInterface() {
         </>
       )}
 
-      {/* Analyse button */}
-      {ready && (
-        <div style={{ marginTop: 32, textAlign: 'center' }}>
+      {/* Analysis running indicator */}
+      {analysisStatus?.running && (
+        <div style={{ marginTop: 24, padding: '12px 16px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+              {analysisStatus.phase === 'describing'
+                ? `Describing chunks (${analysisStatus.done} / ${analysisStatus.total})…`
+                : analysisStatus.phase === 'synthesising'
+                ? 'Synthesising dimensions…'
+                : 'Preparing…'}
+            </span>
+            <button
+              onClick={() => setShowAnalysis(true)}
+              style={{ fontSize: 12, padding: '4px 10px', borderRadius: 5, border: '1px solid var(--border)', background: 'none', cursor: 'pointer' }}
+            >
+              Details
+            </button>
+          </div>
+          <div style={{ background: 'var(--border)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+            <div style={{
+              background: '#6b7de0',
+              height: '100%',
+              width: `${analysisStatus.total > 0 ? Math.round((analysisStatus.done / analysisStatus.total) * 100) : 5}%`,
+              transition: 'width 0.5s',
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* Result ready indicator */}
+      {analysisStatus?.result && !analysisStatus.running && (
+        <div style={{ marginTop: 24, textAlign: 'center' }}>
           <button
             onClick={() => setShowAnalysis(true)}
+            style={{ padding: '12px 28px', fontSize: 15, fontWeight: 600, background: '#6b7de0', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' }}
+          >
+            Review proposed dimensions →
+          </button>
+        </div>
+      )}
+
+      {/* Analyse button */}
+      {ready && !analysisStatus?.running && !analysisStatus?.result && (
+        <div style={{ marginTop: 32, textAlign: 'center' }}>
+          <button
+            onClick={async () => {
+              await api.discovery.startAnalysis(projectId!)
+              qc.invalidateQueries({ queryKey: ['discovery-status', projectId] })
+              setShowAnalysis(true)
+            }}
             style={{
               padding: '12px 28px',
               fontSize: 15,
@@ -288,9 +334,10 @@ export default function DiscoveryInterface() {
         </p>
       )}
 
-      {showAnalysis && (
+      {showAnalysis && analysisStatus && (
         <DiscoveryAnalysisModal
           projectId={projectId!}
+          analysisStatus={analysisStatus}
           onClose={() => setShowAnalysis(false)}
           onApplied={() => {
             setShowAnalysis(false)
