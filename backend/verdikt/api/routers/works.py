@@ -187,6 +187,17 @@ def list_works(
                 MIN(j.value) AS overall_min
             FROM ratings r, json_each(r.dimension_scores) j
             WHERE r.project_id = :pid AND r.skipped = 0
+              AND (r.is_ai = 0 OR NOT EXISTS (
+                  SELECT 1 FROM ratings r2
+                  WHERE r2.chunk_id = r.chunk_id AND r2.project_id = :pid
+                    AND r2.is_ai = 0 AND r2.skipped = 0
+              ))
+              AND NOT EXISTS (
+                  SELECT 1 FROM ratings r3
+                  WHERE r3.chunk_id = r.chunk_id AND r3.project_id = :pid
+                    AND r3.is_ai = r.is_ai AND r3.skipped = 0
+                    AND r3.rated_at > r.rated_at
+              )
             GROUP BY r.material_item_id
         ) rs ON m.id = rs.material_item_id
         {dim_join}
@@ -231,10 +242,19 @@ def list_works(
         .all()
     )
 
-    # Index by material_item_id
+    # Index by material_item_id, then deduplicate per chunk (human preferred over AI)
     ratings_by_mat: dict[str, list] = {}
     for rr in rating_rows:
         ratings_by_mat.setdefault(rr.material_item_id, []).append(rr)
+
+    def _dedup_ratings(rrs: list) -> list:
+        """Per chunk, keep the human rating if one exists, otherwise the AI rating."""
+        best: dict[str, object] = {}
+        for rr in rrs:
+            existing = best.get(rr.chunk_id)
+            if existing is None or (existing.is_ai and not rr.is_ai):
+                best[rr.chunk_id] = rr
+        return list(best.values())
 
     descs_by_mat: dict[str, list] = {}
     for dr in desc_rows:
@@ -242,7 +262,7 @@ def list_works(
 
     def _dim_stats(mat_id: str) -> dict:
         dim_data: dict[str, list[float]] = {}
-        for rr in ratings_by_mat.get(mat_id, []):
+        for rr in _dedup_ratings(ratings_by_mat.get(mat_id, [])):
             try:
                 scores = json.loads(rr.dimension_scores) if isinstance(rr.dimension_scores, str) else rr.dimension_scores
             except Exception:
@@ -258,6 +278,22 @@ def list_works(
             for dim, vals in dim_data.items()
         }
 
+    def _overall_stats(mat_id: str) -> tuple[float | None, float | None, float | None]:
+        all_scores = []
+        for rr in _dedup_ratings(ratings_by_mat.get(mat_id, [])):
+            try:
+                scores = json.loads(rr.dimension_scores) if isinstance(rr.dimension_scores, str) else rr.dimension_scores
+                all_scores.extend(scores.values())
+            except Exception:
+                continue
+        if not all_scores:
+            return None, None, None
+        return (
+            round(sum(all_scores) / len(all_scores), 3),
+            round(max(all_scores), 3),
+            round(min(all_scores), 3),
+        )
+
     items = []
     for r in rows:
         mat_id = r["id"]
@@ -269,6 +305,7 @@ def list_works(
             plugin_meta = json.loads(r["plugin_metadata_json"] or "{}")
         except Exception:
             plugin_meta = {}
+        overall_avg, overall_max, overall_min = _overall_stats(mat_id)
         item = {
             "id": mat_id,
             "project_seq": r["project_seq"],
@@ -286,9 +323,9 @@ def list_works(
             "total_chunks": r["total_chunks"],
             "human_rated": r["human_rated"],
             "ai_rated": r["ai_rated"],
-            "overall_avg": round(r["overall_avg"], 3) if r["overall_avg"] is not None else None,
-            "overall_max": round(r["overall_max"], 3) if r["overall_max"] is not None else None,
-            "overall_min": round(r["overall_min"], 3) if r["overall_min"] is not None else None,
+            "overall_avg": overall_avg,
+            "overall_max": overall_max,
+            "overall_min": overall_min,
             "dim_stats": _dim_stats(mat_id),
             "first_description": chunk_descs[0]["description"] if chunk_descs else None,
             "chunk_descriptions": chunk_descs,
