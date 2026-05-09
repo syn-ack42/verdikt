@@ -47,6 +47,14 @@ export default function DiscoveryInterface() {
     }
   }, [preference])
 
+  const handleSkip = () => {
+    if (submitting) return
+    // Skip = "not now" — don't record, just advance to the next chunk
+    qc.invalidateQueries({ queryKey: nextKey })
+    setPreference(null)
+    setReason('')
+  }
+
   // Keyboard shortcuts: 1–5 → preference levels, Enter → submit, s → skip
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -56,7 +64,7 @@ export default function DiscoveryInterface() {
       else if (e.key === '3') { setPreference(0); setReason('') }
       else if (e.key === '4') { setPreference(1); setReason('') }
       else if (e.key === '5') { setPreference(2); setReason('') }
-      else if (e.key === 's') handleSubmit(0)
+      else if (e.key === 's') handleSkip()
       else if (e.key === 'Enter' && preference !== null) handleSubmit(preference)
     }
     window.addEventListener('keydown', onKey)
@@ -226,11 +234,11 @@ export default function DiscoveryInterface() {
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: 10 }}>
             <button
-              onClick={() => handleSubmit(0)}
+              onClick={handleSkip}
               disabled={submitting}
               style={{ flex: 1, padding: '10px 0', fontSize: 14, cursor: 'pointer', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card-bg)', color: 'var(--text-muted)' }}
             >
-              Skip (neutral)
+              Skip
             </button>
             <button
               onClick={() => { if (preference !== null) handleSubmit(preference) }}
@@ -253,7 +261,7 @@ export default function DiscoveryInterface() {
           </div>
 
           <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, textAlign: 'center' }}>
-            Keys: 1–5 to select · Enter to submit · S to skip
+            Keys: 1–5 to select · Enter to submit · S to skip (resurfaces later)
           </p>
         </>
       )}

@@ -87,13 +87,24 @@ class RatingSelector:
             human_rated_ids = self._ratings.get_human_rated_chunk_ids(project_id)
         stats = self._chunks.cluster_stats(project_id, human_rated_ids)
 
-        # clusters that have unrated chunks
+        # clusters that have unrated chunks (rated < total per the ratings table)
         clusters_with_unrated = {cid: rated for cid, (rated, total) in stats.items() if rated < total}
         if not clusters_with_unrated:
             return None
 
         min_rated = min(clusters_with_unrated.values())
-        candidates = [cid for cid, rated in clusters_with_unrated.items() if rated == min_rated]
-        chosen_cluster = random.choice(candidates)
-        chunk_id = self._chunks.random_unrated_in_cluster(project_id, chosen_cluster, human_rated_ids)
-        return self._chunks.get(chunk_id) if chunk_id else None
+        # Prefer least-rated clusters; shuffle so ties are broken randomly
+        priority = [cid for cid, rated in clusters_with_unrated.items() if rated == min_rated]
+        rest = [cid for cid, rated in clusters_with_unrated.items() if rated > min_rated]
+        random.shuffle(priority)
+        random.shuffle(rest)
+
+        # Try priority clusters first, then fall back to the rest.
+        # A cluster that looks "unrated" in the ratings table may still be fully
+        # covered by human_rated_ids from a separate table (e.g. discovery_ratings),
+        # so we must retry rather than returning None on the first miss.
+        for cid in priority + rest:
+            chunk_id = self._chunks.random_unrated_in_cluster(project_id, cid, human_rated_ids)
+            if chunk_id:
+                return self._chunks.get(chunk_id)
+        return None

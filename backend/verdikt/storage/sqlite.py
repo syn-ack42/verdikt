@@ -323,17 +323,29 @@ class SQLiteChunkStore(ChunkStore):
         return {r.id: r.cluster_id for r in rows}
 
     def random_unrated_in_cluster(self, project_id: str, cluster_id: int, human_rated_ids: set[str] = None) -> str | None:  # type: ignore[override]
-        """Return a random unrated chunk_id from cluster_id — fully SQL-side."""
-        row = self._s.execute(_text("""
+        """Return a random unrated chunk_id from cluster_id.
+
+        SQL filters chunks already in the ratings table (non-skipped human ratings).
+        Python filters chunks in human_rated_ids that live in a separate table
+        (e.g. discovery_ratings) — avoids large IN-clause parameter lists.
+        """
+        rows = self._s.execute(_text("""
             SELECT c.id FROM chunks c
             WHERE c.project_id = :pid AND c.cluster_id = :cid
               AND NOT EXISTS (
                 SELECT 1 FROM ratings r
                 WHERE r.chunk_id = c.id AND r.is_ai = 0 AND r.skipped = 0 AND r.project_id = :pid
               )
-            ORDER BY RANDOM() LIMIT 1
-        """), {"pid": project_id, "cid": cluster_id}).first()
-        return row[0] if row else None
+            ORDER BY RANDOM()
+        """), {"pid": project_id, "cid": cluster_id}).all()
+        if not rows:
+            return None
+        if not human_rated_ids:
+            return rows[0][0]
+        for row in rows:
+            if row[0] not in human_rated_ids:
+                return row[0]
+        return None
 
     def list_ids_by_project(self, project_id: str) -> list[tuple[str, str]]:
         """Return [(chunk_id, material_item_id)] without loading content bytes."""
