@@ -97,6 +97,9 @@ function ChunkBlock({
           <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ fontSize: 10, opacity: 0.6 }}>{collapsed ? '▸' : '▾'}</span>
             Chunk {pos} of {total}
+            {chunk.cluster_id != null && (
+              <span style={{ fontWeight: 400, opacity: 0.7 }}>· cluster {chunk.cluster_id}</span>
+            )}
           </span>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>

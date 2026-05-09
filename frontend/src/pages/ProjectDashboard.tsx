@@ -1026,6 +1026,11 @@ export default function ProjectDashboard() {
                         </span>
                         {ratingParts.length > 0 && <span>Ratings: {ratingParts.join(', ')}</span>}
                       </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <span title="Total chunks">{w.total_chunks} chunks</span>
+                        {w.cluster_count > 0 && <span title="Distinct clusters">{w.cluster_count} cluster{w.cluster_count !== 1 ? 's' : ''}</span>}
+                        {w.discovered_chunks > 0 && <span title="Discovery-rated chunks">{w.discovered_chunks} discovered</span>}
+                      </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                         {w.ingested_at.slice(0, 10)}
                       </div>

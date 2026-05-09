@@ -171,7 +171,9 @@ def list_works(
     base_sql = f"""
         FROM material_items m
         LEFT JOIN (
-            SELECT material_item_id, COUNT(*) AS chunk_count
+            SELECT material_item_id,
+                   COUNT(*) AS chunk_count,
+                   COUNT(DISTINCT cluster_id) AS cluster_count
             FROM chunks WHERE project_id = :pid GROUP BY material_item_id
         ) ch ON m.id = ch.material_item_id
         LEFT JOIN (
@@ -180,6 +182,10 @@ def list_works(
                 SUM(CASE WHEN is_ai=1 AND skipped=0 THEN 1 ELSE 0 END) AS ai_rated
             FROM ratings WHERE project_id = :pid GROUP BY material_item_id
         ) rt ON m.id = rt.material_item_id
+        LEFT JOIN (
+            SELECT material_item_id, COUNT(*) AS discovered_chunks
+            FROM discovery_ratings WHERE project_id = :pid GROUP BY material_item_id
+        ) dr ON m.id = dr.material_item_id
         LEFT JOIN (
             SELECT r.material_item_id,
                 AVG(j.value) AS overall_avg,
@@ -211,9 +217,11 @@ def list_works(
             m.id, m.project_seq, m.source_plugin, m.source_path, m.work_title,
             m.author, m.url, m.domain, m.content_type, m.pipeline_phase,
             m.content_hash, m.ingested_at, m.plugin_metadata_json,
-            COALESCE(ch.chunk_count, 0)  AS total_chunks,
-            COALESCE(rt.human_rated, 0)  AS human_rated,
-            COALESCE(rt.ai_rated,   0)   AS ai_rated,
+            COALESCE(ch.chunk_count, 0)     AS total_chunks,
+            COALESCE(ch.cluster_count, 0)   AS cluster_count,
+            COALESCE(rt.human_rated, 0)     AS human_rated,
+            COALESCE(rt.ai_rated,   0)      AS ai_rated,
+            COALESCE(dr.discovered_chunks, 0) AS discovered_chunks,
             rs.overall_avg, rs.overall_max, rs.overall_min
         {base_sql}
         ORDER BY {order_col} {direction}
@@ -321,8 +329,10 @@ def list_works(
             "ingested_at": r["ingested_at"],
             "plugin_metadata": plugin_meta,
             "total_chunks": r["total_chunks"],
+            "cluster_count": r["cluster_count"],
             "human_rated": r["human_rated"],
             "ai_rated": r["ai_rated"],
+            "discovered_chunks": r["discovered_chunks"],
             "overall_avg": overall_avg,
             "overall_max": overall_max,
             "overall_min": overall_min,
@@ -832,6 +842,7 @@ def get_work_chunks(
             "material_item_id": item.id,
             "position": chunk.position,
             "chunk_count": chunk_count,
+            "cluster_id": chunk.cluster_id,
             "content": content,
             "domain": domain,
             "description": chunk.description,

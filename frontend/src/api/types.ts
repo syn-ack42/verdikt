@@ -263,6 +263,7 @@ export interface WorkChunk {
   material_item_id: string
   position: number
   chunk_count: number
+  cluster_id: number | null
   content: string | null
   domain: 'text' | 'image'
   description?: string | null
@@ -304,6 +305,8 @@ export interface WorkDimStat {
 
 export interface WorkStats {
   total_chunks: number
+  cluster_count: number
+  discovered_chunks: number
   human_rated: number
   ai_rated: number
   overall_avg: number | null
