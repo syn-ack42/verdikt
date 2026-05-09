@@ -295,7 +295,14 @@ class SQLiteChunkStore(ChunkStore):
         return [(r.id, r.cluster_id) for r in rows]
 
     def cluster_stats(self, project_id: str, human_rated_ids: set[str] = None) -> dict[int, tuple[int, int]]:  # type: ignore[override]
-        """Return {cluster_id: (human_rated_count, total_count)} via a single SQL join."""
+        """Return {cluster_id: (human_rated_count, total_count)} via a single SQL join.
+
+        human_rated_ids augments the SQL count for chunks that live in a separate
+        table (e.g. discovery_ratings).  In normal mode those IDs are a subset of
+        what the SQL already counted, so max() is a no-op.  In discovery mode the
+        SQL sees 0 for every cluster and human_rated_ids supplies the real coverage,
+        allowing the priority ordering to evolve as ratings accumulate.
+        """
         rows = self._s.execute(_text("""
             SELECT c.cluster_id,
                    SUM(CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END) AS rated,
@@ -309,7 +316,23 @@ class SQLiteChunkStore(ChunkStore):
             WHERE c.project_id = :pid AND c.cluster_id IS NOT NULL
             GROUP BY c.cluster_id
         """), {"pid": project_id}).all()
-        return {int(row[0]): (int(row[1]), int(row[2])) for row in rows}
+        base = {int(row[0]): (int(row[1]), int(row[2])) for row in rows}
+
+        if not human_rated_ids:
+            return base
+
+        # Count rated IDs per cluster so discovery-mode ratings are visible.
+        cid_to_cluster = self.cluster_ids_for_chunks(project_id, list(human_rated_ids))
+        extra: dict[int, int] = {}
+        for chunk_id in human_rated_ids:
+            clid = cid_to_cluster.get(chunk_id)
+            if clid is not None:
+                extra[clid] = extra.get(clid, 0) + 1
+
+        return {
+            cid: (max(sql_rated, extra.get(cid, 0)), total)
+            for cid, (sql_rated, total) in base.items()
+        }
 
     def cluster_ids_for_chunks(self, project_id: str, chunk_ids: list[str]) -> dict[str, int | None]:
         """Return {chunk_id: cluster_id} for a small set of chunk IDs."""
