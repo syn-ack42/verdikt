@@ -321,6 +321,9 @@ export type MaterialItemWithStats = MaterialItem & WorkStats
 
 export interface WorksListResponse {
   total: number
+  total_chunks: number
+  total_clusters: number
+  total_discovered: number
   items: MaterialItemWithStats[]
 }
 

@@ -434,9 +434,18 @@ export default function ProjectDashboard() {
       </div>
 
       <div style={{ display: 'flex', gap: 24, marginBottom: 24 }}>
-        <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, flex: 1 }}>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{worksTotal}</div>
-          <div style={{ color: 'var(--text-muted)' }}>Works</div>
+        <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 28, fontWeight: 700 }}>{worksTotal}</div>
+            <div style={{ color: 'var(--text-muted)' }}>Works</div>
+          </div>
+          {worksData && (worksData.total_chunks > 0 || worksData.total_clusters > 0) && (
+            <div style={{ textAlign: 'right', fontSize: 12, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end' }}>
+              <span>{worksData.total_chunks} chunks</span>
+              {worksData.total_clusters > 0 && <span>{worksData.total_clusters} clusters</span>}
+              {worksData.total_discovered > 0 && <span>{worksData.total_discovered} discovered</span>}
+            </div>
+          )}
         </div>
         {(() => {
           const aiCount = ratingCounts?.ai ?? 0
@@ -1025,11 +1034,6 @@ export default function ProjectDashboard() {
                           {PIPELINE_PHASE_DISPLAY[w.pipeline_phase] ?? w.pipeline_phase}
                         </span>
                         {ratingParts.length > 0 && <span>Ratings: {ratingParts.join(', ')}</span>}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <span title="Total chunks">{w.total_chunks} chunks</span>
-                        {w.cluster_count > 0 && <span title="Distinct clusters">{w.cluster_count} cluster{w.cluster_count !== 1 ? 's' : ''}</span>}
-                        {w.discovered_chunks > 0 && <span title="Discovery-rated chunks">{w.discovered_chunks} discovered</span>}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                         {w.ingested_at.slice(0, 10)}

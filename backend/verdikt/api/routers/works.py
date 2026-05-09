@@ -212,6 +212,16 @@ def list_works(
 
     total_row = session.execute(_text(f"SELECT COUNT(*) {base_sql}"), params).scalar_one()
 
+    agg_row = session.execute(_text("""
+        SELECT
+            COUNT(c.id)            AS total_chunks,
+            COUNT(DISTINCT c.cluster_id) AS total_clusters,
+            COUNT(dr.id)           AS total_discovered
+        FROM chunks c
+        LEFT JOIN discovery_ratings dr ON dr.chunk_id = c.id AND dr.project_id = :pid
+        WHERE c.project_id = :pid
+    """), {"pid": pid}).mappings().one()
+
     select_sql = f"""
         SELECT
             m.id, m.project_seq, m.source_plugin, m.source_path, m.work_title,
@@ -342,7 +352,13 @@ def list_works(
         }
         items.append(item)
 
-    return {"total": total_row, "items": items}
+    return {
+        "total": total_row,
+        "total_chunks": agg_row["total_chunks"],
+        "total_clusters": agg_row["total_clusters"],
+        "total_discovered": agg_row["total_discovered"],
+        "items": items,
+    }
 
 
 class IngestRequest(BaseModel):
