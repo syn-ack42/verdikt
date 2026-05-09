@@ -24,6 +24,7 @@ export default function DiscoveryInterface() {
   const [submitting, setSubmitting] = useState(false)
   const [showAnalysis, setShowAnalysis] = useState(false)
   const reasonRef = useRef<HTMLTextAreaElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   const nextKey = ['discovery', 'next', projectId] as const
 
@@ -39,6 +40,12 @@ export default function DiscoveryInterface() {
     queryFn: () => api.discovery.status(projectId!),
     refetchInterval: (query) => query.state.data?.analysis?.running ? 2000 : false,
   })
+
+  // Scroll content box and page to top when a new chunk loads
+  useEffect(() => {
+    if (contentRef.current) contentRef.current.scrollTop = 0
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [data?.chunk?.id])
 
   // Show reason box when preference is non-zero and non-null
   useEffect(() => {
@@ -144,7 +151,7 @@ export default function DiscoveryInterface() {
           )}
 
           {/* Content */}
-          <div style={{
+          <div ref={contentRef} style={{
             background: 'var(--card-bg)',
             border: '1px solid var(--border)',
             borderRadius: 8,

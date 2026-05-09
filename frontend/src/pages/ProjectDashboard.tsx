@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
@@ -998,7 +998,8 @@ export default function ProjectDashboard() {
                   (w.ai_rated ?? 0) > 0 ? `AI ${w.ai_rated}` : null,
                 ].filter(Boolean)
                 return (
-                  <tr key={w.id} style={{ borderBottom: '1px solid var(--border)', verticalAlign: 'top' }}>
+                  <Fragment key={w.id}>
+                  <tr style={{ borderBottom: w.first_description ? 'none' : '1px solid var(--border)', verticalAlign: 'top' }}>
                     <td
                       onClick={openDetail}
                       style={{ padding: '8px 4px', color: 'var(--text-muted)', fontSize: 12, whiteSpace: 'nowrap', cursor: 'pointer' }}
@@ -1028,27 +1029,6 @@ export default function ProjectDashboard() {
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                         {w.ingested_at.slice(0, 10)}
                       </div>
-                      {w.first_description && (
-                        <div
-                          onClick={e => { e.stopPropagation(); toggleDesc(w.id) }}
-                          style={{ marginTop: 3, fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', cursor: 'pointer', lineHeight: 1.4 }}
-                        >
-                          {expandedDescs.has(w.id) ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, whiteSpace: 'normal' }}>
-                              {(w.chunk_descriptions ?? []).map(cd => (
-                                <div key={cd.position}>
-                                  <span style={{ fontStyle: 'normal', fontWeight: 500 }}>chunk {cd.position + 1}:</span> {cd.description}
-                                </div>
-                              ))}
-                              <span style={{ fontSize: 10 }}>▴ collapse</span>
-                            </div>
-                          ) : (
-                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              <span style={{ fontSize: 10, marginRight: 3, fontStyle: 'normal' }}>▾</span>{w.first_description}
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </td>
                     {project.rating_dimensions.map(d => {
                       const ds = w.dim_stats?.[d.name]
@@ -1085,6 +1065,32 @@ export default function ProjectDashboard() {
                       )}
                     </td>
                   </tr>
+                  {w.first_description && (
+                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: 0 }} />
+                      <td
+                        colSpan={project.rating_dimensions.length + 2}
+                        onClick={e => { e.stopPropagation(); toggleDesc(w.id) }}
+                        style={{ padding: '0 10px 7px 8px', cursor: 'pointer' }}
+                      >
+                        {expandedDescs.has(w.id) ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.4 }}>
+                            {(w.chunk_descriptions ?? []).map(cd => (
+                              <div key={cd.position}>
+                                <span style={{ fontStyle: 'normal', fontWeight: 500 }}>chunk {cd.position + 1}:</span> {cd.description}
+                              </div>
+                            ))}
+                            <span style={{ fontSize: 10, fontStyle: 'normal' }}>▴ collapse</span>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <span style={{ fontSize: 10, marginRight: 3, fontStyle: 'normal' }}>▾</span>{w.first_description}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 )
               })}
             </tbody>
