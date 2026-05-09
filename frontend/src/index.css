@@ -24,6 +24,7 @@
   --badge-green-text: #81c784;
   --badge-yellow-bg: rgba(245, 158, 11, 0.2);
   --badge-yellow-text: #fbbf24;
+  --card-bg: rgba(255, 255, 255, 0.05);
   --chunk-bg: rgba(255, 255, 255, 0.05);
   --error-bg: rgba(220, 0, 0, 0.1);
   --error-border: rgba(220, 0, 0, 0.35);
@@ -108,6 +109,7 @@ button:focus-visible {
     --badge-green-text: #2e7d32;
     --badge-yellow-bg: #fff8e1;
     --badge-yellow-text: #7c5e00;
+    --card-bg: rgba(0, 0, 0, 0.03);
     --chunk-bg: rgba(0, 0, 0, 0.04);
     --error-bg: #fff5f5;
     --error-border: #fca5a5;
