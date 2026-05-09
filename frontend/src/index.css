@@ -78,6 +78,20 @@ button:focus-visible {
   to   { transform: rotate(360deg); }
 }
 
+/*
+ * Prevent iOS from zooming in when a text input is focused.
+ * iOS auto-zooms any input with font-size < 16px; that zoom level then
+ * doesn't fully reset after the keyboard / autofill popup dismisses,
+ * leaving the viewport slightly wider than the screen.
+ * The rule targets only touch-primary devices so desktop styling is unchanged.
+ * !important is required to override per-component inline fontSize values.
+ */
+@media (hover: none) and (pointer: coarse) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
