@@ -433,7 +433,7 @@ export default function ProjectDashboard() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 24, marginBottom: 24 }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : 24, marginBottom: 24 }}>
         <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <div style={{ fontSize: 28, fontWeight: 700 }}>{worksTotal}</div>
@@ -444,6 +444,9 @@ export default function ProjectDashboard() {
               <span>{worksData.total_chunks} chunks</span>
               {worksData.total_clusters > 0 && <span>{worksData.total_clusters} clusters</span>}
               {worksData.total_discovered > 0 && <span>{worksData.total_discovered} discovered</span>}
+              {(discoveryStatus?.total ?? 0) > 0 && (
+                <span>{discoveryStatus!.liked}♥ {discoveryStatus!.disliked}✗</span>
+              )}
             </div>
           )}
         </div>
@@ -455,7 +458,7 @@ export default function ProjectDashboard() {
           return (
             <div
               onClick={() => setRatedChunksFilter({})}
-              style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, flex: 1, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+              style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, flex: 1, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--hover, rgba(128,128,128,0.06))')}
               onMouseLeave={e => (e.currentTarget.style.background = '')}
             >
@@ -467,16 +470,14 @@ export default function ProjectDashboard() {
                 <span>{humanCount} human</span>
                 <span>{aiCount} AI</span>
                 {pct !== null && (
-                  <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-                    <span style={{ padding: '2px 7px', borderRadius: 10, background: 'var(--surface, rgba(128,128,128,0.08))', fontWeight: 500 }}>
-                      {pct}% accuracy
-                    </span>
-                    {hasEnough && (project.profile_confidence as number) < minConf && (
-                      <span style={{ padding: '2px 7px', borderRadius: 10, background: 'rgba(245,158,11,0.12)', color: '#b45309', fontWeight: 600 }}>
-                        re-crystallize
-                      </span>
-                    )}
-                  </div>
+                  <span style={{ padding: '2px 7px', borderRadius: 10, background: 'var(--surface, rgba(128,128,128,0.08))', fontWeight: 500 }}>
+                    {pct}% accuracy
+                  </span>
+                )}
+                {pct !== null && hasEnough && (project.profile_confidence as number) < minConf && (
+                  <span style={{ padding: '2px 7px', borderRadius: 10, background: 'rgba(245,158,11,0.12)', color: '#b45309', fontWeight: 600 }}>
+                    re-crystallize
+                  </span>
                 )}
               </div>
             </div>
@@ -545,11 +546,6 @@ export default function ProjectDashboard() {
                 : discoveryStatus.analysis.phase === 'synthesising' ? 'synthesising…' : '…'}
               {tokenLabel(discoveryStatus.analysis.tokens_prompt, discoveryStatus.analysis.tokens_completion)
                 ? ` · ${tokenLabel(discoveryStatus.analysis.tokens_prompt, discoveryStatus.analysis.tokens_completion)} tokens` : ''}
-            </span>
-          )}
-          {!discoveryStatus?.analysis?.running && (discoveryStatus?.total ?? 0) > 0 && (
-            <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-              {discoveryStatus!.liked}♥ {discoveryStatus!.disliked}✗
             </span>
           )}
         </div>
