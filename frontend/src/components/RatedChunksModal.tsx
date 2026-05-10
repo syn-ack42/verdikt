@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import RatingSlider from './RatingSlider'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -27,6 +28,7 @@ function scoreColor(avg: number | null): string {
 
 export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkTitle, dimensions, onClose, initialEditing }: Props) {
   const isMobile = useIsMobile()
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const [editing, setEditing] = useState<RatedChunkEntry | null>(initialEditing ?? null)
   const [loadingChunkId, setLoadingChunkId] = useState<string | null>(null)
@@ -132,7 +134,16 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
           {editing && (
             <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                {editing.work_title ?? 'Unknown work'}
+                {editing.work_seq != null ? (
+                  <button
+                    onClick={() => navigate(`/projects/${projectId}?work=${editing.work_seq}`)}
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, color: '#6b7de0', textDecoration: 'underline' }}
+                  >
+                    {editing.work_title ?? 'Unknown work'}
+                  </button>
+                ) : (
+                  <span>{editing.work_title ?? 'Unknown work'}</span>
+                )}
                 {editing.author && ` — ${editing.author}`}
                 {editing.chunk_count > 1 && ` · chunk ${editing.chunk_position + 1} of ${editing.chunk_count}`}
               </div>
