@@ -237,7 +237,16 @@ export default function RatingInterface() {
       </div>
 
       <div style={{ marginBottom: 8, fontSize: 12, color: 'var(--text-muted)' }}>
-        {material_item.work_title ?? material_item.source_path?.split('/').pop() ?? 'Unknown'}
+        {material_item.project_seq != null ? (
+          <button
+            onClick={() => navigate(`/projects/${projectId}?work=${material_item.project_seq}`)}
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, color: '#6b7de0', textDecoration: 'underline' }}
+          >
+            {material_item.work_title ?? material_item.source_path?.split('/').pop() ?? 'Unknown'}
+          </button>
+        ) : (
+          <span>{material_item.work_title ?? material_item.source_path?.split('/').pop() ?? 'Unknown'}</span>
+        )}
         {material_item.author && ` — ${material_item.author}`}
         {' · '}cluster {chunk.cluster_id ?? '—'} · position {chunk.position}
       </div>

@@ -4,6 +4,14 @@ import { api } from '../api/client'
 import RatedChunksModal from './RatedChunksModal'
 import type { RatedChunkEntry, RatingDimension, WorkChunk, WorkDetail } from '../api/types'
 
+const DISCOVER_OPTIONS = [
+  { value: -2, label: '−−' },
+  { value: -1, label: '−' },
+  { value:  0, label: '○' },
+  { value:  1, label: '+' },
+  { value:  2, label: '++' },
+] as const
+
 interface Props {
   projectId: string
   workRef: string | number
@@ -59,6 +67,8 @@ function ChunkBlock({
   const [editOpen, setEditOpen] = useState(false)
   const [aiRating, setAiRating] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [discoverOpen, setDiscoverOpen] = useState(false)
+  const [discoverDone, setDiscoverDone] = useState<number | null>(null)
   const qc = useQueryClient()
   const r = chunk.rating
   const pos = chunk.position + 1
@@ -163,6 +173,60 @@ function ChunkBlock({
               <span style={aiRating ? { display: 'inline-block', animation: 'spin 1s linear infinite' } : {}}>↺</span>
               {aiRating ? 'AI…' : 'AI'}
             </button>
+
+            {/* Discovery rating */}
+            {discoverDone !== null ? (
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', padding: '2px 6px' }}>
+                ◎ {discoverDone > 0 ? `+${discoverDone}` : discoverDone === 0 ? '0' : discoverDone} saved
+              </span>
+            ) : discoverOpen ? (
+              <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                {DISCOVER_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    title={['Strongly avoid', 'Avoid', 'Neutral', 'Seek', 'Strongly seek'][opt.value + 2]}
+                    onClick={async () => {
+                      setDiscoverOpen(false)
+                      await api.discovery.submitRating(projectId, {
+                        chunk_id: chunk.chunk_id,
+                        material_item_id: chunk.material_item_id,
+                        preference: opt.value,
+                      })
+                      setDiscoverDone(opt.value)
+                      qc.invalidateQueries({ queryKey: ['discovery-status', projectId] })
+                    }}
+                    style={{
+                      background: 'none',
+                      border: '1px solid var(--border)',
+                      borderRadius: 4,
+                      padding: '1px 5px',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: opt.value > 0 ? '#2e7d32' : opt.value < 0 ? '#c00' : 'var(--text-muted)',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setDiscoverOpen(false)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-muted)', padding: '0 2px' }}
+                >×</button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setDiscoverOpen(true)}
+                title="Add discovery rating for this chunk"
+                style={{
+                  background: 'none', border: '1px solid var(--border)',
+                  borderRadius: 20, padding: '2px 8px', cursor: 'pointer',
+                  fontSize: 11, color: 'var(--text-muted)',
+                }}
+              >
+                ◎
+              </button>
+            )}
           </div>
 
           {aiError && (

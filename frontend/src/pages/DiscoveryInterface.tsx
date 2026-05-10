@@ -146,7 +146,17 @@ export default function DiscoveryInterface() {
           {/* Work info */}
           {material?.work_title && (
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
-              {material.work_title}{material.author && ` — ${material.author}`}
+              {material.project_seq != null ? (
+                <button
+                  onClick={() => navigate(`/projects/${projectId}?work=${material.project_seq}`)}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, color: '#6b7de0', textDecoration: 'underline' }}
+                >
+                  {material.work_title}
+                </button>
+              ) : (
+                <span>{material.work_title}</span>
+              )}
+              {material.author && ` — ${material.author}`}
             </div>
           )}
 

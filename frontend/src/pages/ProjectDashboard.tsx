@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import ProjectSettingsDialog from '../components/ProjectSettingsDialog'
@@ -80,10 +80,11 @@ function PipelineProgress({ phases, error }: { phases: PhaseProgress[]; error?: 
 export default function ProjectDashboard() {
   const { projectId } = useParams<{ projectId: string }>()!
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const qc = useQueryClient()
   const [showSettings, setShowSettings] = useState(false)
   const [showPluginIngest, setShowPluginIngest] = useState(false)
-  const [detailWorkRef, setDetailWorkRef] = useState<string | number | null>(null)
+  const [detailWorkRef, setDetailWorkRef] = useState<string | number | null>(() => searchParams.get('work'))
   const [ratedChunksFilter, setRatedChunksFilter] = useState<{ workSeq?: number; title?: string } | null>(null)
 
   // Update state
@@ -485,7 +486,7 @@ export default function ProjectDashboard() {
         })()}
       </div>
 
-      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
         <button
           onClick={() => setShowPluginIngest(true)}
           disabled={ingestRunning || batchRunning}
@@ -526,7 +527,7 @@ export default function ProjectDashboard() {
           </button>
         )}
         <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>
-        <div style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           <button
             onClick={() => navigate(`/projects/${projectId}/discover`)}
             style={{
@@ -540,7 +541,7 @@ export default function ProjectDashboard() {
             {discoveryStatus?.analysis?.running ? 'Analysing…' : discoveryStatus?.analysis?.result ? 'Review dims →' : 'Discover'}
           </button>
           {discoveryStatus?.analysis?.running && (
-            <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: '#6b7de0', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 11, color: '#6b7de0', whiteSpace: 'nowrap' }}>
               {discoveryStatus.analysis.phase === 'describing'
                 ? `${discoveryStatus.analysis.done}/${discoveryStatus.analysis.total} chunks`
                 : discoveryStatus.analysis.phase === 'synthesising' ? 'synthesising…' : '…'}
@@ -549,7 +550,7 @@ export default function ProjectDashboard() {
             </span>
           )}
         </div>
-        <div style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           <Link to={`/projects/${projectId}/rate${unconfirmedAiCount > 0 ? '?mode=confirm_ai' : ''}`}>
             <button style={{
               padding: '8px 18px', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14,
@@ -560,13 +561,11 @@ export default function ProjectDashboard() {
             </button>
           </Link>
           {humanCount === 0 && unconfirmedAiCount === 0 && (
-            <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: '#2e7d32', whiteSpace: 'nowrap' }}>
-              start here
-            </span>
+            <span style={{ fontSize: 11, color: '#2e7d32', whiteSpace: 'nowrap' }}>start here</span>
           )}
         </div>
-        <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none' }}>›</span>
-        <div style={{ position: 'relative' }}>
+        <span style={{ color: 'var(--border, #ddd)', fontSize: 18, userSelect: 'none', paddingTop: 6 }}>›</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           <Link to={`/projects/${projectId}/profile`}>
             <button style={{
               padding: '8px 18px', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14,
@@ -578,17 +577,15 @@ export default function ProjectDashboard() {
           {(() => {
             const need = project.crystallisation_threshold - humanCount
             if (hasProfile) return (
-              <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: '#2e7d32', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 11, color: '#2e7d32', whiteSpace: 'nowrap' }}>
                 {pct !== null ? `${pct}% accuracy` : 'profile ready'}
               </span>
             )
             if (need <= 0) return (
-              <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: '#6b7de0', whiteSpace: 'nowrap' }}>
-                ready to build
-              </span>
+              <span style={{ fontSize: 11, color: '#6b7de0', whiteSpace: 'nowrap' }}>ready to build</span>
             )
             return (
-              <span style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                 {need} more ratings to build
               </span>
             )
@@ -1151,8 +1148,8 @@ export default function ProjectDashboard() {
           projectId={projectId!}
           workRef={detailWorkRef}
           dimensions={project.rating_dimensions}
-          onClose={() => setDetailWorkRef(null)}
-          onRemove={ref => { removeWork.mutate(String(ref)); setDetailWorkRef(null) }}
+          onClose={() => { setDetailWorkRef(null); setSearchParams({}, { replace: true }) }}
+          onRemove={ref => { removeWork.mutate(String(ref)); setDetailWorkRef(null); setSearchParams({}, { replace: true }) }}
         />
       )}
 
