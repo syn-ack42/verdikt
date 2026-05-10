@@ -1160,6 +1160,7 @@ export default function ProjectDashboard() {
           filterWorkTitle={ratedChunksFilter.title}
           dimensions={project.rating_dimensions}
           onClose={() => setRatedChunksFilter(null)}
+          onOpenWork={seq => { setRatedChunksFilter(null); setDetailWorkRef(seq) }}
         />
       )}
 

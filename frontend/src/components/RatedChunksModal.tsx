@@ -16,6 +16,8 @@ interface Props {
   onClose: () => void
   /** When set, open directly in edit/create mode for this entry (skips the list). */
   initialEditing?: RatedChunkEntry
+  /** Called when the user clicks a work title link; parent decides how to open the detail. */
+  onOpenWork?: (workSeq: number) => void
 }
 
 function scoreColor(avg: number | null): string {
@@ -26,7 +28,7 @@ function scoreColor(avg: number | null): string {
   return '#c00'
 }
 
-export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkTitle, dimensions, onClose, initialEditing }: Props) {
+export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkTitle, dimensions, onClose, initialEditing, onOpenWork }: Props) {
   const isMobile = useIsMobile()
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -136,7 +138,13 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                 {editing.work_seq != null ? (
                   <button
-                    onClick={() => navigate(`/projects/${projectId}?work=${editing.work_seq}`)}
+                    onClick={() => {
+                      if (onOpenWork) {
+                        onOpenWork(editing.work_seq!)
+                      } else {
+                        navigate(`/projects/${projectId}?work=${editing.work_seq}`)
+                      }
+                    }}
                     style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, color: '#6b7de0', textDecoration: 'underline' }}
                   >
                     {editing.work_title ?? 'Unknown work'}

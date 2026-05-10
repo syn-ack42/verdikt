@@ -267,6 +267,7 @@ function ChunkBlock({
           dimensions={dimensions}
           initialEditing={toRatedChunkEntry(chunk, work)}
           onClose={() => setEditOpen(false)}
+          onOpenWork={() => setEditOpen(false)}
         />
       )}
     </>
