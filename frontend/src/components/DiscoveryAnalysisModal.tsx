@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { DimensionProposal, DiscoveryAnalysisResult, DiscoveryAnalysisStatus } from '../api/types'
 
@@ -22,6 +22,11 @@ export default function DiscoveryAnalysisModal({ projectId, analysisStatus, onCl
   const qc = useQueryClient()
   const [applying, setApplying] = useState(false)
   const [applyError, setApplyError] = useState('')
+
+  const { data: project } = useQuery({
+    queryKey: ['projects', projectId],
+    queryFn: () => api.projects.get(projectId),
+  })
 
   const result: DiscoveryAnalysisResult | null = analysisStatus.result
 
@@ -53,34 +58,40 @@ export default function DiscoveryAnalysisModal({ projectId, analysisStatus, onCl
     setApplying(true)
     setApplyError('')
 
+    // Collect renames: matched proposals where the user changed the name
+    const dimension_renames: Record<string, string> = {}
+    proposals.forEach((p, i) => {
+      if (included[i] && !p.is_new && p.existing_name && p.name.trim() !== p.existing_name) {
+        dimension_renames[p.existing_name] = p.name.trim()
+      }
+    })
+
     const finalDims: { name: string; description: string; weight: number }[] = []
     proposals.forEach((p, i) => {
       if (!included[i] || !p.name.trim()) return
       finalDims.push({ name: p.name.trim(), description: p.description.trim(), weight: p.weight })
     })
 
-    let existingToKeep: { name: string; description: string; weight: number }[] = []
-    try {
-      const project = await api.projects.get(projectId)
-      const irrelevantNames = new Set(result.irrelevant_existing)
-      for (const dim of project.rating_dimensions) {
-        const matchedByProposal = proposals.some(
-          (p, i) => included[i] && !p.is_new && p.existing_name === dim.name
-        )
-        if (matchedByProposal) continue
-        if (!irrelevantNames.has(dim.name)) {
-          existingToKeep.push({ name: dim.name, description: dim.description, weight: dim.weight })
-        } else {
-          const action = irrelevantActions[dim.name] ?? 'keep'
-          if (action === 'remove') continue
-          existingToKeep.push({
-            name: dim.name,
-            description: dim.description,
-            weight: action === 'downweight' ? Math.max(0.1, dim.weight * 0.5) : dim.weight,
-          })
-        }
+    const existingToKeep: { name: string; description: string; weight: number }[] = []
+    const currentDims = project?.rating_dimensions ?? []
+    const irrelevantNames = new Set(result.irrelevant_existing)
+    for (const dim of currentDims) {
+      const matchedByProposal = proposals.some(
+        (p, i) => included[i] && !p.is_new && p.existing_name === dim.name
+      )
+      if (matchedByProposal) continue
+      if (!irrelevantNames.has(dim.name)) {
+        existingToKeep.push({ name: dim.name, description: dim.description, weight: dim.weight })
+      } else {
+        const action = irrelevantActions[dim.name] ?? 'keep'
+        if (action === 'remove') continue
+        existingToKeep.push({
+          name: dim.name,
+          description: dim.description,
+          weight: action === 'downweight' ? Math.max(0.1, dim.weight * 0.5) : dim.weight,
+        })
       }
-    } catch { /* ignore */ }
+    }
 
     const allDims = [...existingToKeep, ...finalDims]
     if (allDims.length === 0) {
@@ -90,7 +101,10 @@ export default function DiscoveryAnalysisModal({ projectId, analysisStatus, onCl
     }
 
     try {
-      await api.discovery.apply(projectId, { dimensions: allDims })
+      await api.discovery.apply(projectId, {
+        dimensions: allDims,
+        ...(Object.keys(dimension_renames).length > 0 ? { dimension_renames } : {}),
+      })
       await api.discovery.clearAnalysisResult(projectId)
       qc.invalidateQueries({ queryKey: ['projects', projectId] })
       qc.invalidateQueries({ queryKey: ['project', projectId] })
@@ -174,12 +188,38 @@ export default function DiscoveryAnalysisModal({ projectId, analysisStatus, onCl
           {applying && <p style={{ color: 'var(--text-muted)' }}>Saving dimensions…</p>}
 
           {/* Review */}
-          {!applying && result && (
+          {!applying && result && (() => {
+            const proposedExistingNames = new Set(
+              result.proposed_dimensions.filter(p => !p.is_new).map(p => p.existing_name ?? '')
+            )
+            const irrelevantSet = new Set(result.irrelevant_existing)
+            const confirmedDims = (project?.rating_dimensions ?? []).filter(
+              d => !proposedExistingNames.has(d.name) && !irrelevantSet.has(d.name)
+            )
+            return (
             <>
               {result.analysis_notes && (
                 <p style={{ fontStyle: 'italic', color: 'var(--text-muted)', fontSize: 13, margin: '0 0 16px' }}>
                   {result.analysis_notes}
                 </p>
+              )}
+
+              {confirmedDims.length > 0 && (
+                <>
+                  <h4 style={{ margin: '0 0 6px', fontSize: 14 }}>Confirmed — surfaced as expected</h4>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px' }}>
+                    These dimensions appeared clearly in your reactions and will be kept unchanged.
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 24 }}>
+                    {confirmedDims.map(d => (
+                      <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                        <span style={{ fontSize: 11, padding: '2px 6px', background: 'rgba(107,125,224,0.12)', color: '#6b7de0', borderRadius: 4, fontWeight: 600, flexShrink: 0 }}>✓</span>
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{d.name}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{d.description}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
 
               <h4 style={{ margin: '0 0 10px', fontSize: 14 }}>Proposed dimensions</h4>
@@ -269,7 +309,8 @@ export default function DiscoveryAnalysisModal({ projectId, analysisStatus, onCl
 
               {applyError && <p style={{ color: '#c00', marginTop: 8, fontSize: 13 }}>{applyError}</p>}
             </>
-          )}
+            )
+          })()}
         </div>
 
         {/* Footer */}

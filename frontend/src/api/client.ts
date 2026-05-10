@@ -266,7 +266,7 @@ export const api = {
       req<{ ok: boolean }>('POST', `/projects/${projectId}/discovery/analyse/cancel`),
     clearAnalysisResult: (projectId: string) =>
       req<{ ok: boolean }>('DELETE', `/projects/${projectId}/discovery/analyse/result`),
-    apply: (projectId: string, body: { dimensions: { name: string; description: string; weight: number }[] }) =>
+    apply: (projectId: string, body: { dimensions: { name: string; description: string; weight: number }[]; dimension_renames?: Record<string, string> }) =>
       req<{ id: string; name: string; rating_dimensions: { name: string; description: string; weight: number }[] }>('POST', `/projects/${projectId}/discovery/apply`, body),
     reset: (projectId: string) =>
       req<{ ok: boolean }>('POST', `/projects/${projectId}/discovery/reset`),

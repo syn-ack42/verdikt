@@ -345,6 +345,7 @@ def clear_analysis_result(
 
 class ApplyProposalBody(BaseModel):
     dimensions: list[dict]  # [{name, description, weight}]
+    dimension_renames: dict[str, str] | None = None  # old_name -> new_name
 
 
 @router.post("/apply")
@@ -354,6 +355,8 @@ def apply_proposal(
     session: Session = Depends(get_session),
 ) -> dict:
     """Apply the approved dimension proposal to the project."""
+    from verdikt.storage.orm import RatingRow
+
     proj = _get_project_or_404(project_id, session)
 
     new_dims = []
@@ -374,6 +377,15 @@ def apply_proposal(
         .where(ProjectRow.id == project_id)
         .values(rating_dimensions=json.dumps([d.model_dump() for d in new_dims]))
     )
+
+    if body.dimension_renames:
+        rows = session.query(RatingRow).filter(RatingRow.project_id == project_id).all()
+        for row in rows:
+            scores: dict = json.loads(row.dimension_scores)
+            new_scores = {body.dimension_renames.get(k, k): v for k, v in scores.items()}
+            if new_scores != scores:
+                row.dimension_scores = json.dumps(new_scores)
+
     session.commit()
 
     proj.rating_dimensions = new_dims
