@@ -120,13 +120,14 @@ export const api = {
     importProject: (data: unknown) => req<{ project_id: string; materials_imported: number; ratings_imported: number; profiles_imported: number; note: string }>('POST', '/projects/import', data),
   },
   works: {
-    list: (projectId: string, phase?: string, sortBy?: string, sortDir?: 'asc' | 'desc', limit = 50, offset = 0) => {
+    list: (projectId: string, phase?: string, sortBy?: string, sortDir?: 'asc' | 'desc', limit = 50, offset = 0, search?: string) => {
       const params = new URLSearchParams()
       if (phase) params.set('phase', phase)
       if (sortBy) params.set('sort_by', sortBy)
       if (sortDir) params.set('sort_dir', sortDir)
       params.set('limit', String(limit))
       params.set('offset', String(offset))
+      if (search && search.trim()) params.set('search', search.trim())
       return req<WorksListResponse>('GET', `/projects/${projectId}/works?${params}`)
     },
     chunkContent: (projectId: string, chunkId: string) =>

@@ -130,6 +130,7 @@ def list_works(
     sort_dir: str = "asc",
     limit: int = 50,
     offset: int = 0,
+    search: str | None = None,
     session: Session = Depends(get_session),
 ) -> dict:
     from sqlalchemy import text as _text
@@ -167,6 +168,16 @@ def list_works(
     if phase:
         phase_clause = "AND m.pipeline_phase = :phase"
         params["phase"] = phase
+
+    search_clause = ""
+    if search and search.strip():
+        search_clause = (
+            "AND (LOWER(m.work_title) LIKE :q OR LOWER(m.source_path) LIKE :q"
+            " OR EXISTS (SELECT 1 FROM chunks c2"
+            "            WHERE c2.project_id = :pid AND c2.material_item_id = m.id"
+            "              AND LOWER(c2.description) LIKE :q))"
+        )
+        params["q"] = f"%{search.strip().lower()}%"
 
     base_sql = f"""
         FROM material_items m
@@ -207,7 +218,7 @@ def list_works(
             GROUP BY r.material_item_id
         ) rs ON m.id = rs.material_item_id
         {dim_join}
-        WHERE m.project_id = :pid {phase_clause}
+        WHERE m.project_id = :pid {phase_clause} {search_clause}
     """
 
     total_row = session.execute(_text(f"SELECT COUNT(*) {base_sql}"), params).scalar_one()

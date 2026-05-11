@@ -117,11 +117,14 @@ export default function ProjectDashboard() {
   const [batchStopping, setBatchStopping] = useState(false)
   const batchLogRef = useRef<HTMLDivElement>(null)
 
-  // Works table sort + pagination state
+  // Works table sort + pagination + search state
   const [sortBy, setSortBy] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [worksPage, setWorksPage] = useState(0)
   const WORKS_PAGE_SIZE = 50
+  const [searchInput, setSearchInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [expandedDescs, setExpandedDescs] = useState<Set<string>>(new Set())
   const toggleDesc = (id: string) => setExpandedDescs(prev => {
     const next = new Set(prev)
@@ -140,8 +143,8 @@ export default function ProjectDashboard() {
   })
 
   const { data: worksData, isFetching: worksFetching } = useQuery({
-    queryKey: ['works', projectId, sortBy, sortDir, worksPage],
-    queryFn: () => api.works.list(projectId!, undefined, sortBy ?? undefined, sortDir, WORKS_PAGE_SIZE, worksPage * WORKS_PAGE_SIZE),
+    queryKey: ['works', projectId, sortBy, sortDir, worksPage, searchQuery],
+    queryFn: () => api.works.list(projectId!, undefined, sortBy ?? undefined, sortDir, WORKS_PAGE_SIZE, worksPage * WORKS_PAGE_SIZE, searchQuery || undefined),
     enabled: !!projectId,
     placeholderData: (prev) => prev,
   })
@@ -821,40 +824,57 @@ export default function ProjectDashboard() {
         )}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
         <h3 style={{ margin: 0 }}>Works</h3>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sort</span>
-          <select
-            value={sortBy ?? ''}
-            onChange={e => { setSortBy(e.target.value || null); if (!e.target.value) setSortDir('asc'); setWorksPage(0) }}
-            style={{ fontSize: 12, padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg, #1a1a1a)', color: 'var(--text)', cursor: 'pointer' }}
-          >
-            <option value="">Work #</option>
-            <option value="name">Work name</option>
-            <option value="ingested_at">Ingestion date</option>
-            <option value="pipeline_phase">Status</option>
-            <option value="human_rated">Human rated</option>
-            <option value="ai_rated">AI rated</option>
-            <optgroup label="Overall">
-              <option value="overall:avg">Overall avg</option>
-              <option value="overall:max">Overall max</option>
-              <option value="overall:min">Overall min</option>
-            </optgroup>
-            {project.rating_dimensions.map(d => (
-              <optgroup key={d.name} label={d.name}>
-                <option value={`dim:${d.name}:avg`}>{d.name} avg</option>
-                <option value={`dim:${d.name}:max`}>{d.name} max</option>
-                <option value={`dim:${d.name}:min`}>{d.name} min</option>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            type="search"
+            placeholder="Search title or description…"
+            value={searchInput}
+            onChange={e => {
+              const val = e.target.value
+              setSearchInput(val)
+              if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+              searchDebounceRef.current = setTimeout(() => {
+                setSearchQuery(val)
+                setWorksPage(0)
+              }, 300)
+            }}
+            style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg, #1a1a1a)', color: 'var(--text)', width: 200 }}
+          />
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sort</span>
+            <select
+              value={sortBy ?? ''}
+              onChange={e => { setSortBy(e.target.value || null); if (!e.target.value) setSortDir('asc'); setWorksPage(0) }}
+              style={{ fontSize: 12, padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg, #1a1a1a)', color: 'var(--text)', cursor: 'pointer' }}
+            >
+              <option value="">Work #</option>
+              <option value="name">Work name</option>
+              <option value="ingested_at">Ingestion date</option>
+              <option value="pipeline_phase">Status</option>
+              <option value="human_rated">Human rated</option>
+              <option value="ai_rated">AI rated</option>
+              <optgroup label="Overall">
+                <option value="overall:avg">Overall avg</option>
+                <option value="overall:max">Overall max</option>
+                <option value="overall:min">Overall min</option>
               </optgroup>
-            ))}
-          </select>
-          <button
-            onClick={() => { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); setWorksPage(0) }}
-            style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: 'var(--text)', cursor: 'pointer' }}
-          >
-            {sortDir === 'asc' ? '▴ Asc' : '▾ Desc'}
-          </button>
+              {project.rating_dimensions.map(d => (
+                <optgroup key={d.name} label={d.name}>
+                  <option value={`dim:${d.name}:avg`}>{d.name} avg</option>
+                  <option value={`dim:${d.name}:max`}>{d.name} max</option>
+                  <option value={`dim:${d.name}:min`}>{d.name} min</option>
+                </optgroup>
+              ))}
+            </select>
+            <button
+              onClick={() => { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); setWorksPage(0) }}
+              style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'none', color: 'var(--text)', cursor: 'pointer' }}
+            >
+              {sortDir === 'asc' ? '▴ Asc' : '▾ Desc'}
+            </button>
+          </div>
         </div>
       </div>
 
