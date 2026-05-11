@@ -263,6 +263,8 @@ export const api = {
       req<DiscoveryStatus>('GET', `/projects/${projectId}/discovery/status`),
     startAnalysis: (projectId: string) =>
       req<{ status: string }>('POST', `/projects/${projectId}/discovery/analyse/start`),
+    resumeAnalysis: (projectId: string) =>
+      req<{ status: string }>('POST', `/projects/${projectId}/discovery/analyse/resume`),
     cancelAnalysis: (projectId: string) =>
       req<{ ok: boolean }>('POST', `/projects/${projectId}/discovery/analyse/cancel`),
     clearAnalysisResult: (projectId: string) =>

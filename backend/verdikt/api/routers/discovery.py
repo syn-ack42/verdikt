@@ -46,6 +46,8 @@ def _default_analysis_status() -> dict:
         "tokens_completion": 0,
         "result": None,       # DiscoveryAnalysisResult.model_dump() when complete
         "error": None,
+        "can_resume": False,  # True when synthesis failed but chunk descriptions are cached
+        "descriptions": None, # [(preference, qualities), ...]; internal cache, not sent to client
     }
 
 
@@ -167,6 +169,7 @@ def discovery_status(
         raise HTTPException(status_code=404, detail="Project not found")
     counts = SQLiteDiscoveryRatingStore(session).counts(project_id)
     analysis = dict(_analysis_status.get(project_id, _default_analysis_status()))
+    analysis.pop("descriptions", None)  # internal cache — not sent to client
     # If no in-memory result but a persisted result exists, surface it
     if analysis["result"] is None and proj_row.discovery_analysis_result:
         try:
@@ -236,6 +239,7 @@ def start_analysis(
         descriptions: list[tuple[float, str]] = []
 
         try:
+            # Stage 1: describe each chunk
             for i, dr in enumerate(_ratings):
                 if stop_flag:
                     _analysis_status[project_id]["error"] = "Cancelled"
@@ -243,6 +247,7 @@ def start_analysis(
 
                 chunk = _chunks.get(dr.chunk_id)
                 if chunk is None:
+                    _analysis_status[project_id]["done"] = i + 1
                     continue
                 try:
                     qualities, pt, ct = discoverer._describe_chunk(chunk, dr, _project.domain)  # noqa: SLF001
@@ -251,34 +256,46 @@ def start_analysis(
                     if qualities:
                         descriptions.append((dr.preference, qualities))
                 except Exception:
-                    pass
+                    log.debug("discovery: chunk describe failed, skipping (project=%s chunk=%s)", project_id, dr.chunk_id)
 
                 _analysis_status[project_id].update({
                     "done": i + 1,
                     "tokens_prompt": prompt_tokens,
                     "tokens_completion": completion_tokens,
+                    "descriptions": list(descriptions),  # persist for synthesis-only resume
                 })
 
             if stop_flag:
                 _analysis_status[project_id]["error"] = "Cancelled"
                 return
 
+            # Stage 2: synthesise dimensions
             _analysis_status[project_id].update({
                 "phase": "synthesising",
                 "done": 0,
                 "total": 1,
             })
 
-            result, pt, ct = discoverer._extract_dimensions(descriptions, _project)  # noqa: SLF001
+            try:
+                result, pt, ct = discoverer._extract_dimensions(descriptions, _project)  # noqa: SLF001
+            except Exception as exc:
+                msg = str(exc) if str(exc) else "Synthesis failed — LLM could not be reached or returned unparseable output"
+                _analysis_status[project_id].update({
+                    "error": msg,
+                    "can_resume": bool(descriptions),
+                })
+                log.warning("discovery: synthesis failed for project %s: %s", project_id, exc)
+                return
+
             prompt_tokens += pt
             completion_tokens += ct
-
             result_dict = result.model_dump()
             _analysis_status[project_id].update({
                 "done": 1,
                 "tokens_prompt": prompt_tokens,
                 "tokens_completion": completion_tokens,
                 "result": result_dict,
+                "descriptions": None,
             })
 
             # Persist result to DB so it survives container restarts
@@ -309,6 +326,113 @@ def start_analysis(
             _stop_flags.pop(project_id, None)
 
     thread = threading.Thread(target=_run, daemon=True, name=f"discovery-{project_id}")
+    thread.start()
+    return {"status": "started"}
+
+
+@router.post("/analyse/resume", status_code=202)
+def resume_analysis(
+    project_id: str,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Session = Depends(get_session),
+    auth_session: Session = Depends(get_auth_session),
+) -> dict:
+    """Retry the synthesis phase using cached chunk descriptions from a failed run."""
+    check_token_budget(user.id, auth_session)
+
+    if project_id in _stop_flags:
+        raise HTTPException(status_code=409, detail="Analysis already running for this project")
+
+    status = _analysis_status.get(project_id)
+    if not status or not status.get("can_resume"):
+        raise HTTPException(status_code=409, detail="No resumable state — run a full analysis first")
+    descriptions: list[tuple[float, str]] = list(status.get("descriptions") or [])
+    if not descriptions:
+        raise HTTPException(status_code=422, detail="No cached descriptions — run a full analysis first")
+
+    proj = _get_project_or_404(project_id, session)
+    config = get_config()
+    ollama_base_url, llm_model = resolve_llm_model(proj, config)
+
+    from verdikt.api.deps import get_user_engine
+    from sqlalchemy.orm import Session as _Session
+    engine = get_user_engine(user)
+
+    stop_flag: list = []
+    _stop_flags[project_id] = stop_flag
+    prev_prompt = status.get("tokens_prompt", 0)
+    prev_completion = status.get("tokens_completion", 0)
+    _analysis_status[project_id].update({
+        "running": True,
+        "phase": "synthesising",
+        "done": 0,
+        "total": 1,
+        "error": None,
+        "can_resume": False,
+        "result": None,
+    })
+
+    _project = proj
+    _model = llm_model
+    _user_id = user.id
+    _descriptions = descriptions
+
+    def _run_synthesis() -> None:
+        discoverer = DimensionDiscoverer(model=_model, base_url=ollama_base_url)
+        try:
+            if stop_flag:
+                _analysis_status[project_id]["error"] = "Cancelled"
+                return
+            try:
+                result, pt, ct = discoverer._extract_dimensions(_descriptions, _project)  # noqa: SLF001
+            except Exception as exc:
+                msg = str(exc) if str(exc) else "Synthesis failed — LLM could not be reached or returned unparseable output"
+                _analysis_status[project_id].update({
+                    "error": msg,
+                    "can_resume": True,
+                    "descriptions": _descriptions,
+                })
+                log.warning("discovery: synthesis retry failed for project %s: %s", project_id, exc)
+                return
+
+            result_dict = result.model_dump()
+            _analysis_status[project_id].update({
+                "done": 1,
+                "tokens_prompt": prev_prompt + pt,
+                "tokens_completion": prev_completion + ct,
+                "result": result_dict,
+                "descriptions": None,
+            })
+
+            try:
+                with _Session(engine) as user_sess:
+                    user_sess.execute(
+                        _sql_update(ProjectRow)
+                        .where(ProjectRow.id == project_id)
+                        .values(discovery_analysis_result=json.dumps(result_dict))
+                    )
+                    user_sess.commit()
+            except Exception:
+                log.warning("discovery: failed to persist analysis result for project %s", project_id)
+
+            try:
+                with _Session(get_auth_engine()) as auth_sess:
+                    record_usage(_user_id, project_id, _model, "discovery_analyse", pt, ct, auth_sess)
+            except Exception:
+                log.warning("discovery: failed to record token usage")
+
+        except Exception as exc:
+            log.exception("discovery synthesis-resume thread error for project %s", project_id)
+            _analysis_status[project_id].update({
+                "error": str(exc) or "Resume failed — see server logs",
+                "can_resume": True,
+                "descriptions": _descriptions,
+            })
+        finally:
+            _analysis_status[project_id]["running"] = False
+            _stop_flags.pop(project_id, None)
+
+    thread = threading.Thread(target=_run_synthesis, daemon=True, name=f"discovery-resume-{project_id}")
     thread.start()
     return {"status": "started"}
 

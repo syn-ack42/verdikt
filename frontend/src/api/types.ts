@@ -414,6 +414,7 @@ export interface DiscoveryAnalysisStatus {
   tokens_completion: number
   result: DiscoveryAnalysisResult | null
   error: string | null
+  can_resume: boolean
 }
 
 export interface DiscoveryStatus {

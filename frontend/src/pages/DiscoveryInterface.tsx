@@ -330,16 +330,31 @@ export default function DiscoveryInterface() {
           <p style={{ margin: '0 0 10px', fontSize: 13, color: '#c00' }}>
             {analysisStatus?.error ?? 'Analysis returned no dimensions. Try rating more samples with strong reactions.'}
           </p>
-          <button
-            onClick={async () => {
-              await api.discovery.clearAnalysisResult(projectId!)
-              await api.discovery.startAnalysis(projectId!)
-              qc.invalidateQueries({ queryKey: ['discovery-status', projectId] })
-            }}
-            style={{ padding: '6px 16px', fontSize: 13, fontWeight: 600, background: '#6b7de0', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
-          >
-            Retry analysis
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {analysisStatus?.can_resume && (
+              <button
+                onClick={async () => {
+                  await api.discovery.resumeAnalysis(projectId!)
+                  await qc.refetchQueries({ queryKey: ['discovery-status', projectId] })
+                  setShowAnalysis(true)
+                }}
+                style={{ padding: '6px 16px', fontSize: 13, fontWeight: 600, background: '#6b7de0', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+              >
+                Retry synthesis
+              </button>
+            )}
+            <button
+              onClick={async () => {
+                await api.discovery.clearAnalysisResult(projectId!)
+                await api.discovery.startAnalysis(projectId!)
+                await qc.refetchQueries({ queryKey: ['discovery-status', projectId] })
+                setShowAnalysis(true)
+              }}
+              style={{ padding: '6px 16px', fontSize: 13, fontWeight: 600, background: analysisStatus?.can_resume ? 'none' : '#6b7de0', color: analysisStatus?.can_resume ? 'var(--text-muted)' : '#fff', border: analysisStatus?.can_resume ? '1px solid var(--border)' : 'none', borderRadius: 6, cursor: 'pointer' }}
+            >
+              {analysisStatus?.can_resume ? 'Start over' : 'Retry analysis'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -349,7 +364,7 @@ export default function DiscoveryInterface() {
           <button
             onClick={async () => {
               await api.discovery.startAnalysis(projectId!)
-              qc.invalidateQueries({ queryKey: ['discovery-status', projectId] })
+              await qc.refetchQueries({ queryKey: ['discovery-status', projectId] })
               setShowAnalysis(true)
             }}
             style={{

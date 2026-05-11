@@ -181,7 +181,14 @@ export default function DiscoveryAnalysisModal({ projectId, analysisStatus, onCl
 
           {/* Error */}
           {analysisStatus.error && !running && (
-            <p style={{ color: '#c00', margin: 0 }}>{analysisStatus.error}</p>
+            <div>
+              <p style={{ color: '#c00', margin: '0 0 8px' }}>{analysisStatus.error}</p>
+              {analysisStatus.can_resume && (
+                <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>
+                  Chunk descriptions were saved — you can retry just the synthesis step without re-running all LLM calls.
+                </p>
+              )}
+            </div>
           )}
 
           {/* Applying */}
@@ -323,18 +330,29 @@ export default function DiscoveryAnalysisModal({ projectId, analysisStatus, onCl
               Cancel analysis
             </button>
           )}
-          {!running && (analysisStatus.error || (result && result.proposed_dimensions.length === 0 && (result.irrelevant_existing?.length ?? 0) === 0)) && (
+          {!running && (analysisStatus.error || (result && result.proposed_dimensions.length === 0 && (result.irrelevant_existing?.length ?? 0) === 0)) && (<>
+            {analysisStatus.can_resume && (
+              <button
+                onClick={async () => {
+                  await api.discovery.resumeAnalysis(projectId)
+                  qc.invalidateQueries({ queryKey: ['discovery-status', projectId] })
+                }}
+                style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: '#6b7de0', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}
+              >
+                Retry synthesis
+              </button>
+            )}
             <button
               onClick={async () => {
                 await api.discovery.clearAnalysisResult(projectId)
                 await api.discovery.startAnalysis(projectId)
                 qc.invalidateQueries({ queryKey: ['discovery-status', projectId] })
               }}
-              style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: '#6b7de0', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}
+              style={{ padding: '8px 18px', borderRadius: 6, border: analysisStatus.can_resume ? '1px solid var(--border)' : 'none', background: analysisStatus.can_resume ? 'none' : '#6b7de0', color: analysisStatus.can_resume ? 'var(--text-muted)' : '#fff', cursor: 'pointer', fontSize: 14, fontWeight: analysisStatus.can_resume ? 400 : 600 }}
             >
-              Retry analysis
+              {analysisStatus.can_resume ? 'Start over' : 'Retry analysis'}
             </button>
-          )}
+          </>)}
           <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', fontSize: 14 }}>
             {running ? 'Continue in background' : 'Close'}
           </button>
