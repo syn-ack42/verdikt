@@ -46,6 +46,7 @@ verdikt = "verdikt.cli:app"
 storage = "verdikt.plugins.storage:StoragePlugin"
 ao3 = "verdikt.plugins.ao3:AO3Plugin"
 immich = "verdikt.plugins.immich:ImmichPlugin"
+royalroad = "verdikt.plugins.royalroad:RoyalRoadPlugin"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

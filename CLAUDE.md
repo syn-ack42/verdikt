@@ -165,6 +165,7 @@ The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.y
 7. ✅ Token usage tracking + budget grants, admin promote/demote, OAuth (Google/GitHub), sentence-transformer catalog
 8. ✅ `ImmichPlugin` + remote content protocol + chunk descriptions from LLM judge + Immich writeback (star ratings + `#verdikt:` descriptions)
 9. ✅ Discovery mode — dimension discovery from like/dislike reactions; dimension weights surfaced in UI
+10. ✅ `RoyalRoadPlugin` — HTML scraping, two-stage Gaussian chapter+paragraph sampling, login/following-list support, works search box
 
 ## Discovery mode
 
@@ -222,6 +223,30 @@ Plugins that can push data back to the source implement:
 - `POST /api/projects/{id}/works/plugins/{name}/writeback` — calls `plugin.writeback()`; requires auth
 - `GET /api/plugins` response includes `supports_writeback: bool` per plugin
 - Frontend shows a **Write back** button on the project dashboard when any configured plugin has `supports_writeback=True`
+
+## Royal Road plugin
+
+`backend/verdikt/plugins/royalroad.py` — text-domain plugin that scrapes Royal Road (royalroad.com) via HTML; no official public API exists.
+
+**Two-stage Gaussian sampling** (the key design difference from AO3):
+1. **Chapter selection**: Gaussian weights over the ordered chapter list select which chapters to *download*. Seed: `MD5(f"ch:{fiction_id}")`. Env: `VERDIKT_RR_CHAPTER_RATE` (default `0.30`), `VERDIKT_RR_CHAPTER_STDDEV` (default `1.5`). Selection order is preserved (`np.sort`).
+2. **Paragraph sampling**: Within the downloaded chapters, Gaussian weights over combined paragraphs select the final content. Seed: `MD5(f"para:{fiction_id}")`. Env: `VERDIKT_RR_SAMPLE_RATE` (default `0.20`), `VERDIKT_RR_SAMPLE_STDDEV` (default `1.5`).
+
+This avoids fetching all chapters (saves ~70% of HTTP requests for long works) while still biasing toward middle chapters where story substance concentrates.
+
+**Brotli encoding constraint**: The session must NOT set `Accept-Encoding: gzip, deflate, br`. Royal Road honours `br` and serves Brotli-compressed responses; `requests` cannot decompress Brotli without the optional `brotli` package (not a project dependency). Omitting the header causes `requests` to negotiate only gzip/deflate, which it handles natively.
+
+**Rate limiting**: `VERDIKT_RR_REQUEST_DELAY` (default `2.0` s, minimum `1.0` s) applied after every HTTP request.
+
+**Login / following list**: ASP.NET CSRF pattern — GET `/account/login` → extract `input[name="__RequestVerificationToken"]` → POST with `Email`, `Password`, `__RequestVerificationToken`. `include_following: true` in config triggers login and scrapes `/my/follows`.
+
+**Key CSS selectors**:
+- Fiction title: `h1.font-white`
+- Author: `h4.font-white a`
+- Chapter rows: `table#chapters tbody tr td a[href*="/chapter/"]`
+- Chapter content: `div.chapter-content`
+- Browse/search results: `div.fiction-list-item h2.fiction-title a`
+- Last updated: last chapter row's `td time[datetime]` attribute
 
 ## Branch conventions
 
