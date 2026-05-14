@@ -106,6 +106,7 @@ def start_ai_rating(
     if not _dims_match(profile, proj):
         raise HTTPException(status_code=409, detail="Profile dimensions don't match project dimensions. Re-crystallise first.")
 
+    config = get_config()
     chroma = get_cached_chroma_client(user.id)
     vector_store = ChromaVectorStore(chroma, f"project_{project_id}")
     embedder = resolve_embedder(proj, config)
