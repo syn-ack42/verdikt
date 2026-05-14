@@ -1,16 +1,31 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { zxcvbn, zxcvbnOptions } from '@zxcvbn-ts/core'
-import * as zxcvbnCommonPackage from '@zxcvbn-ts/language-common'
-import * as zxcvbnEnPackage from '@zxcvbn-ts/language-en'
 
-zxcvbnOptions.setOptions({
-  translations: zxcvbnEnPackage.translations,
-  graphs: zxcvbnCommonPackage.adjacencyGraphs,
-  dictionary: {
-    ...zxcvbnCommonPackage.dictionary,
-    ...zxcvbnEnPackage.dictionary,
-  },
-})
+// Language packs are loaded lazily on first render so they don't bloat the
+// initial JS bundle. Until the async load finishes, scorePassword returns
+// score=0 (submit stays blocked while the user is still typing anyway).
+let _initialized = false
+let _initPromise: Promise<void> | null = null
+
+function _ensureInit(): Promise<void> {
+  if (!_initPromise) {
+    _initPromise = Promise.all([
+      import('@zxcvbn-ts/language-common'),
+      import('@zxcvbn-ts/language-en'),
+    ]).then(([common, en]) => {
+      zxcvbnOptions.setOptions({
+        translations: en.translations,
+        graphs: common.adjacencyGraphs,
+        dictionary: {
+          ...common.dictionary,
+          ...en.dictionary,
+        },
+      })
+      _initialized = true
+    })
+  }
+  return _initPromise
+}
 
 const SCORE_LABELS = ['Very weak', 'Weak', 'Fair', 'Strong', 'Very strong']
 const SCORE_COLORS = ['#c00', '#e05000', '#c08020', '#2e7d32', '#1b5e20']
@@ -21,16 +36,23 @@ interface Props {
 }
 
 export function scorePassword(password: string): { score: number; feedback: string } {
-  if (!password) return { score: 0, feedback: '' }
+  if (!password || !_initialized) return { score: 0, feedback: '' }
   const result = zxcvbn(password)
   const warning = result.feedback.warning || ''
   const suggestion = result.feedback.suggestions?.[0] || ''
-  const feedback = warning || suggestion
-  return { score: result.score, feedback }
+  return { score: result.score, feedback: warning || suggestion }
 }
 
 export default function PasswordStrengthMeter({ password, style }: Props) {
-  const { score, feedback } = useMemo(() => scorePassword(password), [password])
+  const [ready, setReady] = useState(_initialized)
+
+  useEffect(() => {
+    if (!_initialized) {
+      _ensureInit().then(() => setReady(true))
+    }
+  }, [])
+
+  const { score, feedback } = useMemo(() => scorePassword(password), [password, ready])
 
   if (!password) return null
 
@@ -49,7 +71,7 @@ export default function PasswordStrengthMeter({ password, style }: Props) {
         ))}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-        <span style={{ color }}>{label}</span>
+        <span style={{ color }}>{ready ? label : '…'}</span>
         {feedback && <span style={{ color: 'var(--text-muted)' }}>{feedback}</span>}
       </div>
     </div>
