@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections import OrderedDict
 from collections.abc import Generator
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,7 +16,9 @@ log = logging.getLogger(__name__)
 _running_updates: dict[str, dict] = {}
 
 # (plugin_name + config_hash) → plugin instance — keeps session/cookies alive across calls
-_plugin_instance_cache: dict[str, object] = {}
+# Bounded LRU: evicts the least-recently-used entry when the cap is exceeded.
+_MAX_PLUGIN_CACHE = 32
+_plugin_instance_cache: OrderedDict[str, object] = OrderedDict()
 
 
 _RUNTIME_CONFIG_KEYS = {"_storage_root", "_storage_backend"}
@@ -25,11 +28,16 @@ def _get_cached_plugin(cls, plugin_name: str, config: dict) -> object:
     serialisable = {k: v for k, v in config.items() if k not in _RUNTIME_CONFIG_KEYS}
     config_hash = hashlib.sha256(json.dumps(serialisable, sort_keys=True).encode()).hexdigest()
     key = f"{plugin_name}:{config_hash}"
-    if key not in _plugin_instance_cache:
-        log.info("plugin-cache: creating new instance for %s (%s)", plugin_name, key[:16])
-        _plugin_instance_cache[key] = cls(config)
-    else:
+    if key in _plugin_instance_cache:
+        _plugin_instance_cache.move_to_end(key)
         log.info("plugin-cache: reusing cached instance for %s", plugin_name)
+        return _plugin_instance_cache[key]
+    log.info("plugin-cache: creating new instance for %s (%s)", plugin_name, key[:16])
+    _plugin_instance_cache[key] = cls(config)
+    if len(_plugin_instance_cache) > _MAX_PLUGIN_CACHE:
+        evicted = next(iter(_plugin_instance_cache))
+        _plugin_instance_cache.pop(evicted)
+        log.info("plugin-cache: evicted oldest entry %s (cache full)", evicted[:16])
     return _plugin_instance_cache[key]
 
 
@@ -68,7 +76,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_config, get_current_user, get_session, get_storage
+from verdikt.api.deps import get_cached_chroma_client, get_config, get_current_user, get_session, get_storage
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.core.models import Domain, MaterialItem, PipelinePhase, PluginConfig
 from verdikt.plugins.filedrop import FileDropPlugin, _EXT_TO_CONTENT_TYPE
@@ -77,8 +85,6 @@ from verdikt.plugins.registry import get_plugin
 from verdikt.storage.chroma import ChromaVectorStore
 from verdikt.storage.files import StorageBackend
 from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteMaterialStore, SQLitePluginConfigStore, SQLiteProjectStore, SQLiteRatingStore
-
-import chromadb as _chromadb
 
 router = APIRouter(prefix="/api/projects/{project_id}/works", tags=["works"])
 
@@ -897,8 +903,7 @@ def delete_work(
     if item is None:
         raise HTTPException(status_code=404, detail="Work not found")
 
-    config = get_config()
-    chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
+    chroma = get_cached_chroma_client(user.id)
     vector_store = ChromaVectorStore(chroma, f"project_{proj.id}")
     chunks = chunk_store.list_by_material(item.id)
     vector_store.delete_items([c.id for c in chunks])

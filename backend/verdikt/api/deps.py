@@ -35,6 +35,11 @@ _user_engine_locks_lock = threading.Lock()
 # Track which users have had their files migrated this process lifetime
 _files_migrated: set[str] = set()
 
+# Per-user ChromaDB client cache: user_id → ClientAPI
+# Sharing one client per user avoids creating a new SQLite handle on every request.
+_chroma_clients: dict[str, chromadb.ClientAPI] = {}
+_chroma_clients_lock = threading.Lock()
+
 
 def _get_engine_lock(user_id: str) -> threading.Lock:
     with _user_engine_locks_lock:
@@ -372,11 +377,24 @@ def get_session(
         yield session
 
 
+def get_cached_chroma_client(user_id: str) -> chromadb.ClientAPI:
+    """Return the cached ChromaDB client for user_id, creating it on first call.
+
+    Call this directly from background threads (no FastAPI context needed).
+    """
+    with _chroma_clients_lock:
+        if user_id not in _chroma_clients:
+            config = get_config()
+            _chroma_clients[user_id] = chromadb.PersistentClient(
+                path=str(config.user_chroma_path(user_id))
+            )
+        return _chroma_clients[user_id]
+
+
 def get_chroma_client(
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> chromadb.ClientAPI:
-    config = get_config()
-    return chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
+    return get_cached_chroma_client(user.id)
 
 
 def get_storage(

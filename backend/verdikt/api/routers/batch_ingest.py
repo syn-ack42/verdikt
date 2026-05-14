@@ -6,12 +6,11 @@ import logging
 from collections.abc import Generator
 from datetime import datetime, timezone
 
-import chromadb as _chromadb
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_config, get_current_user, get_session
+from verdikt.api.deps import get_cached_chroma_client, get_config, get_current_user, get_session
 from verdikt.core.models import Domain, PipelinePhase
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.resolver import resolve_embedder
@@ -140,7 +139,7 @@ def start_batch_stream(
     plugin_name, plugin_cls, plugin_config = result
     plugin = plugin_cls(plugin_config)
 
-    chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
+    chroma = get_cached_chroma_client(user.id)
     mat_store = SQLiteMaterialStore(session)
     chunk_store = SQLiteChunkStore(session)
     vector_store = ChromaVectorStore(chroma, f"project_{proj.id}")

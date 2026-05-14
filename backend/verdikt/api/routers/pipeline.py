@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 from collections.abc import Generator
 
-import chromadb as _chromadb
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_config, get_current_user, get_session
+from verdikt.api.deps import get_cached_chroma_client, get_config, get_current_user, get_session
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.resolver import resolve_embedder
 from verdikt.core.models import Domain
@@ -61,7 +60,7 @@ def run_pipeline(
     proj = _get_project_or_404(project_id, session)
     config = get_config()
 
-    chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
+    chroma = get_cached_chroma_client(user.id)
     runner = PipelineRunner(
         material_store=SQLiteMaterialStore(session),
         chunk_store=SQLiteChunkStore(session),
@@ -83,17 +82,6 @@ def run_pipeline(
     }
 
 
-def _make_runner(proj, session, config) -> PipelineRunner:
-    chroma = _chromadb.PersistentClient(path=str(config.chroma_path))
-    return PipelineRunner(
-        material_store=SQLiteMaterialStore(session),
-        chunk_store=SQLiteChunkStore(session),
-        vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
-        embedder=SentenceTransformerEmbedder(config.inference.embedding_model),
-        chunker=_make_chunker(proj),
-    )
-
-
 @router.post("/run/stream")
 def run_pipeline_stream(
     project_id: str,
@@ -102,7 +90,7 @@ def run_pipeline_stream(
 ) -> StreamingResponse:
     proj = _get_project_or_404(project_id, session)
     config = get_config()
-    chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
+    chroma = get_cached_chroma_client(user.id)
     runner = PipelineRunner(
         material_store=SQLiteMaterialStore(session),
         chunk_store=SQLiteChunkStore(session),

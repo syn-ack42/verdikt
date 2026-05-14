@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from typing import Annotated
 
-from verdikt.api.deps import get_config, get_current_user, get_session
+from verdikt.api.deps import get_cached_chroma_client, get_config, get_current_user, get_session
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.core.models import Domain, Project, RatingDimension
 from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteMaterialStore, SQLiteProfileStore, SQLiteProjectStore, SQLiteRatingStore
@@ -218,8 +218,6 @@ def delete_project(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     session: Session = Depends(get_session),
 ) -> None:
-    import chromadb as _chromadb
-    from verdikt.api.deps import get_config
     from verdikt.storage.chroma import ChromaVectorStore
 
     store = SQLiteProjectStore(session)
@@ -227,11 +225,10 @@ def delete_project(
     if proj is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    config = get_config()
     mat_store = SQLiteMaterialStore(session)
     chunk_store = SQLiteChunkStore(session)
     items = mat_store.list_by_project(proj.id)
-    chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
+    chroma = get_cached_chroma_client(user.id)
     vector_store = ChromaVectorStore(chroma, f"project_{proj.id}")
 
     for item in items:

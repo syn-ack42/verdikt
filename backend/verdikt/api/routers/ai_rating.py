@@ -4,12 +4,11 @@ import logging
 import threading
 from datetime import datetime, timezone
 
-import chromadb as _chromadb
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_auth_engine, get_auth_session, get_config, get_current_user, get_session
+from verdikt.api.deps import get_auth_engine, get_auth_session, get_cached_chroma_client, get_config, get_current_user, get_session
 from verdikt.api.token_budget import check_token_budget, record_usage
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.ai_rater import AIRater
@@ -107,8 +106,7 @@ def start_ai_rating(
     if not _dims_match(profile, proj):
         raise HTTPException(status_code=409, detail="Profile dimensions don't match project dimensions. Re-crystallise first.")
 
-    config = get_config()
-    chroma = _chromadb.PersistentClient(path=str(config.user_chroma_path(user.id)))
+    chroma = get_cached_chroma_client(user.id)
     vector_store = ChromaVectorStore(chroma, f"project_{project_id}")
     embedder = resolve_embedder(proj, config)
     ollama_base_url, llm_model = resolve_llm_model(proj, config)
