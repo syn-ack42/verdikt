@@ -82,6 +82,7 @@ def list_enabled_models(
             "id": r.id,
             "type": r.type,
             "domain": r.domain,
+            "source": r.source,
             "is_default": r.is_default,
             "display_name": r.display_name,
             "description": r.description,
