@@ -172,13 +172,14 @@ export default function AdminModels() {
         <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
           {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 60px 80px 60px', gap: 8, padding: '8px 14px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border)', background: 'var(--surface, rgba(128,128,128,0.04))', minWidth: 700 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 100px 60px 80px 60px', gap: 8, padding: '8px 14px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border)', background: 'var(--surface, rgba(128,128,128,0.04))', minWidth: 800 }}>
             <span>Model</span>
             <span>Type</span>
             <span>Domain</span>
             <span>Params</span>
             <span>Context</span>
             <span>Quant</span>
+            <span title="Input / output USD per million tokens">Cost/Mtok</span>
             <span>Enabled</span>
             <span>Default</span>
             <span></span>
@@ -187,10 +188,10 @@ export default function AdminModels() {
             <div
               key={m.id}
               style={{
-                display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 60px 80px 60px', gap: 8, padding: '10px 14px', alignItems: 'center',
+                display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 100px 60px 80px 60px', gap: 8, padding: '10px 14px', alignItems: 'center',
                 borderBottom: i < models.length - 1 ? '1px solid var(--border)' : 'none',
                 opacity: m.enabled ? 1 : 0.6,
-                minWidth: 700,
+                minWidth: 800,
               }}
             >
               <div style={{ minWidth: 0 }}>
@@ -215,6 +216,14 @@ export default function AdminModels() {
               <span style={{ fontSize: 12 }}>{m.parameter_size ?? '—'}</span>
               <span style={{ fontSize: 12 }}>{m.context_length ? `${(m.context_length / 1000).toFixed(0)}k` : '—'}</span>
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m.quantization ?? '—'}</span>
+              <span style={{ fontSize: 11 }}>
+                {m.input_cost_usd_per_mtok != null || m.output_cost_usd_per_mtok != null ? (
+                  <span title={`Input: $${m.input_cost_usd_per_mtok ?? '?'} / Output: $${m.output_cost_usd_per_mtok ?? '?'} per million tokens`}>
+                    <span style={{ color: 'var(--text)' }}>${m.input_cost_usd_per_mtok?.toFixed(2) ?? '?'}</span>
+                    <span style={{ color: 'var(--text-muted)' }}> / ${m.output_cost_usd_per_mtok?.toFixed(2) ?? '?'}</span>
+                  </span>
+                ) : '—'}
+              </span>
               <span>
                 <button
                   onClick={() => update.mutate({ id: m.id, body: { enabled: !m.enabled } })}

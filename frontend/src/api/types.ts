@@ -87,6 +87,8 @@ export interface ModelCatalogEntry {
   context_length: number | null
   size_bytes?: number | null
   quantization: string | null
+  input_cost_usd_per_mtok?: number | null
+  output_cost_usd_per_mtok?: number | null
   synced_at?: string | null
 }
 

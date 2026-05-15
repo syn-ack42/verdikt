@@ -326,6 +326,8 @@ def _model_dict(m: ModelCatalogRow) -> dict:
         "context_length": m.context_length,
         "size_bytes": m.size_bytes,
         "quantization": m.quantization,
+        "input_cost_usd_per_mtok": m.input_cost_usd_per_mtok,
+        "output_cost_usd_per_mtok": m.output_cost_usd_per_mtok,
         "synced_at": m.synced_at.isoformat() if m.synced_at else None,
     }
 
@@ -552,22 +554,45 @@ def sync_venice_models(
         if model_type_raw == "image":
             continue
         seen_ids.add(model_id)
+
+        spec = model.get("model_spec") or {}
+        capabilities = spec.get("capabilities") or {}
+        pricing = spec.get("pricing") or {}
+
         name_lower = model_id.lower()
         if "embed" in name_lower or model_type_raw == "embedding":
             catalog_type, domain = "embedding", "text"
         else:
             catalog_type = "llm"
-            domain = "any" if "vision" in name_lower else "text"
+            supports_vision = capabilities.get("supportsVision", False)
+            domain = "any" if (supports_vision or "vision" in name_lower) else "text"
+
+        display_name = spec.get("name") or model_id
+        description = spec.get("description") or ""
+        context_length = model.get("context_length") or spec.get("availableContextTokens")
+        quantization = capabilities.get("quantization") or None
+        input_cost = pricing.get("input", {}).get("usd")
+        output_cost = pricing.get("output", {}).get("usd")
 
         existing = session.get(ModelCatalogRow, model_id)
         if existing is None:
             session.add(ModelCatalogRow(
                 id=model_id, source="venice", type=catalog_type, domain=domain,
-                enabled=False, display_name=model_id, description="",
+                enabled=False, display_name=display_name, description=description,
+                context_length=context_length, quantization=quantization,
+                input_cost_usd_per_mtok=input_cost, output_cost_usd_per_mtok=output_cost,
                 synced_at=now,
             ))
         else:
             existing.synced_at = now
+            existing.display_name = display_name
+            existing.description = description
+            existing.context_length = context_length
+            existing.quantization = quantization
+            existing.input_cost_usd_per_mtok = input_cost
+            existing.output_cost_usd_per_mtok = output_cost
+            # Update domain if vision capability changed
+            existing.domain = domain
 
     # Disable Venice models no longer returned by the API
     if seen_ids:

@@ -123,6 +123,15 @@ def _migrate_auth_db(engine: Engine) -> None:
             conn.execute(_text("ALTER TABLE users ADD COLUMN storage_limit_bytes INTEGER"))
             conn.commit()
 
+        # Re-read catalog_cols in case the table was just created (no migration needed then)
+        catalog_cols = {row[1] for row in conn.execute(_text("PRAGMA table_info(model_catalog)")).fetchall()}
+        if "input_cost_usd_per_mtok" not in catalog_cols:
+            conn.execute(_text("ALTER TABLE model_catalog ADD COLUMN input_cost_usd_per_mtok REAL"))
+            conn.commit()
+        if "output_cost_usd_per_mtok" not in catalog_cols:
+            conn.execute(_text("ALTER TABLE model_catalog ADD COLUMN output_cost_usd_per_mtok REAL"))
+            conn.commit()
+
 
 def get_auth_session() -> Generator[Session, None, None]:
     with Session(get_auth_engine()) as session:

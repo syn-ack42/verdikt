@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -94,4 +94,6 @@ class ModelCatalogRow(AuthBase):
     size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     quantization: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    input_cost_usd_per_mtok: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    output_cost_usd_per_mtok: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

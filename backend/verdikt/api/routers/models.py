@@ -89,6 +89,8 @@ def list_enabled_models(
             "parameter_size": r.parameter_size,
             "context_length": r.context_length,
             "quantization": r.quantization,
+            "input_cost_usd_per_mtok": r.input_cost_usd_per_mtok,
+            "output_cost_usd_per_mtok": r.output_cost_usd_per_mtok,
         }
         for r in rows
     ]

@@ -82,8 +82,17 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
   const defaultLlm = modelDefaults?.llm_by_domain?.[project.domain] ?? null
   const defaultEmbLabel = modelDefaults ? ' (bundled)' : ''
 
-  const selectedLlmIsVenice = (llmModels ?? []).find(m => m.id === (llmModel || defaultLlm))?.source === 'venice'
-  const selectedEmbIsVenice = (embModels ?? []).find(m => m.id === embModel)?.source === 'venice'
+  const selectedLlmModel = (llmModels ?? []).find(m => m.id === (llmModel || defaultLlm))
+  const selectedEmbModel = (embModels ?? []).find(m => m.id === embModel)
+  const selectedLlmIsVenice = selectedLlmModel?.source === 'venice'
+  const selectedEmbIsVenice = selectedEmbModel?.source === 'venice'
+
+  const _fmtCost = (input?: number | null, output?: number | null) => {
+    if (input == null && output == null) return null
+    return `$${input?.toFixed(2) ?? '?'} in / $${output?.toFixed(2) ?? '?'} out per million tokens`
+  }
+  const llmCostLabel = _fmtCost(selectedLlmModel?.input_cost_usd_per_mtok, selectedLlmModel?.output_cost_usd_per_mtok)
+  const embCostLabel = _fmtCost(selectedEmbModel?.input_cost_usd_per_mtok, selectedEmbModel?.output_cost_usd_per_mtok)
 
   const deleteProject = useMutation({
     mutationFn: () => api.projects.delete(project.id),
@@ -230,7 +239,7 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
                 )}
                 {selectedLlmIsVenice && (
                   <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
-                    This model is hosted on Venice.ai and will incur API costs.
+                    Venice.ai — API costs apply.{llmCostLabel ? ` ${llmCostLabel}.` : ''}
                   </p>
                 )}
               </div>
@@ -257,7 +266,7 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
                   )}
                   {selectedEmbIsVenice && (
                     <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
-                      This model is hosted on Venice.ai and will incur API costs.
+                      Venice.ai — API costs apply.{embCostLabel ? ` ${embCostLabel}.` : ''}
                     </p>
                   )}
                 </div>
