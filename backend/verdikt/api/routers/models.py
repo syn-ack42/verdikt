@@ -91,6 +91,7 @@ def list_enabled_models(
             "quantization": r.quantization,
             "input_cost_usd_per_mtok": r.input_cost_usd_per_mtok,
             "output_cost_usd_per_mtok": r.output_cost_usd_per_mtok,
+            "privacy": r.privacy,
         }
         for r in rows
     ]

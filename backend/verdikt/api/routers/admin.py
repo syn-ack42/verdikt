@@ -328,6 +328,7 @@ def _model_dict(m: ModelCatalogRow) -> dict:
         "quantization": m.quantization,
         "input_cost_usd_per_mtok": m.input_cost_usd_per_mtok,
         "output_cost_usd_per_mtok": m.output_cost_usd_per_mtok,
+        "privacy": m.privacy,
         "synced_at": m.synced_at.isoformat() if m.synced_at else None,
     }
 
@@ -573,6 +574,7 @@ def sync_venice_models(
         quantization = capabilities.get("quantization") or None
         input_cost = pricing.get("input", {}).get("usd")
         output_cost = pricing.get("output", {}).get("usd")
+        privacy = spec.get("privacy") or None  # "private" | "anonymized"
 
         existing = session.get(ModelCatalogRow, model_id)
         if existing is None:
@@ -581,7 +583,7 @@ def sync_venice_models(
                 enabled=False, display_name=display_name, description=description,
                 context_length=context_length, quantization=quantization,
                 input_cost_usd_per_mtok=input_cost, output_cost_usd_per_mtok=output_cost,
-                synced_at=now,
+                privacy=privacy, synced_at=now,
             ))
         else:
             existing.synced_at = now
@@ -591,7 +593,7 @@ def sync_venice_models(
             existing.quantization = quantization
             existing.input_cost_usd_per_mtok = input_cost
             existing.output_cost_usd_per_mtok = output_cost
-            # Update domain if vision capability changed
+            existing.privacy = privacy
             existing.domain = domain
 
     # Disable Venice models no longer returned by the API

@@ -240,6 +240,8 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
                 {selectedLlmIsVenice && (
                   <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
                     Venice.ai — API costs apply.{llmCostLabel ? ` ${llmCostLabel}.` : ''}
+                    {selectedLlmModel?.privacy === 'private' && ' Prompts are not logged.'}
+                    {selectedLlmModel?.privacy === 'anonymized' && ' Prompts may be retained anonymized.'}
                   </p>
                 )}
               </div>
@@ -267,6 +269,8 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
                   {selectedEmbIsVenice && (
                     <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
                       Venice.ai — API costs apply.{embCostLabel ? ` ${embCostLabel}.` : ''}
+                      {selectedEmbModel?.privacy === 'private' && ' Prompts are not logged.'}
+                      {selectedEmbModel?.privacy === 'anonymized' && ' Prompts may be retained anonymized.'}
                     </p>
                   )}
                 </div>

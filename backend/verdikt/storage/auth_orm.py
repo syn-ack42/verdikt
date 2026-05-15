@@ -96,4 +96,5 @@ class ModelCatalogRow(AuthBase):
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     input_cost_usd_per_mtok: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     output_cost_usd_per_mtok: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    privacy: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # "private" | "anonymized" | null (Ollama/local)
     synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -131,6 +131,9 @@ def _migrate_auth_db(engine: Engine) -> None:
         if "output_cost_usd_per_mtok" not in catalog_cols:
             conn.execute(_text("ALTER TABLE model_catalog ADD COLUMN output_cost_usd_per_mtok REAL"))
             conn.commit()
+        if "privacy" not in catalog_cols:
+            conn.execute(_text("ALTER TABLE model_catalog ADD COLUMN privacy TEXT"))
+            conn.commit()
 
 
 def get_auth_session() -> Generator[Session, None, None]:

@@ -287,11 +287,25 @@ export default function AdminModels() {
                 </span>
               </div>
               {/* Full-width detail row */}
-              {(m.id !== m.display_name || m.description) && (
-                <div style={{ padding: '0 14px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {m.id !== m.display_name && (
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{m.id}</span>
-                  )}
+              {(m.id !== m.display_name || m.description || m.privacy) && (
+                <div style={{ padding: '0 14px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    {m.id !== m.display_name && (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{m.id}</span>
+                    )}
+                    {m.privacy && (
+                      <span
+                        title={m.privacy === 'private' ? 'Prompts are never logged by Venice' : 'Prompts may be retained in anonymized form'}
+                        style={{
+                          fontSize: 10, padding: '1px 6px', borderRadius: 3, fontWeight: 600, letterSpacing: 0.3, flexShrink: 0,
+                          background: m.privacy === 'private' ? 'rgba(5,150,105,0.12)' : 'rgba(180,83,9,0.12)',
+                          color: m.privacy === 'private' ? '#059669' : '#b45309',
+                        }}
+                      >
+                        {m.privacy === 'private' ? '🔒 Private' : '〜 Anonymized'}
+                      </span>
+                    )}
+                  </div>
                   {m.description && (
                     <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{m.description}</span>
                   )}

@@ -89,6 +89,7 @@ export interface ModelCatalogEntry {
   quantization: string | null
   input_cost_usd_per_mtok?: number | null
   output_cost_usd_per_mtok?: number | null
+  privacy?: string | null
   synced_at?: string | null
 }
 
