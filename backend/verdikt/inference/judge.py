@@ -7,6 +7,7 @@ import logging
 import httpx
 
 from verdikt.core.models import PreferenceProfile, Project
+from verdikt.inference.resolver import LLMTarget
 
 log = logging.getLogger(__name__)
 
@@ -21,9 +22,8 @@ def _truncate(text: str, max_words: int = _MAX_WORDS) -> str:
 
 
 class LLMJudge:
-    def __init__(self, ollama_base_url: str, model: str, timeout: float = 300.0) -> None:
-        self._base_url = ollama_base_url.rstrip("/")
-        self._model = model
+    def __init__(self, target: LLMTarget, timeout: float = 300.0) -> None:
+        self._target = target
         self._timeout = timeout
         # Accumulates (prompt_tokens, completion_tokens) per call; flush after each run.
         self.usage: list[tuple[int, int]] = []
@@ -77,11 +77,56 @@ class LLMJudge:
             )
 
         image_b64 = base64.b64encode(chunk_content).decode() if is_image else None
-        raw, prompt_tokens, completion_tokens = self._call_ollama(prompt, image_b64)
+        raw, prompt_tokens, completion_tokens = self._call_llm(prompt, image_b64)
         self.usage.append((prompt_tokens, completion_tokens))
         scores, explanations, description = self._parse_response(raw, typical)
         overall = self._weighted_average(scores, weights)
         return scores, overall, explanations, description
+
+    def _call_llm(self, prompt: str, image_b64: str | None = None) -> tuple[str, int, int]:
+        if self._target.provider == "venice":
+            return self._call_openai_compat(prompt, image_b64)
+        return self._call_ollama(prompt, image_b64)
+
+    def _call_openai_compat(self, prompt: str, image_b64: str | None = None) -> tuple[str, int, int]:
+        if image_b64 is not None:
+            content: object = [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+            ]
+        else:
+            content = prompt
+
+        try:
+            resp = httpx.post(
+                f"{self._target.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self._target.api_key}"},
+                json={
+                    "model": self._target.model,
+                    "messages": [{"role": "user", "content": content}],
+                    "response_format": {"type": "json_object"},
+                },
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+        except httpx.ConnectError as exc:
+            raise RuntimeError(f"Cannot reach Venice API at {self._target.base_url}.") from exc
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            body = exc.response.text[:300]
+            if status == 401:
+                raise RuntimeError("Venice API key is invalid or expired.") from exc
+            if status == 404:
+                raise RuntimeError(
+                    f"Model '{self._target.model}' not found on Venice. "
+                    "Sync models and check the project's model setting."
+                ) from exc
+            raise RuntimeError(f"Venice API returned {status}: {body}") from exc
+
+        data = resp.json()
+        text = data["choices"][0]["message"]["content"]
+        usage = data.get("usage", {})
+        return text, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
 
     @staticmethod
     def _extract_json(raw: str) -> dict | None:
@@ -108,7 +153,7 @@ class LLMJudge:
 
     def _call_ollama(self, prompt: str, image_b64: str | None = None) -> tuple[str, int, int]:
         payload: dict = {
-            "model": self._model,
+            "model": self._target.model,
             "prompt": prompt,
             "stream": False,
             "format": "json",
@@ -118,14 +163,14 @@ class LLMJudge:
 
         try:
             resp = httpx.post(
-                f"{self._base_url}/api/generate",
+                f"{self._target.base_url}/api/generate",
                 json=payload,
                 timeout=self._timeout,
             )
             resp.raise_for_status()
         except httpx.ConnectError as exc:
             raise RuntimeError(
-                f"Cannot reach Ollama at {self._base_url}. "
+                f"Cannot reach Ollama at {self._target.base_url}. "
                 "Check that Ollama is running and VERDIKT_INFERENCE__OLLAMA_BASE_URL is correct."
             ) from exc
         except httpx.HTTPStatusError as exc:
@@ -133,12 +178,12 @@ class LLMJudge:
             body = exc.response.text[:300]
             if status == 404:
                 raise RuntimeError(
-                    f"Model '{self._model}' not found in Ollama. "
-                    f"Run 'ollama pull {self._model}' or choose a different model in the project settings."
+                    f"Model '{self._target.model}' not found in Ollama. "
+                    f"Run 'ollama pull {self._target.model}' or choose a different model in the project settings."
                 ) from exc
             if image_b64 and ("vision" in body.lower() or "multimodal" in body.lower() or "image" in body.lower()):
                 raise RuntimeError(
-                    f"Model '{self._model}' does not support image input. "
+                    f"Model '{self._target.model}' does not support image input. "
                     "Use a vision-capable model such as llava or llama3.2-vision for image projects."
                 ) from exc
             raise RuntimeError(f"Ollama returned {status}: {body}") from exc

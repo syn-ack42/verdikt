@@ -82,6 +82,9 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
   const defaultLlm = modelDefaults?.llm_by_domain?.[project.domain] ?? null
   const defaultEmbLabel = modelDefaults ? ' (bundled)' : ''
 
+  const selectedLlmIsVenice = (llmModels ?? []).find(m => m.id === (llmModel || defaultLlm))?.source === 'venice'
+  const selectedEmbIsVenice = (embModels ?? []).find(m => m.id === embModel)?.source === 'venice'
+
   const deleteProject = useMutation({
     mutationFn: () => api.projects.delete(project.id),
     onSuccess: () => {
@@ -218,12 +221,17 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
                   >
                     {(llmModels ?? []).map(m => (
                       <option key={m.id} value={m.id}>
-                        {m.display_name || m.id}{m.parameter_size ? ` · ${m.parameter_size}` : ''}{m.is_default ? ' ★' : ''}
+                        {m.source === 'venice' ? '[Venice] ' : ''}{m.display_name || m.id}{m.parameter_size ? ` · ${m.parameter_size}` : ''}{m.is_default ? ' ★' : ''}
                       </option>
                     ))}
                   </select>
                 ) : (
                   <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>No models enabled for this domain.</p>
+                )}
+                {selectedLlmIsVenice && (
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
+                    This model is hosted on Venice.ai and will incur API costs.
+                  </p>
                 )}
               </div>
               {!isImage && (
@@ -239,12 +247,17 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
                   >
                     <option value="">Bundled default{defaultEmbLabel}</option>
                     {(embModels ?? []).map(m => (
-                      <option key={m.id} value={m.id}>{m.display_name || m.id}</option>
+                      <option key={m.id} value={m.id}>{m.source === 'venice' ? '[Venice] ' : ''}{m.display_name || m.id}</option>
                     ))}
                   </select>
                   {embChanged && (
                     <p style={{ margin: '6px 0 0', fontSize: 12, color: '#b45309', lineHeight: 1.4 }}>
                       Changing the embedding model invalidates existing vectors — re-run the pipeline after saving.
+                    </p>
+                  )}
+                  {selectedEmbIsVenice && (
+                    <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
+                      This model is hosted on Venice.ai and will incur API costs.
                     </p>
                   )}
                 </div>

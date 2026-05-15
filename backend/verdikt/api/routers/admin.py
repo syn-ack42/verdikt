@@ -484,3 +484,100 @@ def update_model(
         row.is_default = body.is_default
     session.commit()
     return _model_dict(row)
+
+
+# ── Venice ────────────────────────────────────────────────────────────────────
+
+class VeniceKeyUpdate(BaseModel):
+    api_key: str
+
+
+@router.put("/venice/key")
+def set_venice_key(
+    body: VeniceKeyUpdate,
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    row = session.get(SiteSettingsRow, "venice.api_key")
+    if row is None:
+        session.add(SiteSettingsRow(key="venice.api_key", value=body.api_key))
+    else:
+        row.value = body.api_key
+    session.commit()
+    return {"ok": True}
+
+
+@router.get("/venice/status")
+def get_venice_status(
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    row = session.get(SiteSettingsRow, "venice.api_key")
+    configured = bool(row and row.value)
+    count = session.query(ModelCatalogRow).filter(ModelCatalogRow.source == "venice").count()
+    return {"configured": configured, "model_count": count}
+
+
+@router.post("/models/sync-venice")
+def sync_venice_models(
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> list[dict]:
+    import httpx as _httpx
+
+    row = session.get(SiteSettingsRow, "venice.api_key")
+    if not row or not row.value:
+        raise HTTPException(status_code=422, detail="Venice API key not configured. Set it first.")
+
+    try:
+        resp = _httpx.get(
+            "https://api.venice.ai/api/v1/models",
+            headers={"Authorization": f"Bearer {row.value}"},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Cannot reach Venice API: {exc}")
+
+    models_data = resp.json().get("data", [])
+    now = datetime.now(timezone.utc)
+    seen_ids: set[str] = set()
+
+    for model in models_data:
+        model_id = model.get("id", "")
+        if not model_id:
+            continue
+        model_type_raw = str(model.get("type", "")).lower()
+        # Skip image-generation models (not useful for Verdikt)
+        if model_type_raw == "image":
+            continue
+        seen_ids.add(model_id)
+        name_lower = model_id.lower()
+        if "embed" in name_lower or model_type_raw == "embedding":
+            catalog_type, domain = "embedding", "text"
+        else:
+            catalog_type = "llm"
+            domain = "any" if "vision" in name_lower else "text"
+
+        existing = session.get(ModelCatalogRow, model_id)
+        if existing is None:
+            session.add(ModelCatalogRow(
+                id=model_id, source="venice", type=catalog_type, domain=domain,
+                enabled=False, display_name=model_id, description="",
+                synced_at=now,
+            ))
+        else:
+            existing.synced_at = now
+
+    # Disable Venice models no longer returned by the API
+    if seen_ids:
+        stale = session.query(ModelCatalogRow).filter(
+            ModelCatalogRow.source == "venice",
+            ModelCatalogRow.id.notin_(seen_ids),
+        ).all()
+        for m in stale:
+            m.enabled = False
+
+    session.commit()
+    rows = session.query(ModelCatalogRow).order_by(ModelCatalogRow.type, ModelCatalogRow.id).all()
+    return [_model_dict(r) for r in rows]

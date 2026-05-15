@@ -23,6 +23,8 @@ export default function AdminModels() {
   const [editForm, setEditForm] = useState<Partial<ModelCatalogEntry>>({})
   const [showAddModel, setShowAddModel] = useState(false)
   const [addForm, setAddForm] = useState({ id: '', type: 'embedding', domain: 'text', display_name: '', description: '' })
+  const [veniceKey, setVeniceKey] = useState('')
+  const [showVeniceKey, setShowVeniceKey] = useState(false)
 
   if (!me.is_admin) return <div style={{ padding: 24 }}>Access denied.</div>
 
@@ -31,9 +33,30 @@ export default function AdminModels() {
     queryFn: () => api.admin.listModels(),
   })
 
+  const { data: veniceStatus } = useQuery({
+    queryKey: ['venice-status'],
+    queryFn: () => api.admin.getVeniceStatus(),
+  })
+
   const sync = useMutation({
     mutationFn: () => api.admin.syncModels(),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-models'] }),
+  })
+
+  const saveVeniceKey = useMutation({
+    mutationFn: () => api.admin.setVeniceKey(veniceKey),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['venice-status'] })
+      setVeniceKey('')
+    },
+  })
+
+  const syncVenice = useMutation({
+    mutationFn: () => api.admin.syncVeniceModels(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-models'] })
+      qc.invalidateQueries({ queryKey: ['venice-status'] })
+    },
   })
 
   const update = useMutation({
@@ -89,6 +112,54 @@ export default function AdminModels() {
         </p>
       )}
 
+      {/* Venice section */}
+      <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>Venice.ai</span>
+          {veniceStatus && (
+            <span style={{ fontSize: 12, color: veniceStatus.configured ? '#059669' : 'var(--text-muted)' }}>
+              {veniceStatus.configured
+                ? `Key set · ${veniceStatus.model_count} model${veniceStatus.model_count !== 1 ? 's' : ''} synced`
+                : 'No API key set'}
+            </span>
+          )}
+          <button
+            onClick={() => syncVenice.mutate()}
+            disabled={syncVenice.isPending || !veniceStatus?.configured}
+            style={{ padding: '5px 12px', borderRadius: 4, fontSize: 12, border: '1px solid var(--border)', cursor: 'pointer' }}
+          >
+            {syncVenice.isPending ? 'Syncing…' : '↻ Sync Venice models'}
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+          <input
+            type={showVeniceKey ? 'text' : 'password'}
+            value={veniceKey}
+            onChange={e => setVeniceKey(e.target.value)}
+            placeholder="Venice API key…"
+            style={{ flex: 1, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}
+          />
+          <button
+            onClick={() => setShowVeniceKey(v => !v)}
+            style={{ padding: '6px 10px', borderRadius: 4, fontSize: 12, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+          >
+            {showVeniceKey ? 'Hide' : 'Show'}
+          </button>
+          <button
+            onClick={() => saveVeniceKey.mutate()}
+            disabled={saveVeniceKey.isPending || !veniceKey.trim()}
+            style={{ padding: '6px 14px', borderRadius: 4, fontSize: 12, border: 'none', background: '#6b7de0', color: '#fff', cursor: 'pointer' }}
+          >
+            {saveVeniceKey.isPending ? 'Saving…' : 'Save key'}
+          </button>
+        </div>
+        {(syncVenice.isError || saveVeniceKey.isError) && (
+          <p style={{ color: '#c00', fontSize: 12, margin: '8px 0 0' }}>
+            {String(syncVenice.error || saveVeniceKey.error)}
+          </p>
+        )}
+      </div>
+
       {isLoading && <p style={{ color: 'var(--text-muted)' }}>Loading…</p>}
 
       {models && models.length === 0 && (
@@ -123,8 +194,15 @@ export default function AdminModels() {
               }}
             >
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 500, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.id}>
-                  {m.display_name}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontWeight: 500, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.id}>
+                    {m.display_name}
+                  </span>
+                  {m.source === 'venice' && (
+                    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#7c3aed22', color: '#7c3aed', fontWeight: 600, letterSpacing: 0.3, flexShrink: 0 }}>
+                      Venice
+                    </span>
+                  )}
                 </div>
                 {m.description && (
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

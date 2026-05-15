@@ -6,6 +6,7 @@ from typing import Callable
 import httpx
 
 from verdikt.core.models import Chunk, DiscoveryAnalysisResult, DiscoveryRating, DimensionProposal, Project
+from verdikt.inference.resolver import LLMTarget
 
 
 _MAX_WORDS = 300
@@ -27,9 +28,8 @@ def _preference_label(preference: float) -> str:
 
 
 class DimensionDiscoverer:
-    def __init__(self, model: str, base_url: str) -> None:
-        self._model = model
-        self._base_url = base_url.rstrip("/")
+    def __init__(self, target: LLMTarget) -> None:
+        self._target = target
 
     def analyse(
         self,
@@ -100,21 +100,8 @@ class DimensionDiscoverer:
             f'Respond with JSON only: {{"qualities": "<your 2-3 sentence description>"}}'
         )
 
-        payload: dict = {"model": self._model, "prompt": prompt, "format": "json", "stream": False}
-        if image_b64:
-            payload["images"] = [image_b64]
-
         try:
-            response = httpx.post(
-                f"{self._base_url}/api/generate",
-                json=payload,
-                timeout=120.0,
-            )
-            response.raise_for_status()
-            rdata = response.json()
-            pt = rdata.get("prompt_eval_count", 0)
-            ct = rdata.get("eval_count", 0)
-            raw = rdata.get("response", "")
+            raw, pt, ct = self._call_llm(prompt, image_b64)
             parsed = json.loads(raw)
             qualities = parsed.get("qualities", "").strip()
             return qualities, pt, ct
@@ -169,16 +156,7 @@ class DimensionDiscoverer:
         )
 
         try:
-            response = httpx.post(
-                f"{self._base_url}/api/generate",
-                json={"model": self._model, "prompt": prompt, "format": "json", "stream": False},
-                timeout=180.0,
-            )
-            response.raise_for_status()
-            rdata = response.json()
-            pt = rdata.get("prompt_eval_count", 0)
-            ct = rdata.get("eval_count", 0)
-            raw = rdata.get("response", "")
+            raw, pt, ct = self._call_llm(prompt)
             parsed = json.loads(raw)
 
             proposals = [
@@ -206,4 +184,67 @@ class DimensionDiscoverer:
         except Exception as exc:
             raise RuntimeError(
                 "Analysis failed — LLM could not be reached or returned unparseable output."
+            ) from exc
+
+    def _call_llm(self, prompt: str, image_b64: str | None = None) -> tuple[str, int, int]:
+        if self._target.provider == "venice":
+            return self._call_openai_compat(prompt, image_b64)
+        return self._call_ollama(prompt, image_b64)
+
+    def _call_openai_compat(self, prompt: str, image_b64: str | None = None) -> tuple[str, int, int]:
+        if image_b64 is not None:
+            content: object = [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+            ]
+        else:
+            content = prompt
+
+        try:
+            resp = httpx.post(
+                f"{self._target.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self._target.api_key}"},
+                json={
+                    "model": self._target.model,
+                    "messages": [{"role": "user", "content": content}],
+                    "response_format": {"type": "json_object"},
+                },
+                timeout=180.0,
+            )
+            resp.raise_for_status()
+        except httpx.ConnectError as exc:
+            raise RuntimeError(f"Cannot reach Venice API at {self._target.base_url}.") from exc
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            body = exc.response.text[:300]
+            if status == 401:
+                raise RuntimeError("Venice API key is invalid or expired.") from exc
+            raise RuntimeError(f"Venice API returned {status}: {body}") from exc
+
+        data = resp.json()
+        text = data["choices"][0]["message"]["content"]
+        usage = data.get("usage", {})
+        return text, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
+
+    def _call_ollama(self, prompt: str, image_b64: str | None = None) -> tuple[str, int, int]:
+        payload: dict = {"model": self._target.model, "prompt": prompt, "format": "json", "stream": False}
+        if image_b64:
+            payload["images"] = [image_b64]
+
+        try:
+            response = httpx.post(
+                f"{self._target.base_url}/api/generate",
+                json=payload,
+                timeout=180.0,
+            )
+            response.raise_for_status()
+            rdata = response.json()
+            pt = rdata.get("prompt_eval_count", 0)
+            ct = rdata.get("eval_count", 0)
+            raw = rdata.get("response", "")
+            return raw, pt, ct
+        except httpx.ConnectError as exc:
+            raise RuntimeError(
+                f"Cannot reach Ollama at {self._target.base_url}. "
+                "Check that Ollama is running and VERDIKT_INFERENCE__OLLAMA_BASE_URL is correct."
             ) from exc

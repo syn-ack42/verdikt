@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_cached_chroma_client, get_config, get_current_user, get_session
+from verdikt.api.deps import get_auth_session, get_cached_chroma_client, get_config, get_current_user, get_session
 from verdikt.core.models import Domain, PipelinePhase
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.resolver import resolve_embedder
@@ -129,6 +129,7 @@ def start_batch_stream(
     project_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_session),
+    auth_session: Session = Depends(get_auth_session),
 ) -> StreamingResponse:
     proj = _get_project_or_404(project_id, session)
     config = get_config()
@@ -148,7 +149,7 @@ def start_batch_stream(
         material_store=mat_store,
         chunk_store=chunk_store,
         vector_store=vector_store,
-        embedder=resolve_embedder(proj, config),
+        embedder=resolve_embedder(proj, config, auth_session),
         chunker=_make_chunker(proj),
         content_fetchers=content_fetchers,
     )

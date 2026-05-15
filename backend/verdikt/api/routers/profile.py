@@ -14,7 +14,7 @@ from verdikt.api.token_budget import check_token_budget, record_usage
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.core.models import DimensionProfile, PreferenceProfile
 from verdikt.inference.crystalliser import ProfileCrystalliser
-from verdikt.inference.resolver import resolve_llm_model
+from verdikt.inference.resolver import resolve_llm_target
 from verdikt.storage.sqlite import (
     SQLiteChunkStore, SQLiteProfileStore, SQLiteProjectStore, SQLiteRatingStore,
 )
@@ -112,11 +112,8 @@ def crystallise_profile(
     current_version = current.version if current else 0
 
     config = get_config()
-    ollama_base_url, llm_model = resolve_llm_model(proj, config)
-    crystalliser = ProfileCrystalliser(
-        ollama_base_url=ollama_base_url,
-        model=llm_model,
-    )
+    target = resolve_llm_target(proj, config, auth_session)
+    crystalliser = ProfileCrystalliser(target)
     _crystallise_status[project_id] = {"running": True, "tokens_prompt": 0, "tokens_completion": 0}
 
     def _on_tokens(p: int, c: int) -> None:
@@ -137,15 +134,15 @@ def crystallise_profile(
         if isinstance(exc, _httpx.ConnectError):
             raise HTTPException(
                 status_code=503,
-                detail=f"Cannot reach Ollama at {config.inference.ollama_base_url}. Is it running?",
+                detail=f"Cannot reach LLM at {target.base_url}. Is it running?",
             )
         if isinstance(exc, _httpx.HTTPStatusError):
-            raise HTTPException(status_code=502, detail=f"Ollama error: {exc.response.text[:200]}")
+            raise HTTPException(status_code=502, detail=f"LLM error: {exc.response.text[:200]}")
         raise HTTPException(status_code=500, detail=f"Crystallisation failed: {exc}")
     finally:
         _crystallise_status.pop(project_id, None)
 
-    record_usage(user.id, project_id, llm_model, "crystallise", prompt_tokens, completion_tokens, auth_session)
+    record_usage(user.id, project_id, target.model, "crystallise", prompt_tokens, completion_tokens, auth_session)
     profile_store.save(profile)
     session.commit()
     return _profile_response(profile)

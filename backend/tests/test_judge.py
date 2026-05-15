@@ -7,6 +7,7 @@ import pytest
 
 from verdikt.core.models import DimensionProfile, PreferenceProfile, Project, RatingDimension
 from verdikt.inference.judge import LLMJudge
+from verdikt.inference.resolver import LLMTarget
 
 
 @pytest.fixture
@@ -35,7 +36,8 @@ def profile(project: Project) -> PreferenceProfile:
 
 @pytest.fixture
 def judge() -> LLMJudge:
-    return LLMJudge("http://localhost:11434", "llama3.1:8b")
+    target = LLMTarget(provider="ollama", base_url="http://localhost:11434", model="llama3.1:8b")
+    return LLMJudge(target)
 
 
 def _mock_response(data: dict) -> MagicMock:

@@ -154,6 +154,49 @@ The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.y
 - **Composite indexes**: `ix_chunks_project_cluster` on `(project_id, cluster_id)`; `ix_ratings_chunk_project_ai_skipped` on `(chunk_id, project_id, is_ai, skipped)`. Applied via migration in `get_user_engine` DCLP block in `deps.py`.
 - **`has_profile`**: Project `GET /api/projects/{id}` response includes `has_profile: bool` (`profile is not None`). Frontend uses this instead of inferring from `profile_confidence` (which is `null` both when no profile exists and when a profile exists with zero AI confirmations).
 
+## Venice.ai integration (Phase 1)
+
+Venice.ai provides an OpenAI-compatible hosted LLM + embedding API (`https://api.venice.ai/api/v1`). Phase 1 lets the admin configure a site-wide API key; any user can then pick a Venice model for a project.
+
+### LLMTarget abstraction
+
+`backend/verdikt/inference/resolver.py` defines:
+
+```python
+@dataclass
+class LLMTarget:
+    provider: str       # "ollama" | "venice"
+    base_url: str
+    model: str
+    api_key: str | None = None
+```
+
+`resolve_llm_target(project, config, auth_session) -> LLMTarget` looks up the project's `llm_model` in `ModelCatalogRow`; if `source == "venice"` it reads `SiteSettingsRow("venice.api_key")` and returns a Venice target, otherwise returns an Ollama target. `resolve_embedder(project, config, auth_session=None)` does the same for embedding models — when the model's catalog row has `source == "venice"` it returns `VeniceEmbedder`.
+
+### OpenAI-compat LLM call
+
+Venice LLM path: `POST {base_url}/chat/completions`, `Authorization: Bearer {api_key}`, body `{"model":..., "messages":[{"role":"user","content":"..."}], "response_format":{"type":"json_object"}}`. Response: `choices[0].message.content`, `usage.prompt_tokens/completion_tokens`.
+
+Images: content becomes `[{"type":"text","text":"..."},{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,..."}}]`.
+
+Three classes (`LLMJudge`, `ProfileCrystalliser`, `DimensionDiscoverer`) all accept a `target: LLMTarget` in their constructors and dispatch via `_call_llm() → _call_ollama() | _call_openai_compat()`.
+
+### Venice embeddings
+
+`VeniceEmbedder` (`inference/venice_embedder.py`): `POST {base_url}/embeddings`, body `{"model":"...","input":["..."]}`, response `data[0].embedding`.
+
+### Admin endpoints
+
+- `PUT /api/admin/venice/key` — upserts `SiteSettingsRow("venice.api_key")`
+- `GET /api/admin/venice/status` → `{configured: bool, model_count: int}`
+- `POST /api/admin/models/sync-venice` — fetches `GET https://api.venice.ai/api/v1/models`, classifies (embedding vs LLM), upserts `ModelCatalogRow` with `source="venice"`, disables stale Venice rows
+
+### Frontend
+
+`AdminModels.tsx` has a Venice section (key input + save, status line, sync button). Model list shows a purple `Venice` badge for `source === "venice"` rows. `ProjectSettingsDialog.tsx` shows a cost notice when a Venice model is selected.
+
+No DB schema changes — `SiteSettingsRow` and `ModelCatalogRow.source` already existed.
+
 ## Build order (milestones)
 
 1. ✅ `MaterialItem` dataclass + SQLite schema + `FileDropPlugin` + chunk/embed/cluster pipeline (no UI)
@@ -166,6 +209,7 @@ The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.y
 8. ✅ `ImmichPlugin` + remote content protocol + chunk descriptions from LLM judge + Immich writeback (star ratings + `#verdikt:` descriptions)
 9. ✅ Discovery mode — dimension discovery from like/dislike reactions; dimension weights surfaced in UI
 10. ✅ `RoyalRoadPlugin` — HTML scraping, two-stage Gaussian chapter+paragraph sampling, login/following-list support, works search box
+11. ✅ Venice.ai integration (Phase 1) — admin-managed API key + model sync; `LLMTarget` abstraction; Venice LLM + embedding in all inference paths; cost notice in project settings
 
 ## Discovery mode
 

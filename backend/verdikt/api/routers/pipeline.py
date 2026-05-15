@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_cached_chroma_client, get_config, get_current_user, get_session
+from verdikt.api.deps import get_auth_session, get_cached_chroma_client, get_config, get_current_user, get_session
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.resolver import resolve_embedder
 from verdikt.core.models import Domain
@@ -56,6 +56,7 @@ def run_pipeline(
     project_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_session),
+    auth_session: Session = Depends(get_auth_session),
 ) -> dict:
     proj = _get_project_or_404(project_id, session)
     config = get_config()
@@ -65,7 +66,7 @@ def run_pipeline(
         material_store=SQLiteMaterialStore(session),
         chunk_store=SQLiteChunkStore(session),
         vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
-        embedder=resolve_embedder(proj, config),
+        embedder=resolve_embedder(proj, config, auth_session),
         chunker=_make_chunker(proj),
         content_fetchers=_build_content_fetchers(proj.id, session),
     )
@@ -87,6 +88,7 @@ def run_pipeline_stream(
     project_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_session),
+    auth_session: Session = Depends(get_auth_session),
 ) -> StreamingResponse:
     proj = _get_project_or_404(project_id, session)
     config = get_config()
@@ -95,7 +97,7 @@ def run_pipeline_stream(
         material_store=SQLiteMaterialStore(session),
         chunk_store=SQLiteChunkStore(session),
         vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
-        embedder=resolve_embedder(proj, config),
+        embedder=resolve_embedder(proj, config, auth_session),
         chunker=_make_chunker(proj),
         content_fetchers=_build_content_fetchers(proj.id, session),
     )

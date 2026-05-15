@@ -94,6 +94,9 @@ export const api = {
       req<ModelCatalogEntry>('POST', '/admin/models', body),
     updateModel: (id: string, body: Partial<ModelCatalogEntry>) =>
       req<ModelCatalogEntry>('PATCH', `/admin/models/${encodeURIComponent(id)}`, body),
+    getVeniceStatus: () => req<{ configured: boolean; model_count: number }>('GET', '/admin/venice/status'),
+    setVeniceKey: (api_key: string) => req<{ ok: boolean }>('PUT', '/admin/venice/key', { api_key }),
+    syncVeniceModels: () => req<ModelCatalogEntry[]>('POST', '/admin/models/sync-venice'),
   },
   usage: {
     get: () => req<UsageSummary>('GET', '/usage'),

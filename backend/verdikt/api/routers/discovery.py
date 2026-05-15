@@ -16,7 +16,7 @@ from verdikt.api.token_budget import check_token_budget, record_usage
 from verdikt.core.models import DiscoveryRating, RatingDimension
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.dimension_discoverer import DimensionDiscoverer
-from verdikt.inference.resolver import resolve_llm_model
+from verdikt.inference.resolver import resolve_llm_target
 from verdikt.pipeline.selector import RatingSelector
 from verdikt.storage.orm import ProjectRow
 from verdikt.storage.sqlite import (
@@ -211,7 +211,7 @@ def start_analysis(
     chunks_by_id = {c.id: c for c in chunk_store.list_by_project(project_id) if c.id in chunk_ids}
 
     config = get_config()
-    ollama_base_url, llm_model = resolve_llm_model(proj, config)
+    target = resolve_llm_target(proj, config, auth_session)
 
     from verdikt.api.deps import get_user_engine
     from sqlalchemy.orm import Session as _Session
@@ -230,10 +230,10 @@ def start_analysis(
     _ratings = active
     _chunks = chunks_by_id
     _user_id = user.id
-    _model = llm_model
+    _target = target
 
     def _run() -> None:
-        discoverer = DimensionDiscoverer(model=_model, base_url=ollama_base_url)
+        discoverer = DimensionDiscoverer(target=_target)
         prompt_tokens = 0
         completion_tokens = 0
         descriptions: list[tuple[float, str]] = []
@@ -312,7 +312,7 @@ def start_analysis(
 
             try:
                 with _Session(get_auth_engine()) as auth_sess:
-                    record_usage(_user_id, project_id, _model, "discovery_analyse",
+                    record_usage(_user_id, project_id, _target.model, "discovery_analyse",
                                  prompt_tokens, completion_tokens, auth_sess)
             except Exception:
                 log.warning("discovery: failed to record token usage")
@@ -352,7 +352,7 @@ def resume_analysis(
 
     proj = _get_project_or_404(project_id, session)
     config = get_config()
-    ollama_base_url, llm_model = resolve_llm_model(proj, config)
+    target = resolve_llm_target(proj, config, auth_session)
 
     from verdikt.api.deps import get_user_engine
     from sqlalchemy.orm import Session as _Session
@@ -373,12 +373,12 @@ def resume_analysis(
     })
 
     _project = proj
-    _model = llm_model
+    _target_resume = target
     _user_id = user.id
     _descriptions = descriptions
 
     def _run_synthesis() -> None:
-        discoverer = DimensionDiscoverer(model=_model, base_url=ollama_base_url)
+        discoverer = DimensionDiscoverer(target=_target_resume)
         try:
             if stop_flag:
                 _analysis_status[project_id]["error"] = "Cancelled"
@@ -417,7 +417,7 @@ def resume_analysis(
 
             try:
                 with _Session(get_auth_engine()) as auth_sess:
-                    record_usage(_user_id, project_id, _model, "discovery_analyse", pt, ct, auth_sess)
+                    record_usage(_user_id, project_id, _target_resume.model, "discovery_analyse", pt, ct, auth_sess)
             except Exception:
                 log.warning("discovery: failed to record token usage")
 

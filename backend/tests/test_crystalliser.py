@@ -9,6 +9,7 @@ import pytest
 
 from verdikt.core.models import Chunk, Domain, Project, Rating, RatingDimension
 from verdikt.inference.crystalliser import ProfileCrystalliser, _truncate
+from verdikt.inference.resolver import LLMTarget
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -59,10 +60,8 @@ def _ollama_response(summary: str) -> MagicMock:
 
 
 def _make_crystalliser() -> ProfileCrystalliser:
-    return ProfileCrystalliser(
-        ollama_base_url="http://localhost:11434",
-        model="llama3.1:8b",
-    )
+    target = LLMTarget(provider="ollama", base_url="http://localhost:11434", model="llama3.1:8b")
+    return ProfileCrystalliser(target)
 
 
 # ── _truncate ─────────────────────────────────────────────────────────────────

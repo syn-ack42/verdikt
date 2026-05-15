@@ -13,7 +13,7 @@ from verdikt.api.token_budget import check_token_budget, record_usage
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.ai_rater import AIRater
 from verdikt.inference.judge import LLMJudge
-from verdikt.inference.resolver import resolve_embedder, resolve_llm_model
+from verdikt.inference.resolver import resolve_embedder, resolve_llm_target
 from verdikt.storage.chroma import ChromaVectorStore
 from verdikt.core.models import Rating
 from verdikt.storage.sqlite import (
@@ -107,11 +107,11 @@ def start_ai_rating(
         raise HTTPException(status_code=409, detail="Profile dimensions don't match project dimensions. Re-crystallise first.")
 
     config = get_config()
+    target = resolve_llm_target(proj, config, auth_session)
     chroma = get_cached_chroma_client(user.id)
     vector_store = ChromaVectorStore(chroma, f"project_{project_id}")
-    embedder = resolve_embedder(proj, config)
-    ollama_base_url, llm_model = resolve_llm_model(proj, config)
-    judge = LLMJudge(ollama_base_url, llm_model, timeout=config.inference.ollama_timeout)
+    embedder = resolve_embedder(proj, config, auth_session)
+    judge = LLMJudge(target, timeout=config.inference.ollama_timeout)
 
     # Take copies for the thread (session is not thread-safe; import lazily for testability)
     from sqlalchemy.orm import Session as _Session
@@ -200,7 +200,7 @@ def start_ai_rating(
                 total_completion = sum(c for _, c in judge.usage)
                 try:
                     with _Session(get_auth_engine()) as auth_sess:
-                        record_usage(user_id_capture, project_id, llm_model, "ai_rating",
+                        record_usage(user_id_capture, project_id, target.model, "ai_rating",
                                      total_prompt, total_completion, auth_sess)
                 except Exception:
                     log.warning("ai_rater: failed to record token usage")
@@ -259,8 +259,8 @@ def ai_preview_rating(
         raise HTTPException(status_code=404, detail="Chunk not found")
 
     config = get_config()
-    ollama_base_url, llm_model = resolve_llm_model(proj, config)
-    judge = LLMJudge(ollama_base_url, llm_model, timeout=config.inference.ollama_timeout)
+    target = resolve_llm_target(proj, config, auth_session)
+    judge = LLMJudge(target, timeout=config.inference.ollama_timeout)
 
     lock = _get_preview_lock(project_id)
     if not lock.acquire(blocking=False):
@@ -276,7 +276,7 @@ def ai_preview_rating(
 
     if judge.usage:
         p, c = judge.usage[-1]
-        record_usage(user.id, project_id, llm_model, "preview", p, c, auth_session)
+        record_usage(user.id, project_id, target.model, "preview", p, c, auth_session)
 
     rating = Rating(
         project_id=project_id,
@@ -321,8 +321,8 @@ def rate_chunk_ai(
         raise HTTPException(status_code=404, detail="Chunk not found")
 
     config = get_config()
-    ollama_base_url, llm_model = resolve_llm_model(proj, config)
-    judge = LLMJudge(ollama_base_url, llm_model, timeout=config.inference.ollama_timeout)
+    target = resolve_llm_target(proj, config, auth_session)
+    judge = LLMJudge(target, timeout=config.inference.ollama_timeout)
 
     chunk_store = SQLiteChunkStore(session)
     rating_store = SQLiteRatingStore(session)
@@ -334,7 +334,7 @@ def rate_chunk_ai(
 
     if judge.usage:
         p, c = judge.usage[-1]
-        record_usage(user.id, project_id, llm_model, "rate_chunk", p, c, auth_session)
+        record_usage(user.id, project_id, target.model, "rate_chunk", p, c, auth_session)
 
     # Delete any existing AI rating for this chunk before saving a new one
     existing = [r for r in rating_store.list_by_project(project_id)

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from verdikt.core.config import AppConfig
 from verdikt.core.models import Chunk, Domain, Project, Rating, RatingDimension
 from verdikt.inference.crystalliser import ProfileCrystalliser
+from verdikt.inference.resolver import LLMTarget
 from verdikt.storage.sqlite import SQLiteChunkStore, SQLiteProjectStore, SQLiteRatingStore
 
 
@@ -86,12 +87,14 @@ def test_crystallise_real_ollama(session: Session) -> None:
         rating_store.save(r)
     session.commit()
 
-    crystalliser = ProfileCrystalliser(
-        ollama_base_url=config.inference.ollama_base_url,
+    target = LLMTarget(
+        provider="ollama",
+        base_url=config.inference.ollama_base_url,
         model=config.inference.ollama_model,
     )
+    crystalliser = ProfileCrystalliser(target)
     chunks_by_id = {c.id: c for c in chunks}
-    profile = crystalliser.crystallise(
+    profile, _, _ = crystalliser.crystallise(
         project=proj,
         ratings=ratings,
         chunks_by_id=chunks_by_id,

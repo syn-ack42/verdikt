@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import httpx
 
 from verdikt.core.models import Chunk, DimensionProfile, PreferenceProfile, Project, Rating
+from verdikt.inference.resolver import LLMTarget
 
 
 _MAX_WORDS_PER_EXAMPLE = 400
@@ -21,9 +22,8 @@ def _truncate(text: str, max_words: int) -> str:
 
 
 class ProfileCrystalliser:
-    def __init__(self, ollama_base_url: str, model: str) -> None:
-        self._base_url = ollama_base_url.rstrip("/")
-        self._model = model
+    def __init__(self, target: LLMTarget) -> None:
+        self._target = target
 
     def crystallise(
         self,
@@ -91,18 +91,11 @@ class ProfileCrystalliser:
                 f'Respond with a JSON object: {{"summary": "<your summary here>"}}'
             )
 
-            response = httpx.post(
-                f"{self._base_url}/api/generate",
-                json={"model": self._model, "prompt": prompt, "format": "json", "stream": False},
-                timeout=120.0,
-            )
-            response.raise_for_status()
-            rdata = response.json()
-            total_prompt += rdata.get("prompt_eval_count", 0)
-            total_completion += rdata.get("eval_count", 0)
+            raw, pt, ct = self._call_llm(prompt)
+            total_prompt += pt
+            total_completion += ct
             if on_tokens:
                 on_tokens(total_prompt, total_completion)
-            raw = rdata["response"]
             try:
                 parsed = json.loads(raw)
                 summary = parsed.get("summary", "").strip() or "Unable to generate summary."
@@ -125,18 +118,11 @@ class ProfileCrystalliser:
             + "\n\nWrite a 3-5 sentence overall preference summary. "
             'Respond with a JSON object: {"summary": "<your summary here>"}'
         )
-        overall_response = httpx.post(
-            f"{self._base_url}/api/generate",
-            json={"model": self._model, "prompt": overall_prompt, "format": "json", "stream": False},
-            timeout=120.0,
-        )
-        overall_response.raise_for_status()
-        ordata = overall_response.json()
-        total_prompt += ordata.get("prompt_eval_count", 0)
-        total_completion += ordata.get("eval_count", 0)
+        overall_raw, opt, oct = self._call_llm(overall_prompt)
+        total_prompt += opt
+        total_completion += oct
         if on_tokens:
             on_tokens(total_prompt, total_completion)
-        overall_raw = ordata["response"]
         try:
             overall_parsed = json.loads(overall_raw)
             overall_summary = overall_parsed.get("summary", "").strip() or "Unable to generate summary."
@@ -154,3 +140,45 @@ class ProfileCrystalliser:
             created_at=datetime.now(timezone.utc),
         )
         return profile, total_prompt, total_completion
+
+    def _call_llm(self, prompt: str) -> tuple[str, int, int]:
+        if self._target.provider == "venice":
+            return self._call_openai_compat(prompt)
+        return self._call_ollama(prompt)
+
+    def _call_openai_compat(self, prompt: str) -> tuple[str, int, int]:
+        try:
+            resp = httpx.post(
+                f"{self._target.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self._target.api_key}"},
+                json={
+                    "model": self._target.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "response_format": {"type": "json_object"},
+                },
+                timeout=120.0,
+            )
+            resp.raise_for_status()
+        except httpx.ConnectError as exc:
+            raise RuntimeError(f"Cannot reach Venice API at {self._target.base_url}.") from exc
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            body = exc.response.text[:300]
+            if status == 401:
+                raise RuntimeError("Venice API key is invalid or expired.") from exc
+            raise RuntimeError(f"Venice API returned {status}: {body}") from exc
+
+        data = resp.json()
+        text = data["choices"][0]["message"]["content"]
+        usage = data.get("usage", {})
+        return text, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
+
+    def _call_ollama(self, prompt: str) -> tuple[str, int, int]:
+        response = httpx.post(
+            f"{self._target.base_url}/api/generate",
+            json={"model": self._target.model, "prompt": prompt, "format": "json", "stream": False},
+            timeout=120.0,
+        )
+        response.raise_for_status()
+        rdata = response.json()
+        return rdata.get("response", ""), rdata.get("prompt_eval_count", 0), rdata.get("eval_count", 0)
