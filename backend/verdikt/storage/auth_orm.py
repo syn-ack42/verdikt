@@ -83,7 +83,7 @@ class ModelCatalogRow(AuthBase):
     __tablename__ = "model_catalog"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)          # Ollama model name, e.g. "llama3.1:8b"
-    source: Mapped[str] = mapped_column(String, nullable=False)        # "ollama" | "local"
+    source: Mapped[str] = mapped_column(String, nullable=False)        # "ollama" | "local" | "venice"
     type: Mapped[str] = mapped_column(String, nullable=False)          # "llm" | "embedding"
     domain: Mapped[str] = mapped_column(String, nullable=False, default="any")  # "text"|"image"|"audio"|"any"
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

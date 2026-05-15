@@ -572,8 +572,10 @@ def sync_venice_models(
         description = spec.get("description") or ""
         context_length = model.get("context_length") or spec.get("availableContextTokens")
         quantization = capabilities.get("quantization") or None
-        input_cost = pricing.get("input", {}).get("usd")
-        output_cost = pricing.get("output", {}).get("usd")
+        input_spec = pricing.get("input")
+        output_spec = pricing.get("output")
+        input_cost = input_spec.get("usd") if isinstance(input_spec, dict) else None
+        output_cost = output_spec.get("usd") if isinstance(output_spec, dict) else None
         privacy = spec.get("privacy") or None  # "private" | "anonymized"
 
         existing = session.get(ModelCatalogRow, model_id)

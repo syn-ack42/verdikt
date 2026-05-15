@@ -166,6 +166,11 @@ class ProfileCrystalliser:
             body = exc.response.text[:300]
             if status == 401:
                 raise RuntimeError("Venice API key is invalid or expired.") from exc
+            if status == 404:
+                raise RuntimeError(
+                    f"Model '{self._target.model}' not found on Venice. "
+                    "Sync models and check the project's model setting."
+                ) from exc
             raise RuntimeError(f"Venice API returned {status}: {body}") from exc
 
         data = resp.json()

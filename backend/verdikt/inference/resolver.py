@@ -44,8 +44,13 @@ def resolve_llm_model(project: Project, config: AppConfig) -> tuple[str, str]:
 def resolve_embedder(project: Project, config: AppConfig, auth_session=None) -> EmbedderBase:
     """Return the right embedder for a project.
 
-    If auth_session is provided and the configured embedding model is a Venice catalog entry,
-    returns a VeniceEmbedder. Otherwise falls back to local Ollama / SentenceTransformer / CLIP.
+    When auth_session is provided and the configured embedding model exists in the catalog
+    with source="venice", returns a VeniceEmbedder.
+
+    When auth_session is None the Venice catalog check is skipped entirely — the model
+    name is passed straight to the Ollama/SentenceTransformer routing below. Callers that
+    may have Venice embedding models configured (pipeline, batch_ingest, ai_rating) must
+    pass auth_session; omitting it is only safe for Ollama/local models.
     """
     if project.domain == Domain.IMAGE:
         explicit = project.embedding_model

@@ -32,8 +32,20 @@ class VeniceEmbedder(EmbedderBase):
                 raise RuntimeError("Venice API key is invalid or expired.") from exc
             raise RuntimeError(f"Venice API returned {status}: {body}") from exc
 
-        data = resp.json()
-        vectors = [item["embedding"] for item in data["data"]]
+        body = resp.json()
+        items = body.get("data") or []
+        if not items:
+            raise RuntimeError(
+                f"Venice /embeddings returned no vectors for model '{self._model}'. "
+                "The model may not support embeddings or returned an empty response."
+            )
+        try:
+            vectors = [item["embedding"] for item in items]
+        except (KeyError, TypeError) as exc:
+            raise RuntimeError(
+                f"Venice /embeddings response has unexpected shape: {exc}. "
+                f"Body preview: {str(body)[:200]}"
+            ) from exc
         arr = np.array(vectors, dtype=np.float32)
         if self._dimension is None:
             self._dimension = arr.shape[1]

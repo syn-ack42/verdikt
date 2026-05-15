@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from verdikt.core.models import DimensionProfile, PreferenceProfile, Project, RatingDimension
@@ -41,10 +42,28 @@ def judge() -> LLMJudge:
 
 
 def _mock_response(data: dict) -> MagicMock:
+    """Ollama-format mock response."""
     resp = MagicMock()
     resp.json.return_value = {"response": json.dumps(data)}
     resp.raise_for_status = MagicMock()
     return resp
+
+
+def _mock_venice_response(data: dict, prompt_tokens: int = 10, completion_tokens: int = 5) -> MagicMock:
+    """OpenAI-compat mock response (Venice format)."""
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {
+        "choices": [{"message": {"content": json.dumps(data)}}],
+        "usage": {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens},
+    }
+    return resp
+
+
+@pytest.fixture
+def venice_judge() -> LLMJudge:
+    target = LLMTarget(provider="venice", base_url="https://api.venice.ai/api/v1", model="llama-3.3-70b", api_key="sk-test")
+    return LLMJudge(target)
 
 
 def test_weighted_score_calculation(judge, project, profile):
@@ -145,3 +164,57 @@ def test_explanations_partial_when_dimension_missing(judge, project, profile):
 
     assert explanations["Prose"] == "Good prose."
     assert "Pacing" not in explanations
+
+
+# ── Venice path ───────────────────────────────────────────────────────────────
+
+def test_venice_scores_extracted(venice_judge, project, profile):
+    payload = {
+        "Prose": {"score": 4, "explanation": "Vivid prose."},
+        "Pacing": {"score": 3, "explanation": "Measured."},
+    }
+    with patch("verdikt.inference.judge.httpx.post", return_value=_mock_venice_response(payload)):
+        scores, overall, explanations, _desc = venice_judge.score_chunk("Some text.", profile, project)
+
+    assert scores == {"Prose": 4.0, "Pacing": 3.0}
+    assert explanations["Prose"] == "Vivid prose."
+
+
+def test_venice_uses_chat_completions_endpoint(venice_judge, project, profile):
+    payload = {"Prose": {"score": 3, "explanation": "ok"}, "Pacing": {"score": 3, "explanation": "ok"}}
+    with patch("verdikt.inference.judge.httpx.post", return_value=_mock_venice_response(payload)) as mock_post:
+        venice_judge.score_chunk("Text", profile, project)
+
+    url = mock_post.call_args[0][0]
+    assert "chat/completions" in url
+    headers = mock_post.call_args[1]["json"] if "json" in mock_post.call_args[1] else mock_post.call_args.kwargs.get("json", {})
+    # Authorization header must include the api key
+    assert mock_post.call_args[1]["headers"]["Authorization"] == "Bearer sk-test"
+
+
+def test_venice_token_usage_returned(venice_judge, project, profile):
+    payload = {"Prose": {"score": 3, "explanation": "ok"}, "Pacing": {"score": 3, "explanation": "ok"}}
+    with patch("verdikt.inference.judge.httpx.post", return_value=_mock_venice_response(payload, prompt_tokens=20, completion_tokens=8)):
+        venice_judge.score_chunk("Text", profile, project)
+
+    assert venice_judge.usage == [(20, 8)]
+
+
+def test_venice_401_raises_readable_error(venice_judge, project, profile):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 401
+    mock_resp.text = "Unauthorized"
+    exc = httpx.HTTPStatusError("401", request=MagicMock(), response=mock_resp)
+    with patch("verdikt.inference.judge.httpx.post", side_effect=exc):
+        with pytest.raises(RuntimeError, match="Venice API key is invalid"):
+            venice_judge.score_chunk("Text", profile, project)
+
+
+def test_venice_404_raises_model_not_found(venice_judge, project, profile):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 404
+    mock_resp.text = "Not found"
+    exc = httpx.HTTPStatusError("404", request=MagicMock(), response=mock_resp)
+    with patch("verdikt.inference.judge.httpx.post", side_effect=exc):
+        with pytest.raises(RuntimeError, match="not found on Venice"):
+            venice_judge.score_chunk("Text", profile, project)

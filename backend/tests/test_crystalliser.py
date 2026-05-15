@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from verdikt.core.models import Chunk, Domain, Project, Rating, RatingDimension
@@ -59,8 +60,23 @@ def _ollama_response(summary: str) -> MagicMock:
     return resp
 
 
+def _venice_response(summary: str, prompt_tokens: int = 10, completion_tokens: int = 5) -> MagicMock:
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {
+        "choices": [{"message": {"content": json.dumps({"summary": summary})}}],
+        "usage": {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens},
+    }
+    return resp
+
+
 def _make_crystalliser() -> ProfileCrystalliser:
     target = LLMTarget(provider="ollama", base_url="http://localhost:11434", model="llama3.1:8b")
+    return ProfileCrystalliser(target)
+
+
+def _make_venice_crystalliser() -> ProfileCrystalliser:
+    target = LLMTarget(provider="venice", base_url="https://api.venice.ai/api/v1", model="llama-3.3-70b", api_key="sk-test")
     return ProfileCrystalliser(target)
 
 
@@ -350,3 +366,68 @@ def test_crystallise_image_chunk_label_uses_position():
     assert any("[image #3]" in p for p in captured_prompts), "Expected positional label in prompt"
     assert not any(b"\xff\xd8" in p.encode("utf-8", errors="replace") for p in captured_prompts), \
         "Raw bytes must not appear in prompt"
+
+
+# ── Venice path ───────────────────────────────────────────────────────────────
+
+def test_venice_crystalliser_produces_profile():
+    project = _make_project([("Prose", "Writing quality")])
+    chunks = {"c1": _make_chunk("c1", "Great writing " * 10)}
+    ratings = [_make_rating(project.id, "c1", "m1", {"Prose": 4.0})]
+
+    c = _make_venice_crystalliser()
+    with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
+        mock_post.return_value = _venice_response("User prefers literary prose.")
+        profile, pt, ct = c.crystallise(project, ratings, chunks)
+
+    assert profile.dimensions[0].summary == "User prefers literary prose."
+    assert profile.overall_summary == "User prefers literary prose."
+    assert pt > 0
+    assert ct > 0
+
+
+def test_venice_crystalliser_uses_chat_completions_endpoint():
+    project = _make_project([("Style", "Style")])
+    chunks = {"c1": _make_chunk("c1", "Text " * 10)}
+    ratings = [_make_rating(project.id, "c1", "m1", {"Style": 3.0})]
+
+    c = _make_venice_crystalliser()
+    called_urls: list[str] = []
+    def capture(url, **kwargs):
+        called_urls.append(url)
+        return _venice_response("Summary.")
+
+    with patch("verdikt.inference.crystalliser.httpx.post", side_effect=capture):
+        c.crystallise(project, ratings, chunks)
+
+    assert all("chat/completions" in u for u in called_urls)
+
+
+def test_venice_crystalliser_401_raises():
+    project = _make_project([("Prose", "Quality")])
+    chunks = {"c1": _make_chunk("c1", "Text " * 10)}
+    ratings = [_make_rating(project.id, "c1", "m1", {"Prose": 4.0})]
+
+    c = _make_venice_crystalliser()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 401
+    mock_resp.text = "Unauthorized"
+    exc = httpx.HTTPStatusError("401", request=MagicMock(), response=mock_resp)
+    with patch("verdikt.inference.crystalliser.httpx.post", side_effect=exc):
+        with pytest.raises(RuntimeError, match="Venice API key is invalid"):
+            c.crystallise(project, ratings, chunks)
+
+
+def test_venice_crystalliser_404_raises_model_not_found():
+    project = _make_project([("Prose", "Quality")])
+    chunks = {"c1": _make_chunk("c1", "Text " * 10)}
+    ratings = [_make_rating(project.id, "c1", "m1", {"Prose": 4.0})]
+
+    c = _make_venice_crystalliser()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 404
+    mock_resp.text = "Not found"
+    exc = httpx.HTTPStatusError("404", request=MagicMock(), response=mock_resp)
+    with patch("verdikt.inference.crystalliser.httpx.post", side_effect=exc):
+        with pytest.raises(RuntimeError, match="not found on Venice"):
+            c.crystallise(project, ratings, chunks)

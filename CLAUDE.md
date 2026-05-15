@@ -183,7 +183,22 @@ Three classes (`LLMJudge`, `ProfileCrystalliser`, `DimensionDiscoverer`) all acc
 
 ### Venice embeddings
 
-`VeniceEmbedder` (`inference/venice_embedder.py`): `POST {base_url}/embeddings`, body `{"model":"...","input":["..."]}`, response `data[0].embedding`.
+`VeniceEmbedder` (`inference/venice_embedder.py`): `POST {base_url}/embeddings`, body `{"model":"...","input":["..."]}`, response `data[].embedding` (list of float vectors). Raises `RuntimeError` on empty response, malformed shape, 401 (key invalid), or `ConnectError`.
+
+`resolve_embedder(project, config, auth_session=None)` — the `auth_session=None` default preserves backward compatibility; when `None`, the Venice catalog check is **skipped entirely** and routing falls through to Ollama/SentenceTransformer/CLIP. Callers that may have Venice embedding models configured (pipeline, batch_ingest, ai_rating) must pass `auth_session`.
+
+### Privacy field
+
+`ModelCatalogRow.privacy` — synced from `model_spec.privacy` on each Venice model sync. Values:
+- `"private"` — Venice does not log or retain prompts
+- `"anonymized"` — Venice may retain prompts in anonymized form
+- `None` — Ollama/local models (no privacy declaration)
+
+Shown as a coloured badge in the admin model list and appended to the cost notice in `ProjectSettingsDialog`.
+
+### DB migration
+
+`_migrate_auth_db` in `deps.py` adds columns to existing `auth.db` installs via `ALTER TABLE`. Venice-related additions: `model_catalog.input_cost_usd_per_mtok` (REAL), `model_catalog.output_cost_usd_per_mtok` (REAL), `model_catalog.privacy` (TEXT).
 
 ### Admin endpoints
 
