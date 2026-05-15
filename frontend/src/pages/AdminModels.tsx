@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
@@ -25,6 +25,13 @@ export default function AdminModels() {
   const [addForm, setAddForm] = useState({ id: '', type: 'embedding', domain: 'text', display_name: '', description: '' })
   const [veniceKey, setVeniceKey] = useState('')
   const [showVeniceKey, setShowVeniceKey] = useState(false)
+  const [sortBy, setSortBy] = useState('display_name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const toggleSort = (col: string) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortBy(col); setSortDir('asc') }
+  }
 
   if (!me.is_admin) return <div style={{ padding: 24 }}>Access denied.</div>
 
@@ -77,6 +84,34 @@ export default function AdminModels() {
     setEditing(m)
     setEditForm({ type: m.type, domain: m.domain, display_name: m.display_name, description: m.description })
   }
+
+  const sorted = [...(models ?? [])].sort((a, b) => {
+    let av: string | number, bv: string | number
+    switch (sortBy) {
+      case 'display_name': av = a.display_name.toLowerCase(); bv = b.display_name.toLowerCase(); break
+      case 'type': av = a.type; bv = b.type; break
+      case 'domain': av = a.domain; bv = b.domain; break
+      case 'parameter_size': av = a.parameter_size ?? ''; bv = b.parameter_size ?? ''; break
+      case 'context_length': av = a.context_length ?? -1; bv = b.context_length ?? -1; break
+      case 'input_cost': av = a.input_cost_usd_per_mtok ?? Infinity; bv = b.input_cost_usd_per_mtok ?? Infinity; break
+      case 'enabled': av = a.enabled ? 0 : 1; bv = b.enabled ? 0 : 1; break
+      default: return 0
+    }
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
+
+  const SortHeader = ({ col, title, children }: { col: string; title?: string; children: ReactNode }) => (
+    <span
+      onClick={() => toggleSort(col)}
+      title={title}
+      style={{ cursor: 'pointer', userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+    >
+      {children}
+      <span style={{ fontSize: 9, opacity: sortBy === col ? 1 : 0.3 }}>{sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '▲'}</span>
+    </span>
+  )
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', padding: 'clamp(12px, 4vw, 24px)' }}>
@@ -173,96 +208,95 @@ export default function AdminModels() {
           <div style={{ overflowX: 'auto' }}>
           {/* Header */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 100px 60px 80px 60px', gap: 8, padding: '8px 14px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border)', background: 'var(--surface, rgba(128,128,128,0.04))', minWidth: 800 }}>
-            <span>Model</span>
-            <span>Type</span>
-            <span>Domain</span>
-            <span>Params</span>
-            <span>Context</span>
+            <SortHeader col="display_name">Model</SortHeader>
+            <SortHeader col="type">Type</SortHeader>
+            <SortHeader col="domain">Domain</SortHeader>
+            <SortHeader col="parameter_size">Params</SortHeader>
+            <SortHeader col="context_length">Context</SortHeader>
             <span>Quant</span>
-            <span title="Input / output USD per million tokens">Cost/Mtok</span>
-            <span>Enabled</span>
+            <SortHeader col="input_cost" title="Input / output USD per million tokens">Cost/Mtok</SortHeader>
+            <SortHeader col="enabled">Enabled</SortHeader>
             <span>Default</span>
             <span></span>
           </div>
-          {models.map((m, i) => (
+          {sorted.map((m, i) => (
             <div
               key={m.id}
               style={{
-                display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 100px 60px 80px 60px', gap: 8, padding: '10px 14px', alignItems: 'start',
-                borderBottom: i < models.length - 1 ? '1px solid var(--border)' : 'none',
+                borderBottom: i < sorted.length - 1 ? '1px solid var(--border)' : 'none',
                 opacity: m.enabled ? 1 : 0.6,
                 minWidth: 800,
               }}
             >
-              <div>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 500, fontSize: 13, wordBreak: 'break-word' }}>
-                    {m.display_name}
-                  </span>
+              {/* Data row */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 100px 60px 80px 60px', gap: 8, padding: '10px 14px 4px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 500, fontSize: 13, wordBreak: 'break-word' }}>{m.display_name}</span>
                   {m.source === 'venice' && (
-                    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#7c3aed22', color: '#7c3aed', fontWeight: 600, letterSpacing: 0.3, flexShrink: 0, marginTop: 2 }}>
+                    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#7c3aed22', color: '#7c3aed', fontWeight: 600, letterSpacing: 0.3, flexShrink: 0 }}>
                       Venice
                     </span>
                   )}
                 </div>
-                {m.id !== m.display_name && (
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, wordBreak: 'break-all' }}>
-                    {m.id}
-                  </div>
-                )}
-                {m.description && (
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                    {m.description}
-                  </div>
-                )}
+                <span><Badge label={TYPE_LABELS[m.type] ?? m.type} color={m.type === 'llm' ? '#6b7de0' : '#059669'} /></span>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{DOMAIN_LABELS[m.domain] ?? m.domain}</span>
+                <span style={{ fontSize: 12 }}>{m.parameter_size ?? '—'}</span>
+                <span style={{ fontSize: 12 }}>{m.context_length ? `${(m.context_length / 1000).toFixed(0)}k` : '—'}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m.quantization ?? '—'}</span>
+                <span style={{ fontSize: 11 }}>
+                  {m.input_cost_usd_per_mtok != null || m.output_cost_usd_per_mtok != null ? (
+                    <span title={`Input: $${m.input_cost_usd_per_mtok ?? '?'} / Output: $${m.output_cost_usd_per_mtok ?? '?'} per million tokens`}>
+                      <span style={{ color: 'var(--text)' }}>${m.input_cost_usd_per_mtok?.toFixed(2) ?? '?'}</span>
+                      <span style={{ color: 'var(--text-muted)' }}> / ${m.output_cost_usd_per_mtok?.toFixed(2) ?? '?'}</span>
+                    </span>
+                  ) : '—'}
+                </span>
+                <span>
+                  <button
+                    onClick={() => update.mutate({ id: m.id, body: { enabled: !m.enabled } })}
+                    style={{
+                      padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', cursor: 'pointer',
+                      background: m.enabled ? 'rgba(5,150,105,0.12)' : 'none',
+                      color: m.enabled ? '#059669' : 'var(--text-muted)',
+                    }}
+                  >
+                    {m.enabled ? 'On' : 'Off'}
+                  </button>
+                </span>
+                <span>
+                  {m.type === 'llm' && (
+                    m.is_default
+                      ? <span style={{ fontSize: 11, color: '#c08020', fontWeight: 600 }}>★ Default</span>
+                      : m.enabled
+                        ? <button
+                            onClick={() => update.mutate({ id: m.id, body: { is_default: true } })}
+                            style={{ padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                          >
+                            Set
+                          </button>
+                        : null
+                  )}
+                </span>
+                <span>
+                  <button
+                    onClick={() => openEdit(m)}
+                    style={{ padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', background: 'none', cursor: 'pointer' }}
+                  >
+                    Edit
+                  </button>
+                </span>
               </div>
-              <span><Badge label={TYPE_LABELS[m.type] ?? m.type} color={m.type === 'llm' ? '#6b7de0' : '#059669'} /></span>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{DOMAIN_LABELS[m.domain] ?? m.domain}</span>
-              <span style={{ fontSize: 12 }}>{m.parameter_size ?? '—'}</span>
-              <span style={{ fontSize: 12 }}>{m.context_length ? `${(m.context_length / 1000).toFixed(0)}k` : '—'}</span>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m.quantization ?? '—'}</span>
-              <span style={{ fontSize: 11 }}>
-                {m.input_cost_usd_per_mtok != null || m.output_cost_usd_per_mtok != null ? (
-                  <span title={`Input: $${m.input_cost_usd_per_mtok ?? '?'} / Output: $${m.output_cost_usd_per_mtok ?? '?'} per million tokens`}>
-                    <span style={{ color: 'var(--text)' }}>${m.input_cost_usd_per_mtok?.toFixed(2) ?? '?'}</span>
-                    <span style={{ color: 'var(--text-muted)' }}> / ${m.output_cost_usd_per_mtok?.toFixed(2) ?? '?'}</span>
-                  </span>
-                ) : '—'}
-              </span>
-              <span>
-                <button
-                  onClick={() => update.mutate({ id: m.id, body: { enabled: !m.enabled } })}
-                  style={{
-                    padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', cursor: 'pointer',
-                    background: m.enabled ? 'rgba(5,150,105,0.12)' : 'none',
-                    color: m.enabled ? '#059669' : 'var(--text-muted)',
-                  }}
-                >
-                  {m.enabled ? 'On' : 'Off'}
-                </button>
-              </span>
-              <span>
-                {m.type === 'llm' && (
-                  m.is_default
-                    ? <span style={{ fontSize: 11, color: '#c08020', fontWeight: 600 }}>★ Default</span>
-                    : m.enabled
-                      ? <button
-                          onClick={() => update.mutate({ id: m.id, body: { is_default: true } })}
-                          style={{ padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                        >
-                          Set
-                        </button>
-                      : null
-                )}
-              </span>
-              <span>
-                <button
-                  onClick={() => openEdit(m)}
-                  style={{ padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', background: 'none', cursor: 'pointer' }}
-                >
-                  Edit
-                </button>
-              </span>
+              {/* Full-width detail row */}
+              {(m.id !== m.display_name || m.description) && (
+                <div style={{ padding: '0 14px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {m.id !== m.display_name && (
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{m.id}</span>
+                  )}
+                  {m.description && (
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{m.description}</span>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           </div>
