@@ -3,6 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { TokenWindowStats } from '../api/types'
 
+function fmt(n: number | null | undefined): string {
+  if (n == null || n === 0) return '—'
+  if (n < 0.0001) return '<$0.0001'
+  return '$' + n.toFixed(4)
+}
+
 function StatCard({ label, stats }: { label: string; stats: TokenWindowStats }) {
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '14px 18px', minWidth: 140 }}>
@@ -11,6 +17,11 @@ function StatCard({ label, stats }: { label: string; stats: TokenWindowStats }) 
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
         {stats.prompt.toLocaleString()} prompt · {stats.completion.toLocaleString()} completion
       </div>
+      {stats.cost_usd != null && stats.cost_usd > 0 && (
+        <div style={{ fontSize: 12, color: '#7c3aed', marginTop: 6, fontWeight: 500 }}>
+          {fmt(stats.cost_usd)} USD
+        </div>
+      )}
     </div>
   )
 }
@@ -18,6 +29,8 @@ function StatCard({ label, stats }: { label: string; stats: TokenWindowStats }) 
 export default function Usage() {
   const navigate = useNavigate()
   const { data: usage, isLoading } = useQuery({ queryKey: ['usage'], queryFn: api.usage.get })
+
+  const hasCost = usage?.by_project.some(p => p.all_time.cost_usd != null && p.all_time.cost_usd > 0)
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: 'clamp(12px, 4vw, 24px)' }}>
@@ -60,17 +73,22 @@ export default function Usage() {
             <>
               <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>By Project</h2>
               <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 0, background: 'var(--surface, rgba(255,255,255,0.04))' }}>
-                  {['Project', 'Prompt', 'Completion', 'Total'].map(h => (
+                <div style={{ display: 'grid', gridTemplateColumns: hasCost ? '1fr auto auto auto auto' : '1fr auto auto auto', gap: 0, background: 'var(--surface, rgba(255,255,255,0.04))' }}>
+                  {['Project', 'Prompt', 'Completion', 'Total', ...(hasCost ? ['Cost (USD)'] : [])].map(h => (
                     <div key={h} style={{ padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</div>
                   ))}
                 </div>
                 {usage.by_project.map((p, i) => (
-                  <div key={p.project_id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'var(--surface, rgba(255,255,255,0.02))' }}>
+                  <div key={p.project_id} style={{ display: 'grid', gridTemplateColumns: hasCost ? '1fr auto auto auto auto' : '1fr auto auto auto', borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'var(--surface, rgba(255,255,255,0.02))' }}>
                     <div style={{ padding: '10px 14px', fontSize: 13 }}>{p.project_name || p.project_id}</div>
                     <div style={{ padding: '10px 14px', fontSize: 13, color: 'var(--text-muted)' }}>{p.all_time.prompt.toLocaleString()}</div>
                     <div style={{ padding: '10px 14px', fontSize: 13, color: 'var(--text-muted)' }}>{p.all_time.completion.toLocaleString()}</div>
                     <div style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600 }}>{p.all_time.total.toLocaleString()}</div>
+                    {hasCost && (
+                      <div style={{ padding: '10px 14px', fontSize: 13, color: p.all_time.cost_usd ? '#7c3aed' : 'var(--text-muted)' }}>
+                        {fmt(p.all_time.cost_usd)}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

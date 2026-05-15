@@ -211,7 +211,7 @@ def start_analysis(
     chunks_by_id = {c.id: c for c in chunk_store.list_by_project(project_id) if c.id in chunk_ids}
 
     config = get_config()
-    target = resolve_llm_target(proj, config, auth_session)
+    target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
 
     from verdikt.api.deps import get_user_engine
     from sqlalchemy.orm import Session as _Session
@@ -352,7 +352,7 @@ def resume_analysis(
 
     proj = _get_project_or_404(project_id, session)
     config = get_config()
-    target = resolve_llm_target(proj, config, auth_session)
+    target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
 
     from verdikt.api.deps import get_user_engine
     from sqlalchemy.orm import Session as _Session

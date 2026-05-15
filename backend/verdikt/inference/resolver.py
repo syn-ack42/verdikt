@@ -23,9 +23,49 @@ def _get_venice_key(auth_session) -> str | None:
     return row.value if row and row.value else None
 
 
-def resolve_llm_target(project: Project, config: AppConfig, auth_session) -> LLMTarget:
-    """Return LLMTarget for the project's LLM, routing to Venice if the model is a Venice catalog entry."""
+def _get_user_venice_key(user_id: str, auth_session) -> str | None:
+    """Return the decrypted personal Venice API key for a user, or None if not set."""
+    from verdikt.storage.auth_orm import UserRow
+    row = auth_session.get(UserRow, user_id)
+    if not row or not getattr(row, "venice_api_key_enc", None):
+        return None
+    try:
+        from verdikt.api.deps import get_config
+        from cryptography.fernet import Fernet
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+        import base64
+        config = get_config()
+        wrap_key = HKDF(
+            algorithm=hashes.SHA256(), length=32, salt=None,
+            info=b"verdikt-user-venice-key-wrap-v1",
+        ).derive(config.jwt_secret.encode())
+        raw = Fernet(base64.urlsafe_b64encode(wrap_key)).decrypt(row.venice_api_key_enc.encode())
+        return raw.decode()
+    except Exception:
+        return None
+
+
+def resolve_llm_target(project: Project, config: AppConfig, auth_session, user_id: str | None = None) -> LLMTarget:
+    """Return LLMTarget for the project's LLM.
+
+    If project.llm_key_source == "personal" and user_id is provided, uses the user's
+    own Venice API key (no fallback to site key). Raises if the key is not configured.
+
+    Otherwise routes to Venice (site key) or Ollama based on ModelCatalogRow.source.
+    """
     model_id = project.llm_model or config.inference.ollama_model
+
+    if getattr(project, "llm_key_source", None) == "personal":
+        if not user_id:
+            raise RuntimeError("Personal Venice key requested but no user context available")
+        api_key = _get_user_venice_key(user_id, auth_session)
+        if not api_key:
+            raise RuntimeError(
+                "No personal Venice API key configured. Add it in Account Settings."
+            )
+        return LLMTarget(provider="venice", base_url=VENICE_BASE_URL, model=model_id, api_key=api_key)
+
     from verdikt.storage.auth_orm import ModelCatalogRow
     row = auth_session.get(ModelCatalogRow, model_id)
     if row and row.source == "venice":
@@ -41,16 +81,17 @@ def resolve_llm_model(project: Project, config: AppConfig) -> tuple[str, str]:
     return config.inference.ollama_base_url, (project.llm_model or config.inference.ollama_model)
 
 
-def resolve_embedder(project: Project, config: AppConfig, auth_session=None) -> EmbedderBase:
+def resolve_embedder(project: Project, config: AppConfig, auth_session=None, user_id: str | None = None) -> EmbedderBase:
     """Return the right embedder for a project.
 
+    If project.embedding_key_source == "personal" and user_id is provided, uses the
+    user's own Venice API key (no fallback to site key). Raises if key is not configured.
+
     When auth_session is provided and the configured embedding model exists in the catalog
-    with source="venice", returns a VeniceEmbedder.
+    with source="venice", returns a VeniceEmbedder using the site key.
 
     When auth_session is None the Venice catalog check is skipped entirely — the model
-    name is passed straight to the Ollama/SentenceTransformer routing below. Callers that
-    may have Venice embedding models configured (pipeline, batch_ingest, ai_rating) must
-    pass auth_session; omitting it is only safe for Ollama/local models.
+    name is passed straight to the Ollama/SentenceTransformer routing below.
     """
     if project.domain == Domain.IMAGE:
         explicit = project.embedding_model
@@ -63,7 +104,20 @@ def resolve_embedder(project: Project, config: AppConfig, auth_session=None) -> 
         from verdikt.inference.clip_embedder import CLIPEmbedder
         return CLIPEmbedder(explicit or config.inference.clip_model)
 
-    # Check if the embedding model is a Venice model
+    # Personal Venice key path
+    if getattr(project, "embedding_key_source", None) == "personal" and auth_session is not None:
+        if not user_id:
+            raise RuntimeError("Personal Venice key requested but no user context available")
+        model_name = project.embedding_model or config.inference.embedding_model
+        api_key = _get_user_venice_key(user_id, auth_session)
+        if not api_key:
+            raise RuntimeError(
+                "No personal Venice API key configured. Add it in Account Settings."
+            )
+        from verdikt.inference.venice_embedder import VeniceEmbedder
+        return VeniceEmbedder(VENICE_BASE_URL, model_name, api_key)
+
+    # Site key Venice path
     if auth_session is not None and project.embedding_model:
         from verdikt.storage.auth_orm import ModelCatalogRow
         row = auth_session.get(ModelCatalogRow, project.embedding_model)

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import DimensionEditor from './DimensionEditor'
+import ModelPickerTable from './ModelPickerTable'
 import type { Project, RatingDimension } from '../api/types'
 
 interface Props {
@@ -48,7 +49,9 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
   const [chunkMax, setChunkMax] = useState(project.chunk_max_size)
   const [dims, setDims] = useState<RatingDimension[]>(project.rating_dimensions)
   const [llmModel, setLlmModel] = useState(project.llm_model ?? '')
+  const [llmKeySource, setLlmKeySource] = useState<string | null>(project.llm_key_source ?? null)
   const [embModel, setEmbModel] = useState(project.embedding_model ?? '')
+  const [embKeySource, setEmbKeySource] = useState<string | null>(project.embedding_key_source ?? null)
   const [embChanged, setEmbChanged] = useState(false)
 
   const isImage = project.domain === 'image'
@@ -69,30 +72,28 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
   const rangeMin = projectDefaults?.chunk_size_min_lower ?? 0
   const rangeMax = projectDefaults?.chunk_size_max_upper ?? 1000
 
+  const { data: veniceKeyStatus } = useQuery({
+    queryKey: ['venice-key-status'],
+    queryFn: () => api.auth.veniceKeyStatus(),
+  })
+  const hasPersonalVeniceKey = veniceKeyStatus?.configured ?? false
+
   const { data: llmModels } = useQuery({
-    queryKey: ['models', 'llm', project.domain],
-    queryFn: () => api.models.list('llm', project.domain),
+    queryKey: ['models', 'llm', project.domain, hasPersonalVeniceKey],
+    queryFn: () => api.models.list('llm', project.domain, hasPersonalVeniceKey),
   })
   const { data: embModels } = useQuery({
-    queryKey: ['models', 'embedding', project.domain],
-    queryFn: () => api.models.list('embedding', project.domain),
+    queryKey: ['models', 'embedding', project.domain, hasPersonalVeniceKey],
+    queryFn: () => api.models.list('embedding', project.domain, hasPersonalVeniceKey),
     enabled: !isImage,
   })
 
   const defaultLlm = modelDefaults?.llm_by_domain?.[project.domain] ?? null
-  const defaultEmbLabel = modelDefaults ? ' (bundled)' : ''
 
   const selectedLlmModel = (llmModels ?? []).find(m => m.id === (llmModel || defaultLlm))
   const selectedEmbModel = (embModels ?? []).find(m => m.id === embModel)
-  const selectedLlmIsVenice = selectedLlmModel?.source === 'venice'
-  const selectedEmbIsVenice = selectedEmbModel?.source === 'venice'
-
-  const _fmtCost = (input?: number | null, output?: number | null) => {
-    if (input == null && output == null) return null
-    return `$${input?.toFixed(2) ?? '?'} in / $${output?.toFixed(2) ?? '?'} out per million tokens`
-  }
-  const llmCostLabel = _fmtCost(selectedLlmModel?.input_cost_usd_per_mtok, selectedLlmModel?.output_cost_usd_per_mtok)
-  const embCostLabel = _fmtCost(selectedEmbModel?.input_cost_usd_per_mtok, selectedEmbModel?.output_cost_usd_per_mtok)
+  const selectedLlmIsPersonal = llmKeySource === 'personal'
+  const selectedEmbIsPersonal = embKeySource === 'personal'
 
   const deleteProject = useMutation({
     mutationFn: () => api.projects.delete(project.id),
@@ -117,6 +118,8 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
         ...(isImage ? {} : { chunk_min_size: chunkMin, chunk_max_size: chunkMax }),
         llm_model: llmModel || undefined,
         embedding_model: embModel || undefined,
+        llm_key_source: llmKeySource || undefined,
+        embedding_key_source: embKeySource || undefined,
         ...(Object.keys(renames).length > 0 ? { dimension_renames: renames } : {}),
       })
     },
@@ -219,63 +222,62 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
             </div>
 
             {/* Models */}
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
-              <div style={{ flex: 1, minWidth: 180 }}>
-                <label style={labelStyle}>Language model</label>
-                {(llmModels ?? []).length > 0 ? (
-                  <select
-                    value={llmModel || (defaultLlm ?? '')}
-                    onChange={e => setLlmModel(e.target.value)}
-                    style={inputStyle}
-                  >
-                    {(llmModels ?? []).map(m => (
-                      <option key={m.id} value={m.id}>
-                        {m.source === 'venice' ? '[Venice] ' : ''}{m.display_name || m.id}{m.parameter_size ? ` · ${m.parameter_size}` : ''}{m.is_default ? ' ★' : ''}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>No models enabled for this domain.</p>
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>Language model</label>
+              <div style={{ maxHeight: 300, overflowY: 'auto', borderRadius: 6 }}>
+                <ModelPickerTable
+                  models={llmModels ?? []}
+                  selectedId={llmModel || defaultLlm}
+                  isPersonalSelected={selectedLlmIsPersonal}
+                  onSelect={(id, isPersonal) => {
+                    setLlmModel(id ?? '')
+                    setLlmKeySource(isPersonal ? 'personal' : null)
+                  }}
+                />
+              </div>
+              {selectedLlmModel?.source === 'venice' && (
+                <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
+                  {selectedLlmIsPersonal
+                    ? 'Using your personal Venice key — costs charged to your account.'
+                    : 'Venice.ai — API costs apply via site key.'}
+                </p>
+              )}
+            </div>
+
+            {!isImage && (
+              <div style={{ marginBottom: 20 }}>
+                <label style={labelStyle}>Embedding model</label>
+                <div style={{ maxHeight: 260, overflowY: 'auto', borderRadius: 6 }}>
+                  <ModelPickerTable
+                    models={embModels ?? []}
+                    selectedId={embModel || null}
+                    isPersonalSelected={selectedEmbIsPersonal}
+                    onSelect={(id, isPersonal) => {
+                      const newEmb = id ?? ''
+                      setEmbModel(newEmb)
+                      setEmbKeySource(isPersonal ? 'personal' : null)
+                      setEmbChanged(
+                        newEmb !== (project.embedding_model ?? '') ||
+                        (isPersonal ? 'personal' : null) !== (project.embedding_key_source ?? null)
+                      )
+                    }}
+                    noneLabel="Bundled default (sentence-transformers)"
+                  />
+                </div>
+                {embChanged && (
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: '#b45309', lineHeight: 1.4 }}>
+                    Changing the embedding model invalidates existing vectors — re-run the pipeline after saving.
+                  </p>
                 )}
-                {selectedLlmIsVenice && (
+                {selectedEmbModel?.source === 'venice' && (
                   <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
-                    Venice.ai — API costs apply.{llmCostLabel ? ` ${llmCostLabel}.` : ''}
-                    {selectedLlmModel?.privacy === 'private' && ' Prompts are not logged.'}
-                    {selectedLlmModel?.privacy === 'anonymized' && ' Prompts may be retained anonymized.'}
+                    {selectedEmbIsPersonal
+                      ? 'Using your personal Venice key — costs charged to your account.'
+                      : 'Venice.ai — API costs apply via site key.'}
                   </p>
                 )}
               </div>
-              {!isImage && (
-                <div style={{ flex: 1, minWidth: 180 }}>
-                  <label style={labelStyle}>Embedding model</label>
-                  <select
-                    value={embModel}
-                    onChange={e => {
-                      setEmbModel(e.target.value)
-                      setEmbChanged(e.target.value !== (project.embedding_model ?? ''))
-                    }}
-                    style={inputStyle}
-                  >
-                    <option value="">Bundled default{defaultEmbLabel}</option>
-                    {(embModels ?? []).map(m => (
-                      <option key={m.id} value={m.id}>{m.source === 'venice' ? '[Venice] ' : ''}{m.display_name || m.id}</option>
-                    ))}
-                  </select>
-                  {embChanged && (
-                    <p style={{ margin: '6px 0 0', fontSize: 12, color: '#b45309', lineHeight: 1.4 }}>
-                      Changing the embedding model invalidates existing vectors — re-run the pipeline after saving.
-                    </p>
-                  )}
-                  {selectedEmbIsVenice && (
-                    <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
-                      Venice.ai — API costs apply.{embCostLabel ? ` ${embCostLabel}.` : ''}
-                      {selectedEmbModel?.privacy === 'private' && ' Prompts are not logged.'}
-                      {selectedEmbModel?.privacy === 'anonymized' && ' Prompts may be retained anonymized.'}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
+            )}
 
             {/* Dimensions */}
             <div style={{ marginBottom: 8 }}>

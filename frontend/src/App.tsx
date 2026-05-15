@@ -12,6 +12,7 @@ import AdminUsers from './pages/AdminUsers'
 import AdminModels from './pages/AdminModels'
 import AdminSettings from './pages/AdminSettings'
 import UserSettings from './pages/UserSettings'
+import AccountSettings from './pages/AccountSettings'
 import Usage from './pages/Usage'
 import Help from './pages/Help'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/admin/models" element={<AdminModels />} />
         <Route path="/admin/settings" element={<AdminSettings />} />
         <Route path="/settings/password" element={<UserSettings />} />
+        <Route path="/account/settings" element={<AccountSettings />} />
         <Route path="/usage" element={<Usage />} />
         <Route path="/help" element={<Help />} />
       </Route>

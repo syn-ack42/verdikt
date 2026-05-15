@@ -66,10 +66,14 @@ export const api = {
       req<{ id?: string; email?: string; is_admin?: boolean; pending_confirmation?: boolean }>('POST', '/auth/register', { email, password }),
     logout: () => req<{ ok: boolean }>('POST', '/auth/logout'),
     confirmEmail: (token: string) => req<{ ok: boolean; email: string }>('POST', '/auth/confirm-email', { token }),
+    resendConfirmation: (email: string) => req<{ ok: boolean }>('POST', '/auth/resend-confirmation', { email }),
     changePassword: (old_password: string, new_password: string) =>
       req<{ ok: boolean }>('POST', '/auth/change-password', { old_password, new_password }),
     oauthProviders: () => req<string[]>('GET', '/auth/oauth/providers'),
     oauthAuthorizeUrl: (provider: string) => `${BASE}/auth/oauth/${provider}/authorize`,
+    veniceKeyStatus: () => req<{ configured: boolean }>('GET', '/auth/me/venice-key/status'),
+    setVeniceKey: (api_key: string) => req<{ ok: boolean }>('PUT', '/auth/me/venice-key', { api_key }),
+    deleteVeniceKey: () => req<{ ok: boolean }>('DELETE', '/auth/me/venice-key'),
   },
   admin: {
     listUsers: () => req<User[]>('GET', '/admin/users'),
@@ -104,10 +108,11 @@ export const api = {
   models: {
     defaults: () => req<{ llm_by_domain: Record<string, string | null> }>('GET', '/models/defaults'),
     domainAvailability: () => req<Record<string, boolean>>('GET', '/models/domain-availability'),
-    list: (type?: string, domain?: string) => {
+    list: (type?: string, domain?: string, includePersonalVenice?: boolean) => {
       const p = new URLSearchParams()
       if (type) p.set('type', type)
       if (domain) p.set('domain', domain)
+      if (includePersonalVenice) p.set('include_personal_venice', 'true')
       const qs = p.toString()
       return req<ModelCatalogEntry[]>('GET', `/models${qs ? `?${qs}` : ''}`)
     },
@@ -230,6 +235,8 @@ export const api = {
     versions: (projectId: string) => req<PreferenceProfile[]>('GET', `/projects/${projectId}/profile/versions`),
     crystallise: (projectId: string) => req<PreferenceProfile>('POST', `/projects/${projectId}/profile/crystallise`),
     crystalliseStatus: (projectId: string) => req<CrystalliseStatus>('GET', `/projects/${projectId}/profile/crystallise/status`),
+    crystalliseStream: (projectId: string, onEvent: (e: unknown) => void) =>
+      streamFetch(`/projects/${projectId}/profile/crystallise/stream`, { method: 'POST' }, onEvent),
     update: (projectId: string, body: Partial<PreferenceProfile>) =>
       req<PreferenceProfile>('PUT', `/projects/${projectId}/profile`, body),
     restore: (projectId: string, versionId: string) =>

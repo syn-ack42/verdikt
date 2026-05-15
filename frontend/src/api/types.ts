@@ -28,6 +28,7 @@ export interface TokenWindowStats {
   prompt: number
   completion: number
   total: number
+  cost_usd?: number | null
 }
 
 export interface UsageSummary {
@@ -67,6 +68,8 @@ export interface Project {
   min_profile_confidence: number
   llm_model: string | null
   embedding_model: string | null
+  llm_key_source: string | null
+  embedding_key_source: string | null
   created_at: string
   confidence?: number
   profile_confirmed_count?: number
@@ -91,6 +94,7 @@ export interface ModelCatalogEntry {
   output_cost_usd_per_mtok?: number | null
   privacy?: string | null
   synced_at?: string | null
+  personal_only?: boolean
 }
 
 export interface MaterialItem {

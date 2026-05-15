@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+import json
+import threading
 from datetime import datetime, timezone
+from typing import Annotated, AsyncGenerator
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from typing import Annotated
-
-from verdikt.api.deps import get_auth_session, get_config, get_current_user, get_session
+from verdikt.api.deps import get_auth_engine, get_auth_session, get_config, get_current_user, get_session
 from verdikt.api.token_budget import check_token_budget, record_usage
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.core.models import DimensionProfile, PreferenceProfile
@@ -112,7 +115,7 @@ def crystallise_profile(
     current_version = current.version if current else 0
 
     config = get_config()
-    target = resolve_llm_target(proj, config, auth_session)
+    target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
     crystalliser = ProfileCrystalliser(target)
     _crystallise_status[project_id] = {"running": True, "tokens_prompt": 0, "tokens_completion": 0}
 
@@ -146,6 +149,105 @@ def crystallise_profile(
     profile_store.save(profile)
     session.commit()
     return _profile_response(profile)
+
+
+@router.post("/crystallise/stream")
+async def crystallise_stream(
+    project_id: str,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Session = Depends(get_session),
+    auth_session: Session = Depends(get_auth_session),
+):
+    check_token_budget(user.id, auth_session)
+    proj = _get_project_or_404(project_id, session)
+    rating_store = SQLiteRatingStore(session)
+    chunk_store = SQLiteChunkStore(session)
+    profile_store = SQLiteProfileStore(session)
+
+    ratings = rating_store.list_by_project(project_id)
+    non_skipped = [r for r in ratings if not r.skipped]
+
+    if len(non_skipped) < proj.crystallisation_threshold:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Need {proj.crystallisation_threshold} ratings to crystallise, "
+                f"have {len(non_skipped)}."
+            ),
+        )
+
+    chunks_by_id = {c.id: c for c in chunk_store.list_by_project(project_id)}
+    current = profile_store.get_latest(project_id)
+    current_version = current.version if current else 0
+
+    config = get_config()
+    target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
+    crystalliser = ProfileCrystalliser(target)
+
+    _user_id = user.id
+    _project_id = project_id
+    _target = target
+
+    async def event_stream() -> AsyncGenerator[str, None]:
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def on_tokens(p: int, c: int) -> None:
+            queue.put_nowait({"type": "progress", "prompt": p, "completion": c})
+
+        def run() -> None:
+            try:
+                profile, pt, ct = crystalliser.crystallise(
+                    project=proj,
+                    ratings=ratings,
+                    chunks_by_id=chunks_by_id,
+                    current_version=current_version,
+                    on_tokens=on_tokens,
+                )
+                queue.put_nowait({
+                    "type": "done",
+                    "profile": _profile_response(profile),
+                    "prompt_tokens": pt,
+                    "completion_tokens": ct,
+                    "_profile_obj": profile,
+                })
+            except Exception as exc:
+                import httpx as _httpx
+                if isinstance(exc, _httpx.ConnectError):
+                    msg = f"Cannot reach LLM at {_target.base_url}. Is it running?"
+                elif isinstance(exc, _httpx.HTTPStatusError):
+                    msg = f"LLM error: {exc.response.text[:200]}"
+                else:
+                    msg = str(exc) or "Crystallisation failed"
+                queue.put_nowait({"type": "error", "message": msg})
+
+        thread = threading.Thread(target=run, daemon=True, name=f"crystallise-{_project_id}")
+        thread.start()
+
+        while True:
+            item = await queue.get()
+            profile_obj = item.pop("_profile_obj", None)
+            yield f"data: {json.dumps(item)}\n\n"
+            if item["type"] == "done":
+                # Persist profile using the request-scoped session (we're in the event loop here)
+                if profile_obj is not None:
+                    try:
+                        profile_store.save(profile_obj)
+                        session.commit()
+                    except Exception:
+                        pass
+                try:
+                    from sqlalchemy.orm import Session as _Session
+                    with _Session(get_auth_engine()) as auth_sess:
+                        record_usage(_user_id, _project_id, _target.model, "crystallise",
+                                     item["prompt_tokens"], item["completion_tokens"], auth_sess)
+                except Exception:
+                    pass
+                break
+            if item["type"] == "error":
+                break
+        thread.join(timeout=5)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 class ProfileUpdate(BaseModel):

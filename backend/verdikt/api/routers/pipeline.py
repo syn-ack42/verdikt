@@ -66,7 +66,7 @@ def run_pipeline(
         material_store=SQLiteMaterialStore(session),
         chunk_store=SQLiteChunkStore(session),
         vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
-        embedder=resolve_embedder(proj, config, auth_session),
+        embedder=resolve_embedder(proj, config, auth_session, user_id=user.id),
         chunker=_make_chunker(proj),
         content_fetchers=_build_content_fetchers(proj.id, session),
     )
@@ -97,7 +97,7 @@ def run_pipeline_stream(
         material_store=SQLiteMaterialStore(session),
         chunk_store=SQLiteChunkStore(session),
         vector_store=ChromaVectorStore(chroma, f"project_{proj.id}"),
-        embedder=resolve_embedder(proj, config, auth_session),
+        embedder=resolve_embedder(proj, config, auth_session, user_id=user.id),
         chunker=_make_chunker(proj),
         content_fetchers=_build_content_fetchers(proj.id, session),
     )

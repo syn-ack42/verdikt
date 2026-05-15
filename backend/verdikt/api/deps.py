@@ -134,6 +134,9 @@ def _migrate_auth_db(engine: Engine) -> None:
         if "privacy" not in catalog_cols:
             conn.execute(_text("ALTER TABLE model_catalog ADD COLUMN privacy TEXT"))
             conn.commit()
+        if "venice_api_key_enc" not in user_cols:
+            conn.execute(_text("ALTER TABLE users ADD COLUMN venice_api_key_enc TEXT"))
+            conn.commit()
 
 
 def get_auth_session() -> Generator[Session, None, None]:
@@ -299,6 +302,14 @@ def _migrate_user_db(engine: Engine) -> None:
             conn.execute(_text("ALTER TABLE projects ADD COLUMN discovery_analysis_result TEXT"))
             conn.commit()
             log.info("migration: added discovery_analysis_result to projects")
+        if "llm_key_source" not in _project_cols():
+            conn.execute(_text("ALTER TABLE projects ADD COLUMN llm_key_source TEXT"))
+            conn.commit()
+            log.info("migration: added llm_key_source to projects")
+        if "embedding_key_source" not in _project_cols():
+            conn.execute(_text("ALTER TABLE projects ADD COLUMN embedding_key_source TEXT"))
+            conn.commit()
+            log.info("migration: added embedding_key_source to projects")
 
         def _profile_cols() -> set[str]:
             return {row[1] for row in conn.execute(_text("PRAGMA table_info(preference_profiles)"))}

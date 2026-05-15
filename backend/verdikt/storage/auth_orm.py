@@ -35,6 +35,8 @@ class UserRow(AuthBase):
     oauth_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     oauth_provider_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     oauth_db_key_enc: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Personal Venice API key (encrypted; null = no personal key configured)
+    venice_api_key_enc: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class TokenUsageRow(AuthBase):

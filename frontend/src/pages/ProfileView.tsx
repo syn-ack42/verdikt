@@ -87,18 +87,36 @@ export default function ProfileView() {
   const [dirty, setDirty] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
+  const [streamTokens, setStreamTokens] = useState<{ prompt: number; completion: number } | null>(null)
+  const [streamError, setStreamError] = useState<string | null>(null)
+  const [isStreamRunning, setIsStreamRunning] = useState(false)
 
-  const crystallise = useMutation({
-    mutationFn: () => api.profile.crystallise(projectId!),
-    onSuccess: (p) => {
-      qc.setQueryData(['profile', projectId], p)
-      qc.invalidateQueries({ queryKey: ['profile-versions', projectId] })
-      qc.invalidateQueries({ queryKey: ['crystallise-status', projectId] })
-      setEditedDims(null)
-      setEditedSummary(null)
-      setDirty(false)
-    },
-  })
+  const startCrystalliseStream = async () => {
+    setIsStreamRunning(true)
+    setStreamError(null)
+    setStreamTokens(null)
+    try {
+      await api.profile.crystalliseStream(projectId!, (e: unknown) => {
+        const ev = e as { type: string; prompt?: number; completion?: number; profile?: PreferenceProfile; message?: string }
+        if (ev.type === 'progress') {
+          setStreamTokens({ prompt: ev.prompt ?? 0, completion: ev.completion ?? 0 })
+        } else if (ev.type === 'done' && ev.profile) {
+          qc.setQueryData(['profile', projectId], ev.profile)
+          qc.invalidateQueries({ queryKey: ['profile-versions', projectId] })
+          setEditedDims(null)
+          setEditedSummary(null)
+          setDirty(false)
+        } else if (ev.type === 'error') {
+          setStreamError(ev.message ?? 'Crystallisation failed')
+        }
+      })
+    } catch (err: unknown) {
+      setStreamError((err as Error).message ?? 'Crystallisation failed')
+    } finally {
+      setIsStreamRunning(false)
+      setStreamTokens(null)
+    }
+  }
 
   const save = useMutation({
     mutationFn: () => api.profile.update(projectId!, {
@@ -126,8 +144,8 @@ export default function ProfileView() {
   })
 
   // Detect server-side crystallization that outlasted our component (user navigated away and back)
-  const serverRunning = !crystallise.isPending && (crystalStatus?.running ?? false)
-  const isCrystallising = crystallise.isPending || serverRunning
+  const serverRunning = !isStreamRunning && (crystalStatus?.running ?? false)
+  const isCrystallising = isStreamRunning || serverRunning
 
   const prevServerRunning = useRef(false)
   useEffect(() => {
@@ -156,7 +174,7 @@ export default function ProfileView() {
       dirty ? `Your unsaved manual edits will be discarded.` : null,
     ].filter(Boolean)
     if (parts.length > 0 && !confirm(parts.join('\n'))) return
-    crystallise.mutate()
+    startCrystalliseStream()
   }
 
   const handleDownload = () => {
@@ -322,12 +340,10 @@ export default function ProfileView() {
       </div>
 
       {/* Error states */}
-      {crystallise.error && (
+      {streamError && (
         <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: 6, padding: '10px 14px', marginBottom: 16 }}>
           <strong style={{ color: '#c00', fontSize: 13 }}>Crystallisation failed</strong>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>
-            {(crystallise.error as any)?.message ?? String(crystallise.error)}
-          </p>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>{streamError}</p>
         </div>
       )}
       {importError && (
@@ -337,7 +353,16 @@ export default function ProfileView() {
         </div>
       )}
 
-      {isCrystallising && <CrystalliseProgress />}
+      {isCrystallising && (
+        <>
+          <CrystalliseProgress />
+          {streamTokens && (
+            <p style={{ margin: '-16px 0 16px', fontSize: 12, color: 'var(--text-muted)' }}>
+              {streamTokens.prompt.toLocaleString()} prompt · {streamTokens.completion.toLocaleString()} completion tokens processed
+            </p>
+          )}
+        </>
+      )}
 
       {/* Empty state */}
       {!profile && !isCrystallising && (

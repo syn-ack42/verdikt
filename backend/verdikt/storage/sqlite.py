@@ -55,6 +55,8 @@ class SQLiteProjectStore(ProjectStore):
             min_profile_confidence=p.min_profile_confidence,
             llm_model=p.llm_model,
             embedding_model=p.embedding_model,
+            llm_key_source=p.llm_key_source,
+            embedding_key_source=p.embedding_key_source,
             created_at=p.created_at,
         )
 
@@ -72,6 +74,8 @@ class SQLiteProjectStore(ProjectStore):
             min_profile_confidence=getattr(r, 'min_profile_confidence', 0.9) or 0.9,
             llm_model=getattr(r, 'llm_model', None),
             embedding_model=getattr(r, 'embedding_model', None),
+            llm_key_source=getattr(r, 'llm_key_source', None),
+            embedding_key_source=getattr(r, 'embedding_key_source', None),
             created_at=r.created_at,
         )
 

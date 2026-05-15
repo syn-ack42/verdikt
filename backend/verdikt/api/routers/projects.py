@@ -61,6 +61,8 @@ class ProjectUpdate(BaseModel):
     min_profile_confidence: float | None = None
     llm_model: str | None = None
     embedding_model: str | None = None
+    llm_key_source: str | None = None
+    embedding_key_source: str | None = None
     dimension_renames: dict[str, str] | None = None  # old_name -> new_name
 
 
@@ -77,6 +79,8 @@ def _project_response(p: Project) -> dict:
         "min_profile_confidence": p.min_profile_confidence,
         "llm_model": p.llm_model,
         "embedding_model": p.embedding_model,
+        "llm_key_source": getattr(p, "llm_key_source", None),
+        "embedding_key_source": getattr(p, "embedding_key_source", None),
         "created_at": p.created_at.isoformat(),
     }
 
@@ -172,6 +176,11 @@ def update_project(
         values["min_profile_confidence"] = body.min_profile_confidence
     if body.llm_model is not None:
         values["llm_model"] = body.llm_model
+    # key_source can be explicitly cleared by passing empty string → store as None
+    if "llm_key_source" in body.model_fields_set:
+        values["llm_key_source"] = body.llm_key_source or None
+    if "embedding_key_source" in body.model_fields_set:
+        values["embedding_key_source"] = body.embedding_key_source or None
     if body.embedding_model is not None:
         # Reject change if material has already been embedded — vectors would be incompatible
         from verdikt.core.models import PipelinePhase

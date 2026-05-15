@@ -8,6 +8,8 @@ export default function ConfirmEmail() {
   const [state, setState] = useState<'pending' | 'ok' | 'error'>('pending')
   const [email, setEmail] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  const [resendEmail, setResendEmail] = useState('')
+  const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent'>('idle')
 
   useEffect(() => {
     if (!token) { setState('error'); setErrorMsg('No confirmation token in URL.'); return }
@@ -15,6 +17,14 @@ export default function ConfirmEmail() {
       .then(res => { setEmail(res.email); setState('ok') })
       .catch(err => { setErrorMsg(err.message ?? 'Confirmation failed'); setState('error') })
   }, [token])
+
+  function handleResend() {
+    if (!resendEmail.trim()) return
+    setResendState('sending')
+    api.auth.resendConfirmation(resendEmail.trim())
+      .then(() => setResendState('sent'))
+      .catch(() => setResendState('sent'))
+  }
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -40,7 +50,33 @@ export default function ConfirmEmail() {
           <>
             <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Confirmation failed</h1>
             <p style={{ fontSize: 14, color: '#c00', marginBottom: 24 }}>{errorMsg}</p>
-            <Link to="/register" style={{ color: '#6b7de0', fontSize: 14 }}>Register again</Link>
+
+            {resendState === 'sent' ? (
+              <p style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+                If that address is registered and unconfirmed, a new link is on its way.
+              </p>
+            ) : (
+              <div style={{ textAlign: 'left' }}>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>
+                  Resend a confirmation link:
+                </p>
+                <input
+                  type="email"
+                  placeholder="your@email.com"
+                  value={resendEmail}
+                  onChange={e => setResendEmail(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleResend()}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 14, marginBottom: 8 }}
+                />
+                <button
+                  onClick={handleResend}
+                  disabled={resendState === 'sending'}
+                  style={{ width: '100%', padding: '9px', background: '#6b7de0', color: '#fff', border: 'none', borderRadius: 4, fontSize: 14, cursor: 'pointer' }}
+                >
+                  {resendState === 'sending' ? 'Sending…' : 'Resend confirmation email'}
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

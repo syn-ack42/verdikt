@@ -149,7 +149,7 @@ def start_batch_stream(
         material_store=mat_store,
         chunk_store=chunk_store,
         vector_store=vector_store,
-        embedder=resolve_embedder(proj, config, auth_session),
+        embedder=resolve_embedder(proj, config, auth_session, user_id=user.id),
         chunker=_make_chunker(proj),
         content_fetchers=content_fetchers,
     )

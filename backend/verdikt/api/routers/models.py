@@ -67,18 +67,40 @@ def get_domain_availability(
 def list_enabled_models(
     type: str | None = None,
     domain: str | None = None,
-    _user: AuthenticatedUser = Depends(get_current_user),
+    include_personal_venice: bool = False,
+    user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_auth_session),
 ) -> list[dict]:
-    """Return admin-enabled models, optionally filtered by type and/or domain."""
+    """Return admin-enabled models, optionally filtered by type and/or domain.
+
+    When include_personal_venice=true and the current user has a personal Venice API key
+    configured, also includes disabled Venice models (so the personal section of the
+    model picker can show the full Venice catalog).
+    """
     q = session.query(ModelCatalogRow).filter(ModelCatalogRow.enabled == True)  # noqa: E712
     if type is not None:
         q = q.filter(ModelCatalogRow.type == type)
     if domain is not None:
         q = q.filter(ModelCatalogRow.domain.in_([domain, "any"]))
     rows = q.order_by(ModelCatalogRow.type, ModelCatalogRow.id).all()
-    return [
-        {
+
+    personal_venice_ids: set[str] = set()
+    if include_personal_venice:
+        from verdikt.storage.auth_orm import UserRow
+        user_row = session.get(UserRow, user.id)
+        if user_row and getattr(user_row, "venice_api_key_enc", None):
+            personal_q = session.query(ModelCatalogRow).filter(ModelCatalogRow.source == "venice")
+            if type is not None:
+                personal_q = personal_q.filter(ModelCatalogRow.type == type)
+            if domain is not None:
+                personal_q = personal_q.filter(ModelCatalogRow.domain.in_([domain, "any"]))
+            for r in personal_q.all():
+                if r.id not in {row.id for row in rows}:
+                    rows.append(r)
+                    personal_venice_ids.add(r.id)
+
+    def _row(r: ModelCatalogRow) -> dict:
+        d = {
             "id": r.id,
             "type": r.type,
             "domain": r.domain,
@@ -92,6 +114,10 @@ def list_enabled_models(
             "input_cost_usd_per_mtok": r.input_cost_usd_per_mtok,
             "output_cost_usd_per_mtok": r.output_cost_usd_per_mtok,
             "privacy": r.privacy,
+            "enabled": r.enabled,
         }
-        for r in rows
-    ]
+        if r.id in personal_venice_ids:
+            d["personal_only"] = True
+        return d
+
+    return [_row(r) for r in rows]

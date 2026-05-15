@@ -220,6 +220,40 @@ def confirm_email(
     return {"ok": True, "email": user.email}
 
 
+class ResendConfirmationRequest(BaseModel):
+    email: EmailStr
+
+
+_RESEND_COOLDOWN_SECONDS = 60
+
+
+@router.post("/resend-confirmation")
+def resend_confirmation(
+    body: ResendConfirmationRequest,
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    # Always return ok to avoid email enumeration
+    user = session.query(UserRow).filter_by(email=body.email).first()
+    if user is None or getattr(user, "email_confirmed", True):
+        return {"ok": True}
+
+    # Rate-limit: skip if a token was created within the cooldown window
+    recent = (
+        session.query(EmailConfirmationRow)
+        .filter_by(user_id=user.id)
+        .order_by(EmailConfirmationRow.created_at.desc())
+        .first()
+    )
+    if recent is not None:
+        age = (datetime.now(timezone.utc) - recent.created_at.replace(tzinfo=timezone.utc)).total_seconds()
+        if age < _RESEND_COOLDOWN_SECONDS:
+            return {"ok": True}
+        session.delete(recent)
+
+    _send_confirmation_email(user, session)
+    return {"ok": True}
+
+
 @router.post("/login")
 def login(
     body: LoginRequest,
@@ -302,6 +336,63 @@ def change_password(
     token = _make_token(row, new_db_key)
     _set_cookie(response, token)
     return {"ok": True}
+
+
+# ── Per-user Venice API key ──────────────────────────────────────────────────
+
+def _encrypt_user_venice_key(raw_key: str, jwt_secret: str) -> str:
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    wrap_key = HKDF(
+        algorithm=hashes.SHA256(), length=32, salt=None,
+        info=b"verdikt-user-venice-key-wrap-v1",
+    ).derive(jwt_secret.encode())
+    return Fernet(base64.urlsafe_b64encode(wrap_key)).encrypt(raw_key.encode()).decode()
+
+
+class SetVeniceKeyRequest(BaseModel):
+    api_key: str
+
+
+@router.put("/me/venice-key")
+def set_venice_key(
+    body: SetVeniceKeyRequest,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    if not body.api_key.strip():
+        raise HTTPException(status_code=400, detail="api_key must not be empty")
+    config = get_config()
+    row = session.get(UserRow, user.id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    row.venice_api_key_enc = _encrypt_user_venice_key(body.api_key.strip(), config.jwt_secret)
+    session.commit()
+    return {"ok": True}
+
+
+@router.delete("/me/venice-key")
+def delete_venice_key(
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    row = session.get(UserRow, user.id)
+    if row is not None:
+        row.venice_api_key_enc = None
+        session.commit()
+    return {"ok": True}
+
+
+@router.get("/me/venice-key/status")
+def venice_key_status(
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    row = session.get(UserRow, user.id)
+    configured = bool(row and getattr(row, "venice_api_key_enc", None))
+    return {"configured": configured}
+
 
 
 # ── OAuth ─────────────────────────────────────────────────────────────────────

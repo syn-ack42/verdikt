@@ -1,0 +1,187 @@
+import type { ModelCatalogEntry } from '../api/types'
+
+interface Props {
+  models: ModelCatalogEntry[]
+  selectedId: string | null
+  isPersonalSelected: boolean
+  onSelect: (id: string | null, isPersonal: boolean) => void
+  /** If provided, adds a "no model / auto" row at the top */
+  noneLabel?: string
+}
+
+const COLS = '22px 1fr 70px 110px'
+
+function RadioDot({ selected }: { selected: boolean }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      width: 14, height: 14, borderRadius: '50%', flexShrink: 0, marginTop: 2,
+      border: `2px solid ${selected ? '#6b7de0' : 'var(--border)'}`,
+      background: selected ? '#6b7de0' : 'transparent',
+    }}>
+      {selected && <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#fff' }} />}
+    </span>
+  )
+}
+
+function Badge({ label, color }: { label: string; color: string }) {
+  return (
+    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: `${color}22`, color, fontWeight: 600, letterSpacing: 0.3, flexShrink: 0 }}>
+      {label}
+    </span>
+  )
+}
+
+function rowBase(selected: boolean): React.CSSProperties {
+  return {
+    display: 'grid',
+    gridTemplateColumns: COLS,
+    gap: 8,
+    padding: '9px 12px 9px 10px',
+    cursor: 'pointer',
+    alignItems: 'start',
+    background: selected ? 'rgba(107,125,224,0.10)' : 'transparent',
+    borderLeft: `3px solid ${selected ? '#6b7de0' : 'transparent'}`,
+  }
+}
+
+export default function ModelPickerTable({ models, selectedId, isPersonalSelected, onSelect, noneLabel }: Props) {
+  const siteModels = models.filter(m => !m.personal_only)
+  const personalModels = models.filter(m => m.personal_only)
+  const hasRows = siteModels.length + personalModels.length > 0
+
+  if (!hasRows && !noneLabel) {
+    return <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>No models available for this domain.</p>
+  }
+
+  const isNoneSelected = !selectedId && !isPersonalSelected
+  const isRowSelected = (m: ModelCatalogEntry, personal: boolean) =>
+    m.id === selectedId && personal === isPersonalSelected
+
+  const hover = (e: React.MouseEvent<HTMLDivElement>, enter: boolean, selected: boolean) => {
+    if (!selected) e.currentTarget.style.background = enter ? 'var(--surface, rgba(128,128,128,0.04))' : 'transparent'
+  }
+
+  const renderRow = (m: ModelCatalogEntry, isPersonal: boolean, last: boolean) => {
+    const selected = isRowSelected(m, isPersonal)
+    return (
+      <div
+        key={isPersonal ? `p:${m.id}` : m.id}
+        onClick={() => onSelect(m.id, isPersonal)}
+        style={{ ...rowBase(selected), borderBottom: last ? 'none' : '1px solid var(--border)' }}
+        onMouseEnter={e => hover(e, true, selected)}
+        onMouseLeave={e => hover(e, false, selected)}
+      >
+        <RadioDot selected={selected} />
+
+        {/* Name cell */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 500, fontSize: 13 }}>{m.display_name}</span>
+            {isPersonal && <Badge label="Personal" color="#7c3aed" />}
+            {!isPersonal && m.source === 'venice' && <Badge label="Venice" color="#7c3aed" />}
+            {m.is_default && !isPersonal && <Badge label="★ Default" color="#c08020" />}
+            {m.privacy === 'private' && (
+              <span title="Venice does not log or retain prompts" style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'rgba(5,150,105,0.12)', color: '#059669', fontWeight: 600, letterSpacing: 0.3, flexShrink: 0 }}>🔒 Private</span>
+            )}
+            {m.privacy === 'anonymized' && (
+              <span title="Prompts may be retained in anonymized form" style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'rgba(180,83,9,0.12)', color: '#b45309', fontWeight: 600, letterSpacing: 0.3, flexShrink: 0 }}>〜 Anon</span>
+            )}
+          </div>
+          {m.id !== m.display_name && (
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.id}</span>
+          )}
+          {m.description && (
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.35 }}>{m.description}</span>
+          )}
+        </div>
+
+        {/* Size cell: params + context stacked */}
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span>{m.parameter_size ?? (m.context_length ? '' : '—')}</span>
+          {m.context_length != null && (
+            <span style={{ fontSize: 11 }}>{(m.context_length / 1000).toFixed(0)}k ctx</span>
+          )}
+        </div>
+
+        {/* Cost cell */}
+        <div style={{ fontSize: 11, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {m.input_cost_usd_per_mtok != null ? (
+            <>
+              <span title="Input cost per million tokens">${m.input_cost_usd_per_mtok.toFixed(2)} in</span>
+              <span style={{ color: 'var(--text-muted)' }} title="Output cost per million tokens">${m.output_cost_usd_per_mtok?.toFixed(2) ?? '?'} out</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>per Mtok</span>
+            </>
+          ) : (
+            <span style={{ color: 'var(--text-muted)' }}>—</span>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const totalRows = (noneLabel ? 1 : 0) + siteModels.length + personalModels.length
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+      {/* Column header */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: COLS, gap: 8,
+        padding: '5px 12px',
+        fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
+        color: 'var(--text-muted)',
+        background: 'var(--surface, rgba(128,128,128,0.04))',
+        borderBottom: '1px solid var(--border)',
+      }}>
+        <span />
+        <span>Model</span>
+        <span>Size</span>
+        <span>Cost / Mtok</span>
+      </div>
+
+      {/* None / auto option */}
+      {noneLabel && (() => {
+        const selected = isNoneSelected
+        const last = totalRows === 1
+        return (
+          <div
+            onClick={() => onSelect(null, false)}
+            style={{ ...rowBase(selected), borderBottom: last ? 'none' : '1px solid var(--border)' }}
+            onMouseEnter={e => hover(e, true, selected)}
+            onMouseLeave={e => hover(e, false, selected)}
+          >
+            <RadioDot selected={selected} />
+            <span style={{ fontSize: 13, fontStyle: 'italic', color: selected ? 'var(--text)' : 'var(--text-muted)', gridColumn: '2 / -1' }}>
+              {noneLabel}
+            </span>
+          </div>
+        )
+      })()}
+
+      {/* Site models */}
+      {siteModels.map((m, i) => {
+        const globalIdx = (noneLabel ? 1 : 0) + i
+        return renderRow(m, false, globalIdx === totalRows - 1)
+      })}
+
+      {/* Personal section */}
+      {personalModels.length > 0 && (
+        <>
+          <div style={{
+            padding: '5px 10px',
+            fontSize: 11, fontWeight: 600, letterSpacing: 0.2,
+            color: '#7c3aed',
+            background: 'rgba(124,58,237,0.06)',
+            borderTop: siteModels.length > 0 || noneLabel ? '1px solid var(--border)' : 'none',
+            borderBottom: '1px solid var(--border)',
+          }}>
+            Personal — your Venice key
+          </div>
+          {personalModels.map((m, i) =>
+            renderRow(m, true, i === personalModels.length - 1)
+          )}
+        </>
+      )}
+    </div>
+  )
+}

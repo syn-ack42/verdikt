@@ -11,6 +11,7 @@ export default function Register() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [pendingEmail, setPendingEmail] = useState<string | null>(null)
+  const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent'>('idle')
 
   const { score } = scorePassword(password)
 
@@ -34,6 +35,14 @@ export default function Register() {
     }
   }
 
+  function handleResend() {
+    if (!pendingEmail) return
+    setResendState('sending')
+    api.auth.resendConfirmation(pendingEmail)
+      .then(() => setResendState('sent'))
+      .catch(() => setResendState('sent'))
+  }
+
   if (pendingEmail) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -46,6 +55,18 @@ export default function Register() {
           <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 24 }}>
             Click the link in the email to activate your account. The link expires in 48 hours.
           </p>
+          {resendState === 'sent' ? (
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>A new link has been sent.</p>
+          ) : (
+            <button
+              onClick={handleResend}
+              disabled={resendState === 'sending'}
+              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, padding: '6px 14px', fontSize: 13, cursor: 'pointer', marginBottom: 16 }}
+            >
+              {resendState === 'sending' ? 'Sending…' : 'Resend confirmation email'}
+            </button>
+          )}
+          <br />
           <Link to="/login" style={{ color: '#6b7de0', fontSize: 14 }}>Back to sign in</Link>
         </div>
       </div>

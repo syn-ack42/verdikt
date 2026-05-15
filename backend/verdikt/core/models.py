@@ -95,6 +95,8 @@ class Project(BaseModel):
     min_profile_confidence: float = 0.9
     llm_model: Optional[str] = None        # overrides global config.inference.ollama_model when set
     embedding_model: Optional[str] = None  # overrides global config.inference.embedding_model when set
+    llm_key_source: Optional[str] = None        # "personal" = use user's own Venice key; None = site/admin logic
+    embedding_key_source: Optional[str] = None  # same for embedder
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

@@ -146,6 +146,14 @@ export default function ProjectList() {
                 Help
               </button>
               <button
+                onClick={() => { setShowSettingsMenu(false); navigate('/account/settings') }}
+                style={{ width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface, rgba(255,255,255,0.06))')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+              >
+                Account Settings
+              </button>
+              <button
                 onClick={() => { setShowSettingsMenu(false); navigate('/settings/password') }}
                 style={{ width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface, rgba(255,255,255,0.06))')}

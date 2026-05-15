@@ -107,10 +107,10 @@ def start_ai_rating(
         raise HTTPException(status_code=409, detail="Profile dimensions don't match project dimensions. Re-crystallise first.")
 
     config = get_config()
-    target = resolve_llm_target(proj, config, auth_session)
+    target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
     chroma = get_cached_chroma_client(user.id)
     vector_store = ChromaVectorStore(chroma, f"project_{project_id}")
-    embedder = resolve_embedder(proj, config, auth_session)
+    embedder = resolve_embedder(proj, config, auth_session, user_id=user.id)
     judge = LLMJudge(target, timeout=config.inference.ollama_timeout)
 
     # Take copies for the thread (session is not thread-safe; import lazily for testability)
@@ -259,7 +259,7 @@ def ai_preview_rating(
         raise HTTPException(status_code=404, detail="Chunk not found")
 
     config = get_config()
-    target = resolve_llm_target(proj, config, auth_session)
+    target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
     judge = LLMJudge(target, timeout=config.inference.ollama_timeout)
 
     lock = _get_preview_lock(project_id)
@@ -321,7 +321,7 @@ def rate_chunk_ai(
         raise HTTPException(status_code=404, detail="Chunk not found")
 
     config = get_config()
-    target = resolve_llm_target(proj, config, auth_session)
+    target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
     judge = LLMJudge(target, timeout=config.inference.ollama_timeout)
 
     chunk_store = SQLiteChunkStore(session)
