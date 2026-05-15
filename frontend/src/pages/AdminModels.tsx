@@ -188,25 +188,30 @@ export default function AdminModels() {
             <div
               key={m.id}
               style={{
-                display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 100px 60px 80px 60px', gap: 8, padding: '10px 14px', alignItems: 'center',
+                display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 100px 60px 80px 60px', gap: 8, padding: '10px 14px', alignItems: 'start',
                 borderBottom: i < models.length - 1 ? '1px solid var(--border)' : 'none',
                 opacity: m.enabled ? 1 : 0.6,
                 minWidth: 800,
               }}
             >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontWeight: 500, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.id}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 500, fontSize: 13, wordBreak: 'break-word' }}>
                     {m.display_name}
                   </span>
                   {m.source === 'venice' && (
-                    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#7c3aed22', color: '#7c3aed', fontWeight: 600, letterSpacing: 0.3, flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#7c3aed22', color: '#7c3aed', fontWeight: 600, letterSpacing: 0.3, flexShrink: 0, marginTop: 2 }}>
                       Venice
                     </span>
                   )}
                 </div>
+                {m.id !== m.display_name && (
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, wordBreak: 'break-all' }}>
+                    {m.id}
+                  </div>
+                )}
                 {m.description && (
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                     {m.description}
                   </div>
                 )}
