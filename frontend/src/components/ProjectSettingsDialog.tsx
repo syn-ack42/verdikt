@@ -238,26 +238,11 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
                 }}
                 listMaxHeight={280}
               />
-              {selectedLlmModel?.source === 'venice' && hasPersonalVeniceKey && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Charge to:</span>
-                  {(['site', 'personal'] as const).map(src => {
-                    const active = src === 'personal' ? selectedLlmIsPersonal : !selectedLlmIsPersonal
-                    return (
-                      <button key={src} onClick={() => setLlmKeySource(src === 'personal' ? 'personal' : null)}
-                        style={{ padding: '2px 10px', borderRadius: 10, fontSize: 11, cursor: 'pointer',
-                          border: `1px solid ${active ? (src === 'personal' ? '#7c3aed' : '#6b7de0') : 'var(--border)'}`,
-                          background: active ? (src === 'personal' ? '#7c3aed' : '#6b7de0') : 'none',
-                          color: active ? '#fff' : 'var(--text-muted)' }}>
-                        {src === 'personal' ? 'My key' : 'Site key'}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-              {selectedLlmModel?.source === 'venice' && !hasPersonalVeniceKey && (
+              {selectedLlmModel?.source === 'venice' && (
                 <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
-                  Venice.ai — API costs apply via site key.
+                  {selectedLlmIsPersonal
+                    ? 'Venice.ai — costs charged to your personal account.'
+                    : 'Venice.ai — costs charged via site key.'}
                 </p>
               )}
             </div>
@@ -286,26 +271,11 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
                     Changing the embedding model invalidates existing vectors — re-run the pipeline after saving.
                   </p>
                 )}
-                {selectedEmbModel?.source === 'venice' && hasPersonalVeniceKey && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Charge to:</span>
-                    {(['site', 'personal'] as const).map(src => {
-                      const active = src === 'personal' ? selectedEmbIsPersonal : !selectedEmbIsPersonal
-                      return (
-                        <button key={src} onClick={() => setEmbKeySource(src === 'personal' ? 'personal' : null)}
-                          style={{ padding: '2px 10px', borderRadius: 10, fontSize: 11, cursor: 'pointer',
-                            border: `1px solid ${active ? (src === 'personal' ? '#7c3aed' : '#6b7de0') : 'var(--border)'}`,
-                            background: active ? (src === 'personal' ? '#7c3aed' : '#6b7de0') : 'none',
-                            color: active ? '#fff' : 'var(--text-muted)' }}>
-                          {src === 'personal' ? 'My key' : 'Site key'}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-                {selectedEmbModel?.source === 'venice' && !hasPersonalVeniceKey && (
+                {selectedEmbModel?.source === 'venice' && (
                   <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
-                    Venice.ai — API costs apply via site key.
+                    {selectedEmbIsPersonal
+                      ? 'Venice.ai — costs charged to your personal account.'
+                      : 'Venice.ai — costs charged via site key.'}
                   </p>
                 )}
               </div>

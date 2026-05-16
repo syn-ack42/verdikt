@@ -112,8 +112,9 @@ export default function ModelPickerTable({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 500, fontSize: 13 }}>{m.display_name}</span>
-            {isPersonal && <Badge label="Personal" color="#7c3aed" />}
-            {!isPersonal && m.source === 'venice' && <Badge label="Venice" color="#7c3aed" />}
+            {isPersonal && <Badge label="Personal key" color="#7c3aed" />}
+            {!isPersonal && m.source === 'venice' && <Badge label="Charged via site" color="#7c3aed" />}
+            {!isPersonal && m.source !== 'venice' && <Badge label="Local" color="#666" />}
             {m.is_default && !isPersonal && <Badge label="★ Default" color="#c08020" />}
             {m.privacy === 'private' && (
               <span title="Venice does not log or retain prompts" style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'rgba(5,150,105,0.12)', color: '#059669', fontWeight: 600, letterSpacing: 0.3, flexShrink: 0 }}>🔒 Private</span>
@@ -206,6 +207,17 @@ export default function ModelPickerTable({
           )
         })()}
 
+        {siteModels.length > 0 && personalModels.length > 0 && (
+          <div style={{
+            padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: 0.2,
+            color: 'var(--text-muted)', background: 'var(--surface, rgba(128,128,128,0.04))',
+            borderBottom: '1px solid var(--border)',
+            position: 'sticky', top: 29, zIndex: 1,
+          }}>
+            Site pool — admin managed
+          </div>
+        )}
+
         {siteModels.map((m, i) => {
           const globalIdx = (noneLabel ? 1 : 0) + i
           return renderRow(m, false, globalIdx === totalRows - 1)
@@ -220,7 +232,7 @@ export default function ModelPickerTable({
               borderBottom: '1px solid var(--border)',
               position: 'sticky', top: 29, zIndex: 1,
             }}>
-              Personal — your Venice key
+              Personal key — your Venice account
             </div>
             {personalModels.map((m, i) => renderRow(m, true, i === personalModels.length - 1))}
           </>
