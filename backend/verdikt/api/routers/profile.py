@@ -245,9 +245,9 @@ async def crystallise_stream(
         while True:
             item = await queue.get()
             profile_obj = item.pop("_profile_obj", None)
-            yield f"data: {json.dumps(item)}\n\n"
             if item["type"] == "done":
-                # Persist profile using the request-scoped session (we're in the event loop here)
+                # Persist BEFORE yielding so the profile is in the DB by the time
+                # the client receives the done event and refetches.
                 if profile_obj is not None:
                     try:
                         profile_store.save(profile_obj)
@@ -261,8 +261,8 @@ async def crystallise_stream(
                                      item["prompt_tokens"], item["completion_tokens"], auth_sess)
                 except Exception:
                     log.warning("crystallise stream: failed to record token usage for project %s", _project_id)
-                break
-            if item["type"] == "error":
+            yield f"data: {json.dumps(item)}\n\n"
+            if item["type"] in ("done", "error"):
                 break
         thread.join(timeout=5)
 
