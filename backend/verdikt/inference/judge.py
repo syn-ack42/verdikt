@@ -58,7 +58,7 @@ class LLMJudge:
             "Score guide (predict the score THIS USER would give — not an objective quality rating):\n"
             "  1 = strongly dislikes — clearly contradicts their stated preferences\n"
             "  2 = dislikes — misses what they value; generic, forgettable, or unremarkable\n"
-            "  3 = neutral — neither matches nor contradicts; passable but unmemorable\n"
+            "  3 = mixed — has some qualities they value and some they don't; a genuine trade-off\n"
             "  4 = likes — clearly shows qualities they value\n"
             "  5 = strongly likes — exemplifies exactly what they want\n"
             "Use the full range. Do NOT inflate scores: content that is merely inoffensive "
