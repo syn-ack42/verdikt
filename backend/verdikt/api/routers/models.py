@@ -95,8 +95,9 @@ def list_enabled_models(
             if domain is not None:
                 personal_q = personal_q.filter(ModelCatalogRow.domain.in_([domain, "any"]))
             for r in personal_q.all():
-                rows.append(r)
-                personal_venice_ids.add(r.id)
+                if r.id not in {row.id for row in rows}:
+                    rows.append(r)
+                    personal_venice_ids.add(r.id)
 
     def _row(r: ModelCatalogRow) -> dict:
         d = {

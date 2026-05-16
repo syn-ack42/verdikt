@@ -228,22 +228,36 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
             {/* Models */}
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Language model</label>
-              <div style={{ maxHeight: 300, overflowY: 'auto', borderRadius: 6 }}>
-                <ModelPickerTable
-                  models={llmModels ?? []}
-                  selectedId={llmModel || defaultLlm}
-                  isPersonalSelected={selectedLlmIsPersonal}
-                  onSelect={(id, isPersonal) => {
-                    setLlmModel(id ?? '')
-                    setLlmKeySource(isPersonal ? 'personal' : null)
-                  }}
-                />
-              </div>
-              {selectedLlmModel?.source === 'venice' && (
+              <ModelPickerTable
+                models={llmModels ?? []}
+                selectedId={llmModel || defaultLlm}
+                isPersonalSelected={selectedLlmIsPersonal}
+                onSelect={(id, isPersonal) => {
+                  setLlmModel(id ?? '')
+                  setLlmKeySource(isPersonal ? 'personal' : null)
+                }}
+                listMaxHeight={280}
+              />
+              {selectedLlmModel?.source === 'venice' && hasPersonalVeniceKey && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Charge to:</span>
+                  {(['site', 'personal'] as const).map(src => {
+                    const active = src === 'personal' ? selectedLlmIsPersonal : !selectedLlmIsPersonal
+                    return (
+                      <button key={src} onClick={() => setLlmKeySource(src === 'personal' ? 'personal' : null)}
+                        style={{ padding: '2px 10px', borderRadius: 10, fontSize: 11, cursor: 'pointer',
+                          border: `1px solid ${active ? (src === 'personal' ? '#7c3aed' : '#6b7de0') : 'var(--border)'}`,
+                          background: active ? (src === 'personal' ? '#7c3aed' : '#6b7de0') : 'none',
+                          color: active ? '#fff' : 'var(--text-muted)' }}>
+                        {src === 'personal' ? 'My key' : 'Site key'}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {selectedLlmModel?.source === 'venice' && !hasPersonalVeniceKey && (
                 <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
-                  {selectedLlmIsPersonal
-                    ? 'Using your personal Venice key — costs charged to your account.'
-                    : 'Venice.ai — API costs apply via site key.'}
+                  Venice.ai — API costs apply via site key.
                 </p>
               )}
             </div>
@@ -251,33 +265,47 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
             {!isImage && (
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>Embedding model</label>
-                <div style={{ maxHeight: 260, overflowY: 'auto', borderRadius: 6 }}>
-                  <ModelPickerTable
-                    models={embModels ?? []}
-                    selectedId={embModel || null}
-                    isPersonalSelected={selectedEmbIsPersonal}
-                    onSelect={(id, isPersonal) => {
-                      const newEmb = id ?? ''
-                      setEmbModel(newEmb)
-                      setEmbKeySource(isPersonal ? 'personal' : null)
-                      setEmbChanged(
-                        newEmb !== (project.embedding_model ?? '') ||
-                        (isPersonal ? 'personal' : null) !== (project.embedding_key_source ?? null)
-                      )
-                    }}
-                    noneLabel="Bundled default (sentence-transformers)"
-                  />
-                </div>
+                <ModelPickerTable
+                  models={embModels ?? []}
+                  selectedId={embModel || null}
+                  isPersonalSelected={selectedEmbIsPersonal}
+                  onSelect={(id, isPersonal) => {
+                    const newEmb = id ?? ''
+                    setEmbModel(newEmb)
+                    setEmbKeySource(isPersonal ? 'personal' : null)
+                    setEmbChanged(
+                      newEmb !== (project.embedding_model ?? '') ||
+                      (isPersonal ? 'personal' : null) !== (project.embedding_key_source ?? null)
+                    )
+                  }}
+                  noneLabel="Bundled default (sentence-transformers)"
+                  listMaxHeight={240}
+                />
                 {embChanged && (
                   <p style={{ margin: '6px 0 0', fontSize: 12, color: '#b45309', lineHeight: 1.4 }}>
                     Changing the embedding model invalidates existing vectors — re-run the pipeline after saving.
                   </p>
                 )}
-                {selectedEmbModel?.source === 'venice' && (
+                {selectedEmbModel?.source === 'venice' && hasPersonalVeniceKey && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Charge to:</span>
+                    {(['site', 'personal'] as const).map(src => {
+                      const active = src === 'personal' ? selectedEmbIsPersonal : !selectedEmbIsPersonal
+                      return (
+                        <button key={src} onClick={() => setEmbKeySource(src === 'personal' ? 'personal' : null)}
+                          style={{ padding: '2px 10px', borderRadius: 10, fontSize: 11, cursor: 'pointer',
+                            border: `1px solid ${active ? (src === 'personal' ? '#7c3aed' : '#6b7de0') : 'var(--border)'}`,
+                            background: active ? (src === 'personal' ? '#7c3aed' : '#6b7de0') : 'none',
+                            color: active ? '#fff' : 'var(--text-muted)' }}>
+                          {src === 'personal' ? 'My key' : 'Site key'}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                {selectedEmbModel?.source === 'venice' && !hasPersonalVeniceKey && (
                   <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7c3aed', lineHeight: 1.4 }}>
-                    {selectedEmbIsPersonal
-                      ? 'Using your personal Venice key — costs charged to your account.'
-                      : 'Venice.ai — API costs apply via site key.'}
+                    Venice.ai — API costs apply via site key.
                   </p>
                 )}
               </div>

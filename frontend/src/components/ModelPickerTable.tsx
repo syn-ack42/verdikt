@@ -6,12 +6,11 @@ interface Props {
   selectedId: string | null
   isPersonalSelected: boolean
   onSelect: (id: string | null, isPersonal: boolean) => void
-  /** If provided, adds a "no model / auto" row at the top */
   noneLabel?: string
+  listMaxHeight?: number
 }
 
 const COLS = '22px 1fr 70px 110px'
-
 type SortKey = 'display_name' | 'parameter_size' | 'input_cost_usd_per_mtok'
 
 function RadioDot({ selected }: { selected: boolean }) {
@@ -37,34 +36,28 @@ function Badge({ label, color }: { label: string; color: string }) {
 
 function rowBase(selected: boolean): React.CSSProperties {
   return {
-    display: 'grid',
-    gridTemplateColumns: COLS,
-    gap: 8,
-    padding: '9px 12px 9px 10px',
-    cursor: 'pointer',
-    alignItems: 'start',
+    display: 'grid', gridTemplateColumns: COLS, gap: 8,
+    padding: '9px 12px 9px 10px', cursor: 'pointer', alignItems: 'start',
     background: selected ? 'rgba(107,125,224,0.10)' : 'transparent',
     borderLeft: `3px solid ${selected ? '#6b7de0' : 'transparent'}`,
   }
 }
 
-function sortModels(models: ModelCatalogEntry[], by: SortKey, dir: 'asc' | 'desc') {
+function applySort(models: ModelCatalogEntry[], by: SortKey, dir: 'asc' | 'desc') {
   return [...models].sort((a, b) => {
     let av: string | number, bv: string | number
-    if (by === 'display_name') {
-      av = a.display_name.toLowerCase(); bv = b.display_name.toLowerCase()
-    } else if (by === 'parameter_size') {
-      av = a.parameter_size ?? ''; bv = b.parameter_size ?? ''
-    } else {
-      av = a.input_cost_usd_per_mtok ?? Infinity; bv = b.input_cost_usd_per_mtok ?? Infinity
-    }
+    if (by === 'display_name') { av = a.display_name.toLowerCase(); bv = b.display_name.toLowerCase() }
+    else if (by === 'parameter_size') { av = a.parameter_size ?? ''; bv = b.parameter_size ?? '' }
+    else { av = a.input_cost_usd_per_mtok ?? Infinity; bv = b.input_cost_usd_per_mtok ?? Infinity }
     if (av < bv) return dir === 'asc' ? -1 : 1
     if (av > bv) return dir === 'asc' ? 1 : -1
     return 0
   })
 }
 
-export default function ModelPickerTable({ models, selectedId, isPersonalSelected, onSelect, noneLabel }: Props) {
+export default function ModelPickerTable({
+  models, selectedId, isPersonalSelected, onSelect, noneLabel, listMaxHeight = 260,
+}: Props) {
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<SortKey>('display_name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -74,22 +67,28 @@ export default function ModelPickerTable({ models, selectedId, isPersonalSelecte
     else { setSortBy(col); setSortDir('asc') }
   }
 
+  // plain helper — not a component, avoids remount-on-every-render
+  const sortHeader = (col: SortKey, label: string) => (
+    <span
+      onClick={() => toggleSort(col)}
+      style={{ cursor: 'pointer', userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+    >
+      {label}
+      <span style={{ fontSize: 9, opacity: sortBy === col ? 1 : 0.3 }}>
+        {sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '▲'}
+      </span>
+    </span>
+  )
+
   const q = search.trim().toLowerCase()
   const filtered = models.filter(m =>
-    !q ||
-    m.display_name.toLowerCase().includes(q) ||
-    m.id.toLowerCase().includes(q) ||
-    (m.description ?? '').toLowerCase().includes(q)
+    !q || m.display_name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q) || (m.description ?? '').toLowerCase().includes(q)
   )
-  const sorted = sortModels(filtered, sortBy, sortDir)
+  const sorted = applySort(filtered, sortBy, sortDir)
 
   const siteModels = sorted.filter(m => !m.personal_only)
   const personalModels = sorted.filter(m => m.personal_only)
   const hasRows = siteModels.length + personalModels.length > 0
-
-  if (!hasRows && !noneLabel && !search) {
-    return <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>No models available for this domain.</p>
-  }
 
   const isNoneSelected = !selectedId && !isPersonalSelected
   const isRowSelected = (m: ModelCatalogEntry, personal: boolean) =>
@@ -98,18 +97,6 @@ export default function ModelPickerTable({ models, selectedId, isPersonalSelecte
   const hover = (e: React.MouseEvent<HTMLDivElement>, enter: boolean, selected: boolean) => {
     if (!selected) e.currentTarget.style.background = enter ? 'var(--surface, rgba(128,128,128,0.04))' : 'transparent'
   }
-
-  const SortHeader = ({ col, children }: { col: SortKey; children: React.ReactNode }) => (
-    <span
-      onClick={() => toggleSort(col)}
-      style={{ cursor: 'pointer', userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}
-    >
-      {children}
-      <span style={{ fontSize: 9, opacity: sortBy === col ? 1 : 0.3 }}>
-        {sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '▲'}
-      </span>
-    </span>
-  )
 
   const renderRow = (m: ModelCatalogEntry, isPersonal: boolean, last: boolean) => {
     const selected = isRowSelected(m, isPersonal)
@@ -122,8 +109,6 @@ export default function ModelPickerTable({ models, selectedId, isPersonalSelecte
         onMouseLeave={e => hover(e, false, selected)}
       >
         <RadioDot selected={selected} />
-
-        {/* Name cell */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 500, fontSize: 13 }}>{m.display_name}</span>
@@ -144,16 +129,10 @@ export default function ModelPickerTable({ models, selectedId, isPersonalSelecte
             <span style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.35 }}>{m.description}</span>
           )}
         </div>
-
-        {/* Size cell: params + context stacked */}
         <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span>{m.parameter_size ?? (m.context_length ? '' : '—')}</span>
-          {m.context_length != null && (
-            <span style={{ fontSize: 11 }}>{(m.context_length / 1000).toFixed(0)}k ctx</span>
-          )}
+          {m.context_length != null && <span style={{ fontSize: 11 }}>{(m.context_length / 1000).toFixed(0)}k ctx</span>}
         </div>
-
-        {/* Cost cell */}
         <div style={{ fontSize: 11, display: 'flex', flexDirection: 'column', gap: 1 }}>
           {m.input_cost_usd_per_mtok != null ? (
             <>
@@ -172,83 +151,81 @@ export default function ModelPickerTable({ models, selectedId, isPersonalSelecte
   const totalRows = (noneLabel ? 1 : 0) + siteModels.length + personalModels.length
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <>
+      {/* Search — outside scroll so it stays pinned */}
       <input
         type="search"
         value={search}
         onChange={e => setSearch(e.target.value)}
         placeholder="Search models…"
         style={{
-          width: '100%', boxSizing: 'border-box', padding: '6px 10px',
+          width: '100%', boxSizing: 'border-box', padding: '6px 10px', marginBottom: 6,
           borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)',
           color: 'var(--text)', fontSize: 13,
         }}
       />
 
-      {!hasRows && search ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>No models match "{search}".</p>
-      ) : (
-        <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-          {/* Column header */}
-          <div style={{
-            display: 'grid', gridTemplateColumns: COLS, gap: 8,
-            padding: '5px 12px',
-            fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
-            color: 'var(--text-muted)',
-            background: 'var(--surface, rgba(128,128,128,0.04))',
-            borderBottom: '1px solid var(--border)',
-          }}>
-            <span />
-            <SortHeader col="display_name">Model</SortHeader>
-            <SortHeader col="parameter_size">Size</SortHeader>
-            <SortHeader col="input_cost_usd_per_mtok">Cost / Mtok</SortHeader>
-          </div>
-
-          {/* None / auto option */}
-          {noneLabel && (() => {
-            const selected = isNoneSelected
-            const last = totalRows === 1
-            return (
-              <div
-                onClick={() => onSelect(null, false)}
-                style={{ ...rowBase(selected), borderBottom: last ? 'none' : '1px solid var(--border)' }}
-                onMouseEnter={e => hover(e, true, selected)}
-                onMouseLeave={e => hover(e, false, selected)}
-              >
-                <RadioDot selected={selected} />
-                <span style={{ fontSize: 13, fontStyle: 'italic', color: selected ? 'var(--text)' : 'var(--text-muted)', gridColumn: '2 / -1' }}>
-                  {noneLabel}
-                </span>
-              </div>
-            )
-          })()}
-
-          {/* Site models */}
-          {siteModels.map((m, i) => {
-            const globalIdx = (noneLabel ? 1 : 0) + i
-            return renderRow(m, false, globalIdx === totalRows - 1)
-          })}
-
-          {/* Personal section */}
-          {personalModels.length > 0 && (
-            <>
-              <div style={{
-                padding: '5px 10px',
-                fontSize: 11, fontWeight: 600, letterSpacing: 0.2,
-                color: '#7c3aed',
-                background: 'rgba(124,58,237,0.06)',
-                borderTop: siteModels.length > 0 || noneLabel ? '1px solid var(--border)' : 'none',
-                borderBottom: '1px solid var(--border)',
-              }}>
-                Personal — your Venice key
-              </div>
-              {personalModels.map((m, i) =>
-                renderRow(m, true, i === personalModels.length - 1)
-              )}
-            </>
-          )}
+      {/* Scrollable model list */}
+      <div style={{ maxHeight: listMaxHeight, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+        {/* Column header — sticky inside scroll */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: COLS, gap: 8, padding: '5px 12px',
+          fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
+          color: 'var(--text-muted)', background: 'var(--surface, rgba(128,128,128,0.04))',
+          borderBottom: '1px solid var(--border)',
+          position: 'sticky', top: 0, zIndex: 1,
+        }}>
+          <span />
+          {sortHeader('display_name', 'Model')}
+          {sortHeader('parameter_size', 'Size')}
+          {sortHeader('input_cost_usd_per_mtok', 'Cost / Mtok')}
         </div>
-      )}
-    </div>
+
+        {!hasRows && (
+          <p style={{ margin: '10px 12px', fontSize: 13, color: 'var(--text-muted)' }}>
+            {search ? `No models match "${search}".` : 'No models available for this domain.'}
+          </p>
+        )}
+
+        {/* None / auto */}
+        {noneLabel && (() => {
+          const selected = isNoneSelected
+          const last = totalRows === 1
+          return (
+            <div
+              onClick={() => onSelect(null, false)}
+              style={{ ...rowBase(selected), borderBottom: last ? 'none' : '1px solid var(--border)', overflow: 'hidden' }}
+              onMouseEnter={e => hover(e, true, selected)}
+              onMouseLeave={e => hover(e, false, selected)}
+            >
+              <RadioDot selected={selected} />
+              <span style={{ fontSize: 13, fontStyle: 'italic', color: selected ? 'var(--text)' : 'var(--text-muted)', gridColumn: '2 / -1' }}>
+                {noneLabel}
+              </span>
+            </div>
+          )
+        })()}
+
+        {siteModels.map((m, i) => {
+          const globalIdx = (noneLabel ? 1 : 0) + i
+          return renderRow(m, false, globalIdx === totalRows - 1)
+        })}
+
+        {personalModels.length > 0 && (
+          <>
+            <div style={{
+              padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: 0.2,
+              color: '#7c3aed', background: 'rgba(124,58,237,0.06)',
+              borderTop: siteModels.length > 0 || noneLabel ? '1px solid var(--border)' : 'none',
+              borderBottom: '1px solid var(--border)',
+              position: 'sticky', top: 29, zIndex: 1,
+            }}>
+              Personal — your Venice key
+            </div>
+            {personalModels.map((m, i) => renderRow(m, true, i === personalModels.length - 1))}
+          </>
+        )}
+      </div>
+    </>
   )
 }
