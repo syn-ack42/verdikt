@@ -70,6 +70,7 @@ export interface Project {
   embedding_model: string | null
   llm_key_source: string | null
   embedding_key_source: string | null
+  judge_temperature: number | null
   created_at: string
   confidence?: number
   profile_confirmed_count?: number

@@ -53,6 +53,9 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
   const [embModel, setEmbModel] = useState(project.embedding_model ?? '')
   const [embKeySource, setEmbKeySource] = useState<string | null>(project.embedding_key_source ?? null)
   const [embChanged, setEmbChanged] = useState(false)
+  const [judgeTemp, setJudgeTemp] = useState<string>(
+    project.judge_temperature != null ? String(project.judge_temperature) : ''
+  )
 
   const isImage = project.domain === 'image'
 
@@ -120,6 +123,7 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
         embedding_model: embModel || undefined,
         llm_key_source: llmKeySource || undefined,
         embedding_key_source: embKeySource || undefined,
+        ...(judgeTemp === '' ? { clear_judge_temperature: true } : { judge_temperature: parseFloat(judgeTemp) }),
         ...(Object.keys(renames).length > 0 ? { dimension_renames: renames } : {}),
       })
     },
@@ -278,6 +282,34 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
                 )}
               </div>
             )}
+
+            {/* Advanced */}
+            <details style={{ marginBottom: 20 }}>
+              <summary style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                Advanced
+              </summary>
+              <div style={{ marginTop: 14 }}>
+                <label style={labelStyle}>AI scoring temperature</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input
+                    type="number" min={0} max={2} step={0.05}
+                    value={judgeTemp}
+                    placeholder="default (0.2)"
+                    onChange={e => setJudgeTemp(e.target.value)}
+                    style={{ ...inputStyle, width: 120 }}
+                  />
+                  {judgeTemp !== '' && (
+                    <button type="button" onClick={() => setJudgeTemp('')}
+                      style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                      reset to default
+                    </button>
+                  )}
+                </div>
+                <p style={{ margin: '5px 0 0', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                  Controls how decisive the AI scorer is (0 = deterministic, 1 = creative). Lower values follow the scoring rubric more strictly and reduce score inflation. Leave blank to use the server default.
+                </p>
+              </div>
+            </details>
 
             {/* Dimensions */}
             <div style={{ marginBottom: 8 }}>

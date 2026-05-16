@@ -49,6 +49,7 @@ class ProjectCreate(BaseModel):
     min_profile_confidence: float = 0.9
     llm_model: str | None = None
     embedding_model: str | None = None
+    judge_temperature: float | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -63,6 +64,8 @@ class ProjectUpdate(BaseModel):
     embedding_model: str | None = None
     llm_key_source: str | None = None
     embedding_key_source: str | None = None
+    judge_temperature: float | None = None
+    clear_judge_temperature: bool = False  # explicitly clear to None (use global default)
     dimension_renames: dict[str, str] | None = None  # old_name -> new_name
 
 
@@ -81,6 +84,7 @@ def _project_response(p: Project) -> dict:
         "embedding_model": p.embedding_model,
         "llm_key_source": getattr(p, "llm_key_source", None),
         "embedding_key_source": getattr(p, "embedding_key_source", None),
+        "judge_temperature": getattr(p, "judge_temperature", None),
         "created_at": p.created_at.isoformat(),
     }
 
@@ -112,6 +116,7 @@ def create_project(
         min_profile_confidence=body.min_profile_confidence,
         llm_model=body.llm_model,
         embedding_model=body.embedding_model,
+        judge_temperature=body.judge_temperature,
     )
     SQLiteProjectStore(session).create(proj)
     session.commit()
@@ -181,6 +186,10 @@ def update_project(
         values["llm_key_source"] = body.llm_key_source or None
     if "embedding_key_source" in body.model_fields_set:
         values["embedding_key_source"] = body.embedding_key_source or None
+    if body.clear_judge_temperature:
+        values["judge_temperature"] = None
+    elif body.judge_temperature is not None:
+        values["judge_temperature"] = max(0.0, min(2.0, body.judge_temperature))
     if body.embedding_model is not None:
         # Reject change if material has already been embedded — vectors would be incompatible
         from verdikt.core.models import PipelinePhase

@@ -57,6 +57,7 @@ class SQLiteProjectStore(ProjectStore):
             embedding_model=p.embedding_model,
             llm_key_source=p.llm_key_source,
             embedding_key_source=p.embedding_key_source,
+            judge_temperature=p.judge_temperature,
             created_at=p.created_at,
         )
 
@@ -76,6 +77,7 @@ class SQLiteProjectStore(ProjectStore):
             embedding_model=getattr(r, 'embedding_model', None),
             llm_key_source=getattr(r, 'llm_key_source', None),
             embedding_key_source=getattr(r, 'embedding_key_source', None),
+            judge_temperature=getattr(r, 'judge_temperature', None),
             created_at=r.created_at,
         )
 
