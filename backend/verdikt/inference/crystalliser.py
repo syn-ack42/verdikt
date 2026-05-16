@@ -61,8 +61,9 @@ class ProfileCrystalliser:
                     continue
                 if isinstance(chunk.content, str):
                     label = chunk.content
+                elif chunk.description:
+                    label = f"[image #{chunk.position + 1}: {chunk.description}]"
                 else:
-                    # Image chunk — use position as identifier; no text to show
                     label = f"[image #{chunk.position + 1}]"
                 scored.append((score, label))
 
@@ -79,22 +80,42 @@ class ProfileCrystalliser:
             scored.sort(key=lambda x: x[0])
             bottom = scored[:_TOP_N]
             top = scored[-_TOP_N:]
+            score_range = scored[-1][0] - scored[0][0]
 
-            examples_text = "High-scoring examples (user enjoyed):\n"
+            is_image = any(label.startswith("[image") for _, label in scored)
+            domain_hint = "images" if is_image else "text passages"
+
+            examples_text = f"Highest-rated examples (scores {top[0][0]:.1f}–{top[-1][0]:.1f}):\n"
             for score, content in reversed(top):
-                examples_text += f"  [score {score:.1f}] {_truncate(content, _MAX_WORDS_PER_EXAMPLE)}\n\n"
-            examples_text += "Low-scoring examples (user disliked):\n"
+                examples_text += f"  [{score:.1f}] {_truncate(content, _MAX_WORDS_PER_EXAMPLE)}\n\n"
+            examples_text += f"Lowest-rated examples (scores {bottom[0][0]:.1f}–{bottom[-1][0]:.1f}):\n"
             for score, content in bottom:
-                examples_text += f"  [score {score:.1f}] {_truncate(content, _MAX_WORDS_PER_EXAMPLE)}\n\n"
+                examples_text += f"  [{score:.1f}] {_truncate(content, _MAX_WORDS_PER_EXAMPLE)}\n\n"
 
-            domain_hint = "content" if any(
-                label.startswith("[image") for _, label in scored
-            ) else "text"
+            if score_range < 1.0:
+                # Low variance: scores are clustered, no strong contrast to exploit
+                contrast_instruction = (
+                    f"Note: the scores are tightly clustered ({scored[0][0]:.1f}–{scored[-1][0]:.1f}), "
+                    f"so there is little contrast between 'high' and 'low' here. "
+                    f"Instead, describe the common properties shared across all examples that explain "
+                    f"why this dimension scores {'consistently high' if typical_score >= 3.0 else 'consistently low'}."
+                )
+            else:
+                contrast_instruction = (
+                    "Compare the highest-rated and lowest-rated examples. "
+                    "Identify the specific, concrete properties that are present in the high-scoring "
+                    "examples but absent or reversed in the low-scoring ones."
+                )
+
             prompt = (
-                f"You are analysing a user's preferences for the dimension '{dim.name}': {dim.description}.\n\n"
+                f"A user has rated {domain_hint} on the dimension '{dim.name}': {dim.description}.\n\n"
                 f"{examples_text}"
-                f"Based on these ratings, write a concise preference summary (2-4 sentences) describing what this user "
-                f"likes and dislikes about '{dim.name}' in {domain_hint}. Be specific and concrete. "
+                f"{contrast_instruction}\n\n"
+                f"Write 2–4 sentences that describe the specific properties of {domain_hint} that drive "
+                f"a high vs low score on '{dim.name}' for this user. "
+                f"Be concrete: name the actual visual qualities, subjects, styles, techniques, or content "
+                f"characteristics you observe — not just that the user 'prefers high-scoring' examples, "
+                f"which would be a tautology. "
                 f'Respond with a JSON object: {{"summary": "<your summary here>"}}'
             )
 
@@ -118,12 +139,15 @@ class ProfileCrystalliser:
             ))
 
         overall_prompt = (
-            f"You are summarising a user's overall content preferences across {len(dimensions)} dimensions.\n\n"
+            f"A user's preferences have been analysed across {len(dimensions)} dimensions:\n\n"
             + "\n".join(
-                f"- {d.name} (avg {d.typical_score:.1f}/5): {d.summary}"
+                f"- {d.name} (avg score {d.typical_score:.1f}/5): {d.summary}"
                 for d in dimensions
             )
-            + "\n\nWrite a 3-5 sentence overall preference summary. "
+            + "\n\nWrite a 3–5 sentence synthesis of this user's overall preferences. "
+            "Focus on the concrete visual or content qualities that characterise what they enjoy — "
+            "drawing out patterns that cut across multiple dimensions where they exist. "
+            "Avoid restating each dimension in turn; synthesise into a coherent picture of their taste. "
             'Respond with a JSON object: {"summary": "<your summary here>"}'
         )
         overall_raw, opt, oct = self._call_llm(overall_prompt)
