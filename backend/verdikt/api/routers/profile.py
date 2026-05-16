@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from verdikt.api.deps import get_auth_engine, get_auth_session, get_config, get_current_user, get_session
+from verdikt.api.deps import get_auth_engine, get_auth_session, get_config, get_current_user, get_session, get_user_engine
 from verdikt.api.token_budget import check_token_budget, record_usage
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.core.models import DimensionProfile, PreferenceProfile
@@ -195,14 +195,20 @@ async def crystallise_stream(
     target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
     crystalliser = ProfileCrystalliser(target)
 
+    _user = user
     _user_id = user.id
     _project_id = project_id
     _target = target
+
+    _crystallise_status[_project_id] = {"running": True, "tokens_prompt": 0, "tokens_completion": 0}
 
     async def event_stream() -> AsyncGenerator[str, None]:
         queue: asyncio.Queue = asyncio.Queue()
 
         def on_tokens(p: int, c: int) -> None:
+            if _project_id in _crystallise_status:
+                _crystallise_status[_project_id]["tokens_prompt"] = p
+                _crystallise_status[_project_id]["tokens_completion"] = c
             queue.put_nowait({"type": "progress", "prompt": p, "completion": c})
 
         def run() -> None:
@@ -218,12 +224,32 @@ async def crystallise_stream(
                 )
                 log.info("crystallise stream: done for project %s version=%d tokens=%d+%d",
                          _project_id, profile.version, pt, ct)
+
+                # Save in the thread — the event_stream generator may be cancelled if
+                # the client disconnected before we finish, so we cannot rely on saving
+                # from the async generator.
+                try:
+                    from sqlalchemy.orm import Session as _Session
+                    engine = get_user_engine(_user)
+                    with _Session(engine) as db_session:
+                        SQLiteProfileStore(db_session).save(profile)
+                        db_session.commit()
+                    log.info("crystallise stream: profile v%d committed to DB (project=%s id=%s)",
+                             profile.version, _project_id, profile.id)
+                except Exception:
+                    log.exception("crystallise stream: failed to persist profile for project %s", _project_id)
+
+                try:
+                    with Session(get_auth_engine()) as auth_sess:
+                        record_usage(_user_id, _project_id, _target.model, "crystallise", pt, ct, auth_sess)
+                except Exception:
+                    log.warning("crystallise stream: failed to record token usage for project %s", _project_id)
+
                 queue.put_nowait({
                     "type": "done",
                     "profile": _profile_response(profile),
                     "prompt_tokens": pt,
                     "completion_tokens": ct,
-                    "_profile_obj": profile,
                 })
             except Exception as exc:
                 import httpx as _httpx
@@ -238,29 +264,14 @@ async def crystallise_stream(
                     msg = str(exc) or "Crystallisation failed"
                     log.exception("crystallise stream: unexpected error for project %s", _project_id)
                 queue.put_nowait({"type": "error", "message": msg})
+            finally:
+                _crystallise_status.pop(_project_id, None)
 
         thread = threading.Thread(target=run, daemon=True, name=f"crystallise-{_project_id}")
         thread.start()
 
         while True:
             item = await queue.get()
-            profile_obj = item.pop("_profile_obj", None)
-            if item["type"] == "done":
-                # Persist BEFORE yielding so the profile is in the DB by the time
-                # the client receives the done event and refetches.
-                if profile_obj is not None:
-                    try:
-                        profile_store.save(profile_obj)
-                        session.commit()
-                    except Exception:
-                        log.exception("crystallise stream: failed to persist profile for project %s", _project_id)
-                try:
-                    from sqlalchemy.orm import Session as _Session
-                    with _Session(get_auth_engine()) as auth_sess:
-                        record_usage(_user_id, _project_id, _target.model, "crystallise",
-                                     item["prompt_tokens"], item["completion_tokens"], auth_sess)
-                except Exception:
-                    log.warning("crystallise stream: failed to record token usage for project %s", _project_id)
             yield f"data: {json.dumps(item)}\n\n"
             if item["type"] in ("done", "error"):
                 break

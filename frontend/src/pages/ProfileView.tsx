@@ -102,7 +102,9 @@ export default function ProfileView() {
           setStreamTokens({ prompt: ev.prompt ?? 0, completion: ev.completion ?? 0 })
         } else if (ev.type === 'done' && ev.profile) {
           qc.setQueryData(['profile', projectId], ev.profile)
+          qc.invalidateQueries({ queryKey: ['profile', projectId] })
           qc.invalidateQueries({ queryKey: ['profile-versions', projectId] })
+          qc.invalidateQueries({ queryKey: ['projects', projectId] })
           setEditedDims(null)
           setEditedSummary(null)
           setDirty(false)
