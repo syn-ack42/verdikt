@@ -82,9 +82,9 @@ def list_enabled_models(
         q = q.filter(ModelCatalogRow.type == type)
     if domain is not None:
         q = q.filter(ModelCatalogRow.domain.in_([domain, "any"]))
-    rows = q.order_by(ModelCatalogRow.type, ModelCatalogRow.id).all()
+    site_rows = q.order_by(ModelCatalogRow.type, ModelCatalogRow.id).all()
 
-    personal_venice_ids: set[str] = set()
+    personal_rows: list[ModelCatalogRow] = []
     if include_personal_venice:
         from verdikt.storage.auth_orm import UserRow
         user_row = session.get(UserRow, user.id)
@@ -94,11 +94,9 @@ def list_enabled_models(
                 personal_q = personal_q.filter(ModelCatalogRow.type == type)
             if domain is not None:
                 personal_q = personal_q.filter(ModelCatalogRow.domain.in_([domain, "any"]))
-            for r in personal_q.all():
-                rows.append(r)
-                personal_venice_ids.add(r.id)
+            personal_rows = personal_q.order_by(ModelCatalogRow.type, ModelCatalogRow.id).all()
 
-    def _row(r: ModelCatalogRow) -> dict:
+    def _row(r: ModelCatalogRow, personal: bool = False) -> dict:
         d = {
             "id": r.id,
             "type": r.type,
@@ -115,8 +113,8 @@ def list_enabled_models(
             "privacy": r.privacy,
             "enabled": r.enabled,
         }
-        if r.id in personal_venice_ids:
+        if personal:
             d["personal_only"] = True
         return d
 
-    return [_row(r) for r in rows]
+    return [_row(r, personal=False) for r in site_rows] + [_row(r, personal=True) for r in personal_rows]

@@ -166,15 +166,14 @@ export default function ModelPickerTable({
         }}
       />
 
-      {/* Scrollable model list */}
-      <div style={{ maxHeight: listMaxHeight, overflowY: 'auto', overflowX: 'hidden', border: '1px solid var(--border)', borderRadius: 6 }}>
-        {/* Column header — sticky inside scroll */}
+      {/* Border wrapper — column header outside scroll so it never disappears */}
+      <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+        {/* Column header */}
         <div style={{
           display: 'grid', gridTemplateColumns: COLS, gap: 8, padding: '5px 12px',
           fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
           color: 'var(--text-muted)', background: 'var(--surface, rgba(128,128,128,0.04))',
           borderBottom: '1px solid var(--border)',
-          position: 'sticky', top: 0, zIndex: 1,
         }}>
           <span />
           {sortHeader('display_name', 'Model')}
@@ -182,61 +181,62 @@ export default function ModelPickerTable({
           {sortHeader('input_cost_usd_per_mtok', 'Cost / Mtok')}
         </div>
 
-        {!hasRows && (
-          <p style={{ margin: '10px 12px', fontSize: 13, color: 'var(--text-muted)' }}>
-            {search ? `No models match "${search}".` : 'No models available for this domain.'}
-          </p>
-        )}
+        {/* Scrollable rows */}
+        <div style={{ maxHeight: listMaxHeight, overflowY: 'auto' }}>
+          {!hasRows && (
+            <p style={{ margin: '10px 12px', fontSize: 13, color: 'var(--text-muted)' }}>
+              {search ? `No models match "${search}".` : 'No models available for this domain.'}
+            </p>
+          )}
 
-        {/* None / auto */}
-        {noneLabel && (() => {
-          const selected = isNoneSelected
-          const last = totalRows === 1
-          return (
-            <div
-              onClick={() => onSelect(null, false)}
-              style={{ ...rowBase(selected), borderBottom: last ? 'none' : '1px solid var(--border)', overflow: 'hidden' }}
-              onMouseEnter={e => hover(e, true, selected)}
-              onMouseLeave={e => hover(e, false, selected)}
-            >
-              <RadioDot selected={selected} />
-              <span style={{ fontSize: 13, fontStyle: 'italic', color: selected ? 'var(--text)' : 'var(--text-muted)', gridColumn: '2 / -1' }}>
-                {noneLabel}
-              </span>
-            </div>
-          )
-        })()}
+          {/* None / auto */}
+          {noneLabel && (() => {
+            const selected = isNoneSelected
+            const last = totalRows === 1
+            return (
+              <div
+                onClick={() => onSelect(null, false)}
+                style={{ ...rowBase(selected), borderBottom: last ? 'none' : '1px solid var(--border)' }}
+                onMouseEnter={e => hover(e, true, selected)}
+                onMouseLeave={e => hover(e, false, selected)}
+              >
+                <RadioDot selected={selected} />
+                <span style={{ fontSize: 13, fontStyle: 'italic', color: selected ? 'var(--text)' : 'var(--text-muted)', gridColumn: '2 / -1' }}>
+                  {noneLabel}
+                </span>
+              </div>
+            )
+          })()}
 
-        {siteModels.length > 0 && personalModels.length > 0 && (
-          <div style={{
-            padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: 0.2,
-            color: 'var(--text-muted)', background: 'var(--surface, rgba(128,128,128,0.04))',
-            borderBottom: '1px solid var(--border)',
-            position: 'sticky', top: 29, zIndex: 1,
-          }}>
-            Site pool — admin managed
-          </div>
-        )}
-
-        {siteModels.map((m, i) => {
-          const globalIdx = (noneLabel ? 1 : 0) + i
-          return renderRow(m, false, globalIdx === totalRows - 1)
-        })}
-
-        {personalModels.length > 0 && (
-          <>
+          {siteModels.length > 0 && personalModels.length > 0 && (
             <div style={{
               padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: 0.2,
-              color: '#7c3aed', background: 'rgba(124,58,237,0.06)',
-              borderTop: siteModels.length > 0 || noneLabel ? '1px solid var(--border)' : 'none',
+              color: 'var(--text-muted)', background: 'var(--surface, rgba(128,128,128,0.04))',
               borderBottom: '1px solid var(--border)',
-              position: 'sticky', top: 29, zIndex: 1,
             }}>
-              Personal key — your Venice account
+              Site pool — admin managed
             </div>
-            {personalModels.map((m, i) => renderRow(m, true, i === personalModels.length - 1))}
-          </>
-        )}
+          )}
+
+          {siteModels.map((m, i) => {
+            const globalIdx = (noneLabel ? 1 : 0) + i
+            return renderRow(m, false, globalIdx === totalRows - 1)
+          })}
+
+          {personalModels.length > 0 && (
+            <>
+              <div style={{
+                padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: 0.2,
+                color: '#7c3aed', background: 'rgba(124,58,237,0.06)',
+                borderTop: siteModels.length > 0 || noneLabel ? '1px solid var(--border)' : 'none',
+                borderBottom: '1px solid var(--border)',
+              }}>
+                Personal key — your Venice account
+              </div>
+              {personalModels.map((m, i) => renderRow(m, true, i === personalModels.length - 1))}
+            </>
+          )}
+        </div>
       </div>
     </>
   )
