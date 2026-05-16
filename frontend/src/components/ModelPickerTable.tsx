@@ -166,7 +166,7 @@ export default function ModelPickerTable({
       />
 
       {/* Scrollable model list */}
-      <div style={{ maxHeight: listMaxHeight, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+      <div style={{ maxHeight: listMaxHeight, overflowY: 'auto', overflowX: 'hidden', border: '1px solid var(--border)', borderRadius: 6 }}>
         {/* Column header — sticky inside scroll */}
         <div style={{
           display: 'grid', gridTemplateColumns: COLS, gap: 8, padding: '5px 12px',
