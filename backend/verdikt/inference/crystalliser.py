@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 
 import httpx
+
+log = logging.getLogger(__name__)
 
 from verdikt.core.models import Chunk, DimensionProfile, PreferenceProfile, Project, Rating
 from verdikt.inference.resolver import LLMTarget
@@ -40,6 +43,10 @@ class ProfileCrystalliser:
         dimensions: list[DimensionProfile] = []
         total_prompt = 0
         total_completion = 0
+
+        log.info("crystalliser: project=%s dims=%d ratings=%d provider=%s model=%s",
+                 project.id, len(project.rating_dimensions), len(ratings),
+                 self._target.provider, self._target.model)
 
         for dim in project.rating_dimensions:
             scored: list[tuple[float, str]] = []
@@ -91,6 +98,7 @@ class ProfileCrystalliser:
                 f'Respond with a JSON object: {{"summary": "<your summary here>"}}'
             )
 
+            log.debug("crystalliser: calling LLM for dim '%s' (project=%s)", dim.name, project.id)
             raw, pt, ct = self._call_llm(prompt)
             total_prompt += pt
             total_completion += ct

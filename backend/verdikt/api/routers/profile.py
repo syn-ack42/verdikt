@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import threading
 from datetime import datetime, timezone
 from typing import Annotated, AsyncGenerator
 from uuid import uuid4
+
+log = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -118,6 +121,8 @@ def crystallise_profile(
     target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
     crystalliser = ProfileCrystalliser(target)
     _crystallise_status[project_id] = {"running": True, "tokens_prompt": 0, "tokens_completion": 0}
+    log.info("crystallise: starting for project %s (user=%s, model=%s, ratings=%d)",
+             project_id, user.id, target.model, len(non_skipped))
 
     def _on_tokens(p: int, c: int) -> None:
         if project_id in _crystallise_status:
@@ -135,16 +140,22 @@ def crystallise_profile(
     except Exception as exc:
         import httpx as _httpx
         if isinstance(exc, _httpx.ConnectError):
+            log.warning("crystallise: cannot reach LLM at %s (project=%s)", target.base_url, project_id)
             raise HTTPException(
                 status_code=503,
                 detail=f"Cannot reach LLM at {target.base_url}. Is it running?",
             )
         if isinstance(exc, _httpx.HTTPStatusError):
+            log.warning("crystallise: LLM returned %s for project %s: %s",
+                        exc.response.status_code, project_id, exc.response.text[:200])
             raise HTTPException(status_code=502, detail=f"LLM error: {exc.response.text[:200]}")
+        log.exception("crystallise: unexpected error for project %s", project_id)
         raise HTTPException(status_code=500, detail=f"Crystallisation failed: {exc}")
     finally:
         _crystallise_status.pop(project_id, None)
 
+    log.info("crystallise: done for project %s version=%d tokens=%d+%d",
+             project_id, profile.version, prompt_tokens, completion_tokens)
     record_usage(user.id, project_id, target.model, "crystallise", prompt_tokens, completion_tokens, auth_session)
     profile_store.save(profile)
     session.commit()
@@ -195,6 +206,8 @@ async def crystallise_stream(
             queue.put_nowait({"type": "progress", "prompt": p, "completion": c})
 
         def run() -> None:
+            log.info("crystallise stream: starting for project %s (user=%s, model=%s, ratings=%d)",
+                     _project_id, _user_id, _target.model, len(non_skipped))
             try:
                 profile, pt, ct = crystalliser.crystallise(
                     project=proj,
@@ -203,6 +216,8 @@ async def crystallise_stream(
                     current_version=current_version,
                     on_tokens=on_tokens,
                 )
+                log.info("crystallise stream: done for project %s version=%d tokens=%d+%d",
+                         _project_id, profile.version, pt, ct)
                 queue.put_nowait({
                     "type": "done",
                     "profile": _profile_response(profile),
@@ -214,10 +229,14 @@ async def crystallise_stream(
                 import httpx as _httpx
                 if isinstance(exc, _httpx.ConnectError):
                     msg = f"Cannot reach LLM at {_target.base_url}. Is it running?"
+                    log.warning("crystallise stream: cannot reach LLM at %s (project=%s)", _target.base_url, _project_id)
                 elif isinstance(exc, _httpx.HTTPStatusError):
                     msg = f"LLM error: {exc.response.text[:200]}"
+                    log.warning("crystallise stream: LLM returned %s for project %s: %s",
+                                exc.response.status_code, _project_id, exc.response.text[:200])
                 else:
                     msg = str(exc) or "Crystallisation failed"
+                    log.exception("crystallise stream: unexpected error for project %s", _project_id)
                 queue.put_nowait({"type": "error", "message": msg})
 
         thread = threading.Thread(target=run, daemon=True, name=f"crystallise-{_project_id}")
@@ -234,14 +253,14 @@ async def crystallise_stream(
                         profile_store.save(profile_obj)
                         session.commit()
                     except Exception:
-                        pass
+                        log.exception("crystallise stream: failed to persist profile for project %s", _project_id)
                 try:
                     from sqlalchemy.orm import Session as _Session
                     with _Session(get_auth_engine()) as auth_sess:
                         record_usage(_user_id, _project_id, _target.model, "crystallise",
                                      item["prompt_tokens"], item["completion_tokens"], auth_sess)
                 except Exception:
-                    pass
+                    log.warning("crystallise stream: failed to record token usage for project %s", _project_id)
                 break
             if item["type"] == "error":
                 break
