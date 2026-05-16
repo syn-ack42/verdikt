@@ -30,6 +30,11 @@ services:
     environment:
       # --- Required for Docker: set these in backend/.env -------------------
 
+      # ⚠ VERDIKT_APP_BASE_URL — public URL users reach the app on.
+      #   Used in confirmation emails and OAuth redirects.
+      #   Example: https://verdikt.example.com
+      # (set in backend/.env)
+
       # ⚠ VERDIKT_JWT_SECRET — set a stable secret or sessions reset on every
       #   container restart. Generate with: openssl rand -hex 32
       # (set in backend/.env)

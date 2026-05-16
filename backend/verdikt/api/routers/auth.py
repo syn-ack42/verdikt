@@ -178,7 +178,7 @@ def _send_confirmation_email(user: UserRow, session: Session) -> None:
     session.commit()
 
     config = get_config()
-    confirm_url = f"{config.oauth_redirect_base}/confirm-email?token={token}"
+    confirm_url = f"{config.app_base_url}/confirm-email?token={token}"
     send_email(
         session,
         to=user.email,

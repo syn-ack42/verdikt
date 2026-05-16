@@ -42,12 +42,18 @@ class AppConfig(BaseSettings):
     # Background AI preview in rating screen (env: VERDIKT_AI_PREVIEW_TEXT, VERDIKT_AI_PREVIEW_IMAGE)
     ai_preview_text: bool = Field(default=True)
     ai_preview_image: bool = Field(default=False)
+    # Public base URL of the app — used in email links, OAuth redirects, etc.
+    # Set to the URL users type in their browser, e.g. https://verdikt.example.com
+    # (env: VERDIKT_APP_BASE_URL)
+    app_base_url: Optional[str] = Field(default=None)
     # OAuth providers (env: VERDIKT_GOOGLE_CLIENT_ID, VERDIKT_GITHUB_CLIENT_ID, etc.)
     google_client_id: Optional[str] = Field(default=None)
     google_client_secret: Optional[str] = Field(default=None)
     github_client_id: Optional[str] = Field(default=None)
     github_client_secret: Optional[str] = Field(default=None)
-    oauth_redirect_base: str = Field(default="http://localhost:8765")             # populated from data_dir/jwt_secret if not set via env
+    # OAuth redirect base — defaults to app_base_url; override only if OAuth callbacks
+    # use a different URL than the main app (unusual)
+    oauth_redirect_base: Optional[str] = Field(default=None)
 
     @model_validator(mode="after")
     def _apply_defaults(self) -> AppConfig:
@@ -55,6 +61,11 @@ class AppConfig(BaseSettings):
             object.__setattr__(self, "users_dir", self.data_dir / "users")
         if not self.jwt_secret:
             object.__setattr__(self, "jwt_secret", self._read_or_generate_jwt())
+        # oauth_redirect_base falls back to app_base_url, then to localhost default
+        if not self.oauth_redirect_base:
+            object.__setattr__(self, "oauth_redirect_base", self.app_base_url or "http://localhost:8765")
+        if not self.app_base_url:
+            object.__setattr__(self, "app_base_url", self.oauth_redirect_base)
         return self
 
     def _read_or_generate_jwt(self) -> str:
