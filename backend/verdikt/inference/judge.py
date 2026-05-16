@@ -46,34 +46,36 @@ class LLMJudge:
             f"- {d.name}: {d.summary} (typical score: {d.typical_score:.1f}/5)"
             for d in profile.dimensions
         )
-        dim_keys = ", ".join(f'"{d.name}"' for d in profile.dimensions)
-
         is_image = isinstance(chunk_content, bytes)
         content_label = "image" if is_image else "passage"
         description_hint = (
-            "1-2 sentence neutral description of what the image shows (subject, mood, composition) — no evaluation"
+            "1-2 sentence neutral factual description of what the image shows (subject, setting, mood, composition) — no evaluative language"
             if is_image else
-            "1-2 sentence neutral description of what the passage covers (topic, scene, voice) — no evaluation"
+            "1-2 sentence neutral factual description of what the passage is about (topic, scene, content type, narrative voice) — no evaluative language"
         )
+
+        # Build an explicit per-dimension schema so the model knows exactly what keys to emit
+        dim_schema = ",\n".join(
+            f'  "{d.name}": {{"score": <int 1-5>, "explanation": "<one sentence why>"}}'
+            for d in profile.dimensions
+        )
+        response_schema = f'{{\n{dim_schema},\n  "description": "<{description_hint}>"\n}}'
 
         if is_image:
             prompt = (
                 f"You are evaluating an {content_label} for a person with specific preferences.\n\n"
                 f"Preferences:\n{profile.overall_summary}\n\n"
                 f"Dimension preferences:\n{dim_lines}\n\n"
-                f"Respond with a JSON object only (no prose, no markdown):\n"
-                f"{{{dim_keys}: {{\"score\": <int 1-5>, \"explanation\": \"<one sentence>\"}}, "
-                f"..., \"description\": \"<{description_hint}>\"}}"
+                f"Evaluate the attached image.\n\n"
+                f"Respond with a JSON object only (no prose, no markdown):\n{response_schema}"
             )
         else:
             prompt = (
                 f"You are evaluating a {content_label} for a person with specific preferences.\n\n"
                 f"Preferences:\n{profile.overall_summary}\n\n"
                 f"Dimension preferences:\n{dim_lines}\n\n"
-                f"{content_label.capitalize()} to evaluate:\n{_truncate(chunk_content)}\n\n"
-                f"Respond with a JSON object only (no prose, no markdown):\n"
-                f"{{{dim_keys}: {{\"score\": <int 1-5>, \"explanation\": \"<one sentence>\"}}, "
-                f"..., \"description\": \"<{description_hint}>\"}}"
+                f"Passage to evaluate:\n{_truncate(chunk_content)}\n\n"
+                f"Respond with a JSON object only (no prose, no markdown):\n{response_schema}"
             )
 
         image_b64 = base64.b64encode(chunk_content).decode() if is_image else None

@@ -95,8 +95,11 @@ class DimensionDiscoverer:
             f"A user {label} this {medium}.{reason_block}"
             f"{content_block}\n\n"
             f"Describe the 2–3 most characteristic qualities of this {medium} that likely "
-            f"drove the user's reaction. Focus on aesthetic, structural, and tonal qualities — "
-            f"not plot summary or content description. Be specific and concrete.\n"
+            f"drove the user's reaction. Consider all relevant dimensions: aesthetic and visual "
+            f"qualities (style, composition, tone, mood), structural qualities (pacing, structure, "
+            f"density), and the type of content or subject matter itself (e.g. action, intimacy, "
+            f"technical detail, humour, a particular subject or setting) — any of these can be a "
+            f"genuine driver of preference. Be specific and concrete.\n"
             f'Respond with JSON only: {{"qualities": "<your 2-3 sentence description>"}}'
         )
 
@@ -156,7 +159,7 @@ class DimensionDiscoverer:
             f"Respond with JSON only:\n"
             f'{{"proposed_dimensions": [{{"name":"...","description":"...","weight":1.0,"is_new":true,"existing_name":null}}], '
             f'"irrelevant_existing": [], '
-            f'"analysis_notes": "optional 1-2 sentence observation"}}'
+            f'"analysis_notes": null}}'
         )
 
         try:
