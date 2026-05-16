@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 
 export default function AccountSettings() {
@@ -48,6 +48,11 @@ export default function AccountSettings() {
       setClearState('error')
     }
   }
+
+  const syncCatalog = useMutation({
+    mutationFn: () => api.auth.syncVeniceModels(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['models'] }),
+  })
 
   const configured = keyStatus?.configured ?? false
 
@@ -134,6 +139,36 @@ export default function AccountSettings() {
             )}
           </div>
         </form>
+
+        {configured && (
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>Sync Venice catalog</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Fetch the full Venice model list using your personal key so it appears in the model picker.
+                </div>
+              </div>
+              <button
+                onClick={() => syncCatalog.mutate()}
+                disabled={syncCatalog.isPending}
+                style={{
+                  padding: '7px 14px', borderRadius: 4, fontSize: 13,
+                  border: '1px solid var(--border)', background: 'none',
+                  color: 'var(--text)', cursor: syncCatalog.isPending ? 'default' : 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                {syncCatalog.isPending ? 'Syncing…' : syncCatalog.isSuccess ? '✓ Synced' : '↻ Sync catalog'}
+              </button>
+            </div>
+            {syncCatalog.isError && (
+              <p style={{ fontSize: 12, color: '#c00', margin: '8px 0 0' }}>
+                {String(syncCatalog.error)}
+              </p>
+            )}
+          </div>
+        )}
       </section>
     </div>
   )

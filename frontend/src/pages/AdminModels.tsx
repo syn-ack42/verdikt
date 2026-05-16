@@ -58,6 +58,13 @@ export default function AdminModels() {
     },
   })
 
+  const clearVeniceKey = useMutation({
+    mutationFn: () => api.admin.deleteVeniceKey(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['venice-status'] })
+    },
+  })
+
   const syncVenice = useMutation({
     mutationFn: () => api.admin.syncVeniceModels(),
     onSuccess: () => {
@@ -187,10 +194,19 @@ export default function AdminModels() {
           >
             {saveVeniceKey.isPending ? 'Saving…' : 'Save key'}
           </button>
+          {veniceStatus?.configured && (
+            <button
+              onClick={() => clearVeniceKey.mutate()}
+              disabled={clearVeniceKey.isPending}
+              style={{ padding: '6px 14px', borderRadius: 4, fontSize: 12, border: '1px solid rgba(192,0,0,0.3)', background: 'none', color: '#c00', cursor: 'pointer' }}
+            >
+              {clearVeniceKey.isPending ? 'Clearing…' : 'Clear key'}
+            </button>
+          )}
         </div>
-        {(syncVenice.isError || saveVeniceKey.isError) && (
+        {(syncVenice.isError || saveVeniceKey.isError || clearVeniceKey.isError) && (
           <p style={{ color: '#c00', fontSize: 12, margin: '8px 0 0' }}>
-            {String(syncVenice.error || saveVeniceKey.error)}
+            {String(syncVenice.error || saveVeniceKey.error || clearVeniceKey.error)}
           </p>
         )}
       </div>

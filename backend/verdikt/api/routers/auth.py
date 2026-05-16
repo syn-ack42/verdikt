@@ -394,6 +394,20 @@ def venice_key_status(
     return {"configured": configured}
 
 
+@router.post("/me/venice-key/sync-models")
+def sync_venice_models_personal(
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    """Sync Venice model catalog using the current user's personal Venice API key."""
+    from verdikt.api.routers.admin import _sync_venice_catalog
+    from verdikt.inference.resolver import _get_user_venice_key
+    api_key = _get_user_venice_key(user.id, session)
+    if not api_key:
+        raise HTTPException(status_code=422, detail="No personal Venice API key configured.")
+    _sync_venice_catalog(api_key, session)
+    return {"ok": True}
+
 
 # ── OAuth ─────────────────────────────────────────────────────────────────────
 

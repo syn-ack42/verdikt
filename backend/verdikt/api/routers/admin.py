@@ -510,6 +510,18 @@ def set_venice_key(
     return {"ok": True}
 
 
+@router.delete("/venice/key")
+def delete_venice_key(
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    row = session.get(SiteSettingsRow, "venice.api_key")
+    if row is not None:
+        session.delete(row)
+        session.commit()
+    return {"ok": True}
+
+
 @router.get("/venice/status")
 def get_venice_status(
     _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
@@ -521,21 +533,14 @@ def get_venice_status(
     return {"configured": configured, "model_count": count}
 
 
-@router.post("/models/sync-venice")
-def sync_venice_models(
-    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
-    session: Annotated[Session, Depends(get_auth_session)],
-) -> list[dict]:
+def _sync_venice_catalog(api_key: str, session) -> None:
+    """Fetch the Venice model list and upsert into the local catalog. Shared by admin and personal-key sync."""
     import httpx as _httpx
-
-    row = session.get(SiteSettingsRow, "venice.api_key")
-    if not row or not row.value:
-        raise HTTPException(status_code=422, detail="Venice API key not configured. Set it first.")
 
     try:
         resp = _httpx.get(
             "https://api.venice.ai/api/v1/models",
-            headers={"Authorization": f"Bearer {row.value}"},
+            headers={"Authorization": f"Bearer {api_key}"},
             timeout=30.0,
         )
         resp.raise_for_status()
@@ -551,7 +556,6 @@ def sync_venice_models(
         if not model_id:
             continue
         model_type_raw = str(model.get("type", "")).lower()
-        # Skip image-generation models (not useful for Verdikt)
         if model_type_raw == "image":
             continue
         seen_ids.add(model_id)
@@ -576,7 +580,7 @@ def sync_venice_models(
         output_spec = pricing.get("output")
         input_cost = input_spec.get("usd") if isinstance(input_spec, dict) else None
         output_cost = output_spec.get("usd") if isinstance(output_spec, dict) else None
-        privacy = spec.get("privacy") or None  # "private" | "anonymized"
+        privacy = spec.get("privacy") or None
 
         existing = session.get(ModelCatalogRow, model_id)
         if existing is None:
@@ -598,7 +602,6 @@ def sync_venice_models(
             existing.privacy = privacy
             existing.domain = domain
 
-    # Disable Venice models no longer returned by the API
     if seen_ids:
         stale = session.query(ModelCatalogRow).filter(
             ModelCatalogRow.source == "venice",
@@ -608,5 +611,16 @@ def sync_venice_models(
             m.enabled = False
 
     session.commit()
+
+
+@router.post("/models/sync-venice")
+def sync_venice_models(
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> list[dict]:
+    row = session.get(SiteSettingsRow, "venice.api_key")
+    if not row or not row.value:
+        raise HTTPException(status_code=422, detail="Venice API key not configured. Set it first.")
+    _sync_venice_catalog(row.value, session)
     rows = session.query(ModelCatalogRow).order_by(ModelCatalogRow.type, ModelCatalogRow.id).all()
     return [_model_dict(r) for r in rows]

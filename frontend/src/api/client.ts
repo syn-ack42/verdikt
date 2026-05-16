@@ -74,6 +74,7 @@ export const api = {
     veniceKeyStatus: () => req<{ configured: boolean }>('GET', '/auth/me/venice-key/status'),
     setVeniceKey: (api_key: string) => req<{ ok: boolean }>('PUT', '/auth/me/venice-key', { api_key }),
     deleteVeniceKey: () => req<{ ok: boolean }>('DELETE', '/auth/me/venice-key'),
+    syncVeniceModels: () => req<{ ok: boolean }>('POST', '/auth/me/venice-key/sync-models'),
   },
   admin: {
     listUsers: () => req<User[]>('GET', '/admin/users'),
@@ -100,6 +101,7 @@ export const api = {
       req<ModelCatalogEntry>('PATCH', `/admin/models/${encodeURIComponent(id)}`, body),
     getVeniceStatus: () => req<{ configured: boolean; model_count: number }>('GET', '/admin/venice/status'),
     setVeniceKey: (api_key: string) => req<{ ok: boolean }>('PUT', '/admin/venice/key', { api_key }),
+    deleteVeniceKey: () => req<{ ok: boolean }>('DELETE', '/admin/venice/key'),
     syncVeniceModels: () => req<ModelCatalogEntry[]>('POST', '/admin/models/sync-venice'),
   },
   usage: {
