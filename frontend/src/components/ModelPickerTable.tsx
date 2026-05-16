@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ModelCatalogEntry } from '../api/types'
 
 interface Props {
@@ -10,6 +11,8 @@ interface Props {
 }
 
 const COLS = '22px 1fr 70px 110px'
+
+type SortKey = 'display_name' | 'parameter_size' | 'input_cost_usd_per_mtok'
 
 function RadioDot({ selected }: { selected: boolean }) {
   return (
@@ -45,12 +48,46 @@ function rowBase(selected: boolean): React.CSSProperties {
   }
 }
 
+function sortModels(models: ModelCatalogEntry[], by: SortKey, dir: 'asc' | 'desc') {
+  return [...models].sort((a, b) => {
+    let av: string | number, bv: string | number
+    if (by === 'display_name') {
+      av = a.display_name.toLowerCase(); bv = b.display_name.toLowerCase()
+    } else if (by === 'parameter_size') {
+      av = a.parameter_size ?? ''; bv = b.parameter_size ?? ''
+    } else {
+      av = a.input_cost_usd_per_mtok ?? Infinity; bv = b.input_cost_usd_per_mtok ?? Infinity
+    }
+    if (av < bv) return dir === 'asc' ? -1 : 1
+    if (av > bv) return dir === 'asc' ? 1 : -1
+    return 0
+  })
+}
+
 export default function ModelPickerTable({ models, selectedId, isPersonalSelected, onSelect, noneLabel }: Props) {
-  const siteModels = models.filter(m => !m.personal_only)
-  const personalModels = models.filter(m => m.personal_only)
+  const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState<SortKey>('display_name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const toggleSort = (col: SortKey) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortBy(col); setSortDir('asc') }
+  }
+
+  const q = search.trim().toLowerCase()
+  const filtered = models.filter(m =>
+    !q ||
+    m.display_name.toLowerCase().includes(q) ||
+    m.id.toLowerCase().includes(q) ||
+    (m.description ?? '').toLowerCase().includes(q)
+  )
+  const sorted = sortModels(filtered, sortBy, sortDir)
+
+  const siteModels = sorted.filter(m => !m.personal_only)
+  const personalModels = sorted.filter(m => m.personal_only)
   const hasRows = siteModels.length + personalModels.length > 0
 
-  if (!hasRows && !noneLabel) {
+  if (!hasRows && !noneLabel && !search) {
     return <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>No models available for this domain.</p>
   }
 
@@ -61,6 +98,18 @@ export default function ModelPickerTable({ models, selectedId, isPersonalSelecte
   const hover = (e: React.MouseEvent<HTMLDivElement>, enter: boolean, selected: boolean) => {
     if (!selected) e.currentTarget.style.background = enter ? 'var(--surface, rgba(128,128,128,0.04))' : 'transparent'
   }
+
+  const SortHeader = ({ col, children }: { col: SortKey; children: React.ReactNode }) => (
+    <span
+      onClick={() => toggleSort(col)}
+      style={{ cursor: 'pointer', userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+    >
+      {children}
+      <span style={{ fontSize: 9, opacity: sortBy === col ? 1 : 0.3 }}>
+        {sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '▲'}
+      </span>
+    </span>
+  )
 
   const renderRow = (m: ModelCatalogEntry, isPersonal: boolean, last: boolean) => {
     const selected = isRowSelected(m, isPersonal)
@@ -123,64 +172,82 @@ export default function ModelPickerTable({ models, selectedId, isPersonalSelecte
   const totalRows = (noneLabel ? 1 : 0) + siteModels.length + personalModels.length
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-      {/* Column header */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: COLS, gap: 8,
-        padding: '5px 12px',
-        fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
-        color: 'var(--text-muted)',
-        background: 'var(--surface, rgba(128,128,128,0.04))',
-        borderBottom: '1px solid var(--border)',
-      }}>
-        <span />
-        <span>Model</span>
-        <span>Size</span>
-        <span>Cost / Mtok</span>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <input
+        type="search"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        placeholder="Search models…"
+        style={{
+          width: '100%', boxSizing: 'border-box', padding: '6px 10px',
+          borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)',
+          color: 'var(--text)', fontSize: 13,
+        }}
+      />
 
-      {/* None / auto option */}
-      {noneLabel && (() => {
-        const selected = isNoneSelected
-        const last = totalRows === 1
-        return (
-          <div
-            onClick={() => onSelect(null, false)}
-            style={{ ...rowBase(selected), borderBottom: last ? 'none' : '1px solid var(--border)' }}
-            onMouseEnter={e => hover(e, true, selected)}
-            onMouseLeave={e => hover(e, false, selected)}
-          >
-            <RadioDot selected={selected} />
-            <span style={{ fontSize: 13, fontStyle: 'italic', color: selected ? 'var(--text)' : 'var(--text-muted)', gridColumn: '2 / -1' }}>
-              {noneLabel}
-            </span>
-          </div>
-        )
-      })()}
-
-      {/* Site models */}
-      {siteModels.map((m, i) => {
-        const globalIdx = (noneLabel ? 1 : 0) + i
-        return renderRow(m, false, globalIdx === totalRows - 1)
-      })}
-
-      {/* Personal section */}
-      {personalModels.length > 0 && (
-        <>
+      {!hasRows && search ? (
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>No models match "{search}".</p>
+      ) : (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+          {/* Column header */}
           <div style={{
-            padding: '5px 10px',
-            fontSize: 11, fontWeight: 600, letterSpacing: 0.2,
-            color: '#7c3aed',
-            background: 'rgba(124,58,237,0.06)',
-            borderTop: siteModels.length > 0 || noneLabel ? '1px solid var(--border)' : 'none',
+            display: 'grid', gridTemplateColumns: COLS, gap: 8,
+            padding: '5px 12px',
+            fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
+            color: 'var(--text-muted)',
+            background: 'var(--surface, rgba(128,128,128,0.04))',
             borderBottom: '1px solid var(--border)',
           }}>
-            Personal — your Venice key
+            <span />
+            <SortHeader col="display_name">Model</SortHeader>
+            <SortHeader col="parameter_size">Size</SortHeader>
+            <SortHeader col="input_cost_usd_per_mtok">Cost / Mtok</SortHeader>
           </div>
-          {personalModels.map((m, i) =>
-            renderRow(m, true, i === personalModels.length - 1)
+
+          {/* None / auto option */}
+          {noneLabel && (() => {
+            const selected = isNoneSelected
+            const last = totalRows === 1
+            return (
+              <div
+                onClick={() => onSelect(null, false)}
+                style={{ ...rowBase(selected), borderBottom: last ? 'none' : '1px solid var(--border)' }}
+                onMouseEnter={e => hover(e, true, selected)}
+                onMouseLeave={e => hover(e, false, selected)}
+              >
+                <RadioDot selected={selected} />
+                <span style={{ fontSize: 13, fontStyle: 'italic', color: selected ? 'var(--text)' : 'var(--text-muted)', gridColumn: '2 / -1' }}>
+                  {noneLabel}
+                </span>
+              </div>
+            )
+          })()}
+
+          {/* Site models */}
+          {siteModels.map((m, i) => {
+            const globalIdx = (noneLabel ? 1 : 0) + i
+            return renderRow(m, false, globalIdx === totalRows - 1)
+          })}
+
+          {/* Personal section */}
+          {personalModels.length > 0 && (
+            <>
+              <div style={{
+                padding: '5px 10px',
+                fontSize: 11, fontWeight: 600, letterSpacing: 0.2,
+                color: '#7c3aed',
+                background: 'rgba(124,58,237,0.06)',
+                borderTop: siteModels.length > 0 || noneLabel ? '1px solid var(--border)' : 'none',
+                borderBottom: '1px solid var(--border)',
+              }}>
+                Personal — your Venice key
+              </div>
+              {personalModels.map((m, i) =>
+                renderRow(m, true, i === personalModels.length - 1)
+              )}
+            </>
           )}
-        </>
+        </div>
       )}
     </div>
   )

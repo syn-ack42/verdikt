@@ -27,6 +27,7 @@ export default function AdminModels() {
   const [showVeniceKey, setShowVeniceKey] = useState(false)
   const [sortBy, setSortBy] = useState('display_name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [search, setSearch] = useState('')
 
   const toggleSort = (col: string) => {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -92,7 +93,15 @@ export default function AdminModels() {
     setEditForm({ type: m.type, domain: m.domain, display_name: m.display_name, description: m.description })
   }
 
-  const sorted = [...(models ?? [])].sort((a, b) => {
+  const q = search.trim().toLowerCase()
+  const filtered = (models ?? []).filter(m =>
+    !q ||
+    m.display_name.toLowerCase().includes(q) ||
+    m.id.toLowerCase().includes(q) ||
+    (m.description ?? '').toLowerCase().includes(q)
+  )
+
+  const sorted = [...filtered].sort((a, b) => {
     let av: string | number, bv: string | number
     switch (sortBy) {
       case 'display_name': av = a.display_name.toLowerCase(); bv = b.display_name.toLowerCase(); break
@@ -213,13 +222,31 @@ export default function AdminModels() {
 
       {isLoading && <p style={{ color: 'var(--text-muted)' }}>Loading…</p>}
 
+      {models && models.length > 0 && (
+        <input
+          type="search"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search models…"
+          style={{
+            width: '100%', boxSizing: 'border-box', padding: '7px 11px', marginBottom: 12,
+            borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)',
+            color: 'var(--text)', fontSize: 13,
+          }}
+        />
+      )}
+
       {models && models.length === 0 && (
         <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
           No models yet. Click "Sync from Ollama" to discover installed models.
         </p>
       )}
 
-      {models && models.length > 0 && (
+      {models && models.length > 0 && sorted.length === 0 && (
+        <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>No models match "{search}".</p>
+      )}
+
+      {models && models.length > 0 && sorted.length > 0 && (
         <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
           {/* Header */}
