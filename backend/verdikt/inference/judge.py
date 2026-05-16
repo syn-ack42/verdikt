@@ -22,9 +22,10 @@ def _truncate(text: str, max_words: int = _MAX_WORDS) -> str:
 
 
 class LLMJudge:
-    def __init__(self, target: LLMTarget, timeout: float = 300.0) -> None:
+    def __init__(self, target: LLMTarget, timeout: float = 300.0, temperature: float | None = None) -> None:
         self._target = target
         self._timeout = timeout
+        self._temperature = temperature
         # Accumulates (prompt_tokens, completion_tokens) per call; flush after each run.
         self.usage: list[tuple[int, int]] = []
 
@@ -174,6 +175,8 @@ class LLMJudge:
             "stream": False,
             "format": "json",
         }
+        if self._temperature is not None:
+            payload["options"] = {"temperature": self._temperature}
         if image_b64 is not None:
             payload["images"] = [image_b64]
 

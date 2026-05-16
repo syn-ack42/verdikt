@@ -111,7 +111,7 @@ def start_ai_rating(
     chroma = get_cached_chroma_client(user.id)
     vector_store = ChromaVectorStore(chroma, f"project_{project_id}")
     embedder = resolve_embedder(proj, config, auth_session, user_id=user.id)
-    judge = LLMJudge(target, timeout=config.inference.ollama_timeout)
+    judge = LLMJudge(target, timeout=config.inference.ollama_timeout, temperature=config.inference.judge_temperature)
 
     # Take copies for the thread (session is not thread-safe; import lazily for testability)
     from sqlalchemy.orm import Session as _Session
@@ -260,7 +260,7 @@ def ai_preview_rating(
 
     config = get_config()
     target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
-    judge = LLMJudge(target, timeout=config.inference.ollama_timeout)
+    judge = LLMJudge(target, timeout=config.inference.ollama_timeout, temperature=config.inference.judge_temperature)
 
     lock = _get_preview_lock(project_id)
     if not lock.acquire(blocking=False):
@@ -322,7 +322,7 @@ def rate_chunk_ai(
 
     config = get_config()
     target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
-    judge = LLMJudge(target, timeout=config.inference.ollama_timeout)
+    judge = LLMJudge(target, timeout=config.inference.ollama_timeout, temperature=config.inference.judge_temperature)
 
     chunk_store = SQLiteChunkStore(session)
     rating_store = SQLiteRatingStore(session)
