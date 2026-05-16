@@ -1,3 +1,17 @@
+# =============================================================================
+# Verdikt — Docker Compose
+# =============================================================================
+#
+# Before first run:
+#   cp backend/.env.example backend/.env
+#   # Then edit backend/.env — at minimum set:
+#   #   VERDIKT_JWT_SECRET       (required for stable sessions across restarts)
+#   #   VERDIKT_CORS_ORIGINS     (must match the URL you expose the app on)
+#
+# All application settings are loaded from backend/.env via env_file below.
+# The environment: block below contains Docker-specific overrides that take
+# precedence over anything in .env.
+
 services:
   verdikt:
     build:
@@ -10,19 +24,39 @@ services:
       - "8765:8765"
     volumes:
       - ./_data:/var/lib/verdikt
+    env_file:
+      - path: backend/.env
+        required: false   # allows `docker compose build` without a .env in place
     environment:
-      # Point at the host's Ollama instance.
-      # On Linux, host.docker.internal requires the extra_hosts entry below.
-      # On macOS / Docker Desktop it works without it.
+      # --- Required for Docker: set these in backend/.env -------------------
+
+      # ⚠ VERDIKT_JWT_SECRET — set a stable secret or sessions reset on every
+      #   container restart. Generate with: openssl rand -hex 32
+      # (set in backend/.env)
+
+      # ⚠ VERDIKT_CORS_ORIGINS — must match the public URL of your deployment.
+      #   Example: '["https://verdikt.example.com"]'
+      # (set in backend/.env)
+
+      # --- Docker-specific overrides ----------------------------------------
+
+      # The container cannot reach the host via localhost; use the gateway alias.
+      # On Linux, host.docker.internal resolves via extra_hosts below.
+      # On macOS / Docker Desktop it works without extra_hosts.
       VERDIKT_INFERENCE__OLLAMA_BASE_URL: http://host.docker.internal:11434
-      # Lock CORS to the port the container is exposed on
-      VERDIKT_CORS_ORIGINS: '["https://docker.franz-renger.de"]'
-      # Uncomment to set a stable JWT secret instead of auto-generating on first run:
-      # VERDIKT_JWT_SECRET: "change-me-to-a-long-random-string"
+
+      # The built frontend is baked into the image at this path by the Dockerfile.
+      VERDIKT_FRONTEND_DIR: /app/frontend/dist
+
+      # Subpath prefix — adjust if you're not serving at /verdikt
       VERDIKT_ROOT_PATH: /verdikt
+
+      # Data dirs match the volume mount above; override only if remounting elsewhere.
+      VERDIKT_DATA_DIR: /var/lib/verdikt
+      VERDIKT_USERS_DIR: /var/lib/verdikt/users
+
     cap_add:
       - SYS_PTRACE
     extra_hosts:
       # Allows host.docker.internal to resolve on Linux
       - "host.docker.internal:host-gateway"
-
