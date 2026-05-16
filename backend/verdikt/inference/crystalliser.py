@@ -127,7 +127,8 @@ class ProfileCrystalliser:
                 on_tokens(total_prompt, total_completion)
             try:
                 parsed = json.loads(raw)
-                summary = parsed.get("summary", "").strip() or "Unable to generate summary."
+                val = parsed.get("summary", "")
+                summary = (val.strip() if isinstance(val, str) else "") or "Unable to generate summary."
             except (json.JSONDecodeError, ValueError):
                 summary = raw.strip() or "Unable to generate summary."
 
@@ -157,7 +158,8 @@ class ProfileCrystalliser:
             on_tokens(total_prompt, total_completion)
         try:
             overall_parsed = json.loads(overall_raw)
-            overall_summary = overall_parsed.get("summary", "").strip() or "Unable to generate summary."
+            val = overall_parsed.get("summary", "")
+            overall_summary = (val.strip() if isinstance(val, str) else "") or "Unable to generate summary."
         except (json.JSONDecodeError, ValueError):
             overall_summary = overall_raw.strip() or "Unable to generate summary."
 
