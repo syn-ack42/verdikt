@@ -54,6 +54,18 @@ class LLMJudge:
             "1-2 sentence neutral factual description of what the passage is about (topic, scene, content type, narrative voice) — no evaluative language"
         )
 
+        score_rubric = (
+            "Score guide (predict the score THIS USER would give — not an objective quality rating):\n"
+            "  1 = strongly dislikes — clearly contradicts their stated preferences\n"
+            "  2 = dislikes — misses what they value; generic, forgettable, or unremarkable\n"
+            "  3 = neutral — neither matches nor contradicts; passable but unmemorable\n"
+            "  4 = likes — clearly shows qualities they value\n"
+            "  5 = strongly likes — exemplifies exactly what they want\n"
+            "Use the full range. Do NOT inflate scores: content that is merely inoffensive "
+            "or unremarkable scores 2, not 3 or 4. The typical score shown per dimension is "
+            "the user's historical average — use it as a calibration anchor."
+        )
+
         # Build an explicit per-dimension schema so the model knows exactly what keys to emit
         dim_schema = ",\n".join(
             f'  "{d.name}": {{"score": <int 1-5>, "explanation": "<one sentence why>"}}'
@@ -63,17 +75,19 @@ class LLMJudge:
 
         if is_image:
             prompt = (
-                f"You are evaluating an {content_label} for a person with specific preferences.\n\n"
-                f"Preferences:\n{profile.overall_summary}\n\n"
-                f"Dimension preferences:\n{dim_lines}\n\n"
+                f"You are predicting how a person with specific taste preferences would rate an {content_label}.\n\n"
+                f"{score_rubric}\n\n"
+                f"Their overall preferences:\n{profile.overall_summary}\n\n"
+                f"Per-dimension preferences (typical score = their historical average for calibration):\n{dim_lines}\n\n"
                 f"Evaluate the attached image.\n\n"
                 f"Respond with a JSON object only (no prose, no markdown):\n{response_schema}"
             )
         else:
             prompt = (
-                f"You are evaluating a {content_label} for a person with specific preferences.\n\n"
-                f"Preferences:\n{profile.overall_summary}\n\n"
-                f"Dimension preferences:\n{dim_lines}\n\n"
+                f"You are predicting how a person with specific taste preferences would rate a {content_label}.\n\n"
+                f"{score_rubric}\n\n"
+                f"Their overall preferences:\n{profile.overall_summary}\n\n"
+                f"Per-dimension preferences (typical score = their historical average for calibration):\n{dim_lines}\n\n"
                 f"Passage to evaluate:\n{_truncate(chunk_content)}\n\n"
                 f"Respond with a JSON object only (no prose, no markdown):\n{response_schema}"
             )
