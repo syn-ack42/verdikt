@@ -164,7 +164,7 @@ export default function ProjectDashboard() {
   const { data: crystalliseStatus } = useQuery({
     queryKey: ['crystallise-status', projectId],
     queryFn: () => api.profile.crystalliseStatus(projectId!),
-    refetchInterval: (query) => query.state.data?.running ? 2000 : false,
+    refetchInterval: (query) => query.state.data?.running ? 1000 : 5000,
     enabled: !!projectId,
   })
 
@@ -580,8 +580,8 @@ export default function ProjectDashboard() {
           {(() => {
             const need = project.crystallisation_threshold - humanCount
             if (hasProfile) return (
-              <span style={{ fontSize: 11, color: '#2e7d32', whiteSpace: 'nowrap' }}>
-                {pct !== null ? `${pct}% accuracy` : 'profile ready'}
+              <span style={{ fontSize: 11, color: crystalliseStatus?.running ? 'var(--text-muted)' : '#2e7d32', whiteSpace: 'nowrap' }}>
+                {crystalliseStatus?.running ? 'building…' : pct !== null ? `${pct}% accuracy` : 'profile ready'}
               </span>
             )
             if (need <= 0) return (

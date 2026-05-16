@@ -78,7 +78,7 @@ export default function ProfileView() {
   const { data: crystalStatus } = useQuery({
     queryKey: ['crystallise-status', projectId],
     queryFn: () => api.profile.crystalliseStatus(projectId!),
-    refetchInterval: (query) => query.state.data?.running ? 2000 : false,
+    refetchInterval: (query) => query.state.data?.running ? 1000 : 5000,
     enabled: !!projectId,
   })
 
