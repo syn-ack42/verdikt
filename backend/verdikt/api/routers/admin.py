@@ -740,6 +740,8 @@ def _sync_openrouter_catalog(api_key: str, session) -> None:
         name_lower = model_id.lower()
         if "embed" in name_lower:
             continue
+        if model_id.startswith("openrouter/"):
+            continue
 
         seen_ids.add(model_id)
 
