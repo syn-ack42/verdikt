@@ -812,6 +812,12 @@ export default function ProjectDashboard() {
                 {tokenLabel(aiRatingStatus.tokens_prompt, aiRatingStatus.tokens_completion) && ` · ${tokenLabel(aiRatingStatus.tokens_prompt, aiRatingStatus.tokens_completion)} tokens`}
               </p>
             )}
+            {!aiRatingStatus.running && aiRatingStatus.stopped_reason === 'error' && (
+              <p style={{ margin: 0, color: '#c00' }}>
+                AI Rating failed{aiRatingStatus.error_detail ? ` — ${aiRatingStatus.error_detail}` : ''}
+                {aiRatingStatus.chunks_rated > 0 && ` · ${aiRatingStatus.chunks_rated} chunks scored before error`}
+              </p>
+            )}
             {aiRatingStatus.profile_stale && (
               <p style={{ margin: '2px 0 0', color: '#b45309', fontSize: 12 }}>
                 Dimensions or profile changed — re-crystallise, then restart AI Rating.

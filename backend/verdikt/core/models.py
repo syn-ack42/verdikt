@@ -124,10 +124,9 @@ class InferenceConfig(BaseModel):
     ollama_timeout: float = 300.0  # seconds; vision models on CPU can be very slow
     embedding_model: str = "all-MiniLM-L6-v2"    # default text embedder (sentence-transformers)
     clip_model: str = "openai/clip-vit-base-patch32"  # default image embedder (CLIP via transformers)
-    # Temperature for LLMJudge scoring calls. Ollama default is 0.8; lower values
-    # (e.g. 0.2) make scores more decisive and reduce regression to the middle.
-    # Set via VERDIKT_INFERENCE__JUDGE_TEMPERATURE. None = use model default.
-    judge_temperature: float | None = None
+    # Temperature for LLMJudge scoring calls. Set via VERDIKT_INFERENCE__JUDGE_TEMPERATURE.
+    # None = use model default (Ollama: 0.8). 0.8 balances creativity vs. rubric adherence.
+    judge_temperature: float | None = 0.8
 
 
 class Rating(BaseModel):

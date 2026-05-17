@@ -343,6 +343,7 @@ export interface AIRatingStatus {
   batches_completed: number
   last_batch_avg: number | null
   stopped_reason: 'diminishing_returns' | 'user_stopped' | 'complete' | 'error' | null
+  error_detail: string | null
   tokens_prompt: number
   tokens_completion: number
   unconfirmed_ai_count: number

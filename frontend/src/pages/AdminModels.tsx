@@ -348,7 +348,7 @@ export default function AdminModels() {
           { key: 'venice', label: 'Venice.ai', color: '#7c3aed' },
           { key: 'openrouter', label: 'OpenRouter', color: '#0ea5e9' },
         ]
-        const otherSources = [...new Set(sorted.map(m => m.source).filter(s => !['ollama', 'local', 'venice', 'openrouter'].includes(s)))]
+        const otherSources = [...new Set(sorted.map(m => m.source).filter((s): s is string => s !== undefined && !['ollama', 'local', 'venice', 'openrouter'].includes(s)))]
         const allGroups = [
           ...SOURCE_GROUPS,
           ...otherSources.map(s => ({ key: s, label: s, color: '#666' })),
@@ -431,7 +431,7 @@ export default function AdminModels() {
               </div>
 
               {allGroups.map(group => {
-                const groupModels = sorted.filter(m => getGroupKey(m.source) === group.key)
+                const groupModels = sorted.filter(m => getGroupKey(m.source ?? '') === group.key)
                 if (groupModels.length === 0) return null
                 const enabledCount = groupModels.filter(m => m.enabled).length
                 const collapsed = collapsedGroups.has(group.key)

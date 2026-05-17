@@ -195,40 +195,6 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
               <input value={description} onChange={e => setDescription(e.target.value)} style={inputStyle} placeholder="Optional" />
             </div>
 
-            {/* Numeric settings */}
-            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 20 }}>
-              <div>
-                <label style={labelStyle}>Crystallisation threshold</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="number" min={1} value={threshold}
-                    onChange={e => setThreshold(Number(e.target.value))}
-                    style={{ ...inputStyle, width: 80 }}
-                  />
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>ratings</span>
-                </div>
-              </div>
-              {!isImage && (
-                <div>
-                  <label style={labelStyle}>Chunk size</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <input
-                      type="number" min={rangeMin} max={rangeMax} value={chunkMin}
-                      onChange={e => setChunkMin(Number(e.target.value))}
-                      style={{ ...inputStyle, width: 80 }}
-                    />
-                    <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>–</span>
-                    <input
-                      type="number" min={rangeMin} max={rangeMax} value={chunkMax}
-                      onChange={e => setChunkMax(Number(e.target.value))}
-                      style={{ ...inputStyle, width: 80 }}
-                    />
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>words</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* Models */}
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Language model</label>
@@ -290,26 +256,68 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
               <summary style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
                 Advanced
               </summary>
-              <div style={{ marginTop: 14 }}>
-                <label style={labelStyle}>AI scoring temperature</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <input
-                    type="number" min={0} max={2} step={0.05}
-                    value={judgeTemp}
-                    placeholder="default (0.2)"
-                    onChange={e => setJudgeTemp(e.target.value)}
-                    style={{ ...inputStyle, width: 120 }}
-                  />
-                  {judgeTemp !== '' && (
-                    <button type="button" onClick={() => setJudgeTemp('')}
-                      style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                      reset to default
-                    </button>
-                  )}
+              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+                <div>
+                  <label style={labelStyle}>Crystallisation threshold</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      type="number" min={1} value={threshold}
+                      onChange={e => setThreshold(Number(e.target.value))}
+                      style={{ ...inputStyle, width: 80 }}
+                    />
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>ratings</span>
+                  </div>
+                  <p style={{ margin: '5px 0 0', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                    Number of human ratings required before the system crystallises a preference profile and switches from diversity sampling to active learning.
+                  </p>
                 </div>
-                <p style={{ margin: '5px 0 0', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                  Controls how decisive the AI scorer is (0 = deterministic, 1 = creative). Lower values follow the scoring rubric more strictly and reduce score inflation. Leave blank to use the server default.
-                </p>
+
+                {!isImage && (
+                  <div>
+                    <label style={labelStyle}>Chunk size</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="number" min={rangeMin} max={rangeMax} value={chunkMin}
+                        onChange={e => setChunkMin(Number(e.target.value))}
+                        style={{ ...inputStyle, width: 80 }}
+                      />
+                      <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>–</span>
+                      <input
+                        type="number" min={rangeMin} max={rangeMax} value={chunkMax}
+                        onChange={e => setChunkMax(Number(e.target.value))}
+                        style={{ ...inputStyle, width: 80 }}
+                      />
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>words</span>
+                    </div>
+                    <p style={{ margin: '5px 0 0', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                      Target word-count range for text chunks. Smaller chunks give more granular ratings; larger chunks provide more context per rating. Changing this does not re-chunk existing material.
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <label style={labelStyle}>AI scoring temperature</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input
+                      type="number" min={0} max={2} step={0.05}
+                      value={judgeTemp}
+                      placeholder="default (0.8)"
+                      onChange={e => setJudgeTemp(e.target.value)}
+                      style={{ ...inputStyle, width: 120 }}
+                    />
+                    {judgeTemp !== '' && (
+                      <button type="button" onClick={() => setJudgeTemp('')}
+                        style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                        reset to default
+                      </button>
+                    )}
+                  </div>
+                  <p style={{ margin: '5px 0 0', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                    Controls how decisive the AI scorer is (0 = deterministic, 1 = creative). Lower values follow the scoring rubric more strictly and reduce score inflation. Leave blank to use the server default (0.8).
+                  </p>
+                </div>
+
               </div>
             </details>
 

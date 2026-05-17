@@ -67,6 +67,7 @@ def _default_status() -> dict:
         "batches_completed": 0,
         "last_batch_avg": None,
         "stopped_reason": None,
+        "error_detail": None,
         "tokens_prompt": 0,
         "tokens_completion": 0,
     }
@@ -107,10 +108,13 @@ def start_ai_rating(
         raise HTTPException(status_code=409, detail="Profile dimensions don't match project dimensions. Re-crystallise first.")
 
     config = get_config()
-    target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
+    try:
+        target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
+        embedder = resolve_embedder(proj, config, auth_session, user_id=user.id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     chroma = get_cached_chroma_client(user.id)
     vector_store = ChromaVectorStore(chroma, f"project_{project_id}")
-    embedder = resolve_embedder(proj, config, auth_session, user_id=user.id)
     judge = LLMJudge(target, timeout=config.inference.ollama_timeout, temperature=proj.judge_temperature if proj.judge_temperature is not None else config.inference.judge_temperature)
 
     # Take copies for the thread (session is not thread-safe; import lazily for testability)
@@ -187,9 +191,10 @@ def start_ai_rating(
                 if latest and latest.version != profile.version:
                     _status[project_id]["profile_stale"] = True
 
-            except Exception:
+            except Exception as exc:
                 log.exception("ai_rater thread error for project %s", project_id)
                 _status[project_id]["stopped_reason"] = "error"
+                _status[project_id]["error_detail"] = str(exc)
             finally:
                 _status[project_id]["running"] = False
                 _stop_flags.pop(project_id, None)
@@ -259,7 +264,10 @@ def ai_preview_rating(
         raise HTTPException(status_code=404, detail="Chunk not found")
 
     config = get_config()
-    target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
+    try:
+        target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     judge = LLMJudge(target, timeout=config.inference.ollama_timeout, temperature=proj.judge_temperature if proj.judge_temperature is not None else config.inference.judge_temperature)
 
     lock = _get_preview_lock(project_id)
@@ -321,7 +329,10 @@ def rate_chunk_ai(
         raise HTTPException(status_code=404, detail="Chunk not found")
 
     config = get_config()
-    target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
+    try:
+        target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     judge = LLMJudge(target, timeout=config.inference.ollama_timeout, temperature=proj.judge_temperature if proj.judge_temperature is not None else config.inference.judge_temperature)
 
     chunk_store = SQLiteChunkStore(session)
