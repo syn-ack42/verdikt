@@ -213,9 +213,11 @@ class ProfileCrystalliser:
         return text, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
 
     def _call_ollama(self, prompt: str) -> tuple[str, int, int]:
+        headers = {"Authorization": f"Bearer {self._target.api_key}"} if self._target.api_key else {}
         response = httpx.post(
             f"{self._target.base_url}/api/generate",
             json={"model": self._target.model, "prompt": prompt, "format": "json", "stream": False},
+            headers=headers,
             timeout=120.0,
         )
         response.raise_for_status()

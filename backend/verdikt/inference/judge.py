@@ -180,10 +180,12 @@ class LLMJudge:
         if image_b64 is not None:
             payload["images"] = [image_b64]
 
+        headers = {"Authorization": f"Bearer {self._target.api_key}"} if self._target.api_key else {}
         try:
             resp = httpx.post(
                 f"{self._target.base_url}/api/generate",
                 json=payload,
+                headers=headers,
                 timeout=self._timeout,
             )
             resp.raise_for_status()

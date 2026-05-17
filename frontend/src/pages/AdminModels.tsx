@@ -23,6 +23,8 @@ export default function AdminModels() {
   const [editForm, setEditForm] = useState<Partial<ModelCatalogEntry>>({})
   const [showAddModel, setShowAddModel] = useState(false)
   const [addForm, setAddForm] = useState({ id: '', type: 'embedding', domain: 'text', display_name: '', description: '' })
+  const [ollamaKey, setOllamaKey] = useState('')
+  const [showOllamaKey, setShowOllamaKey] = useState(false)
   const [veniceKey, setVeniceKey] = useState('')
   const [showVeniceKey, setShowVeniceKey] = useState(false)
   const [openRouterKey, setOpenRouterKey] = useState('')
@@ -48,6 +50,24 @@ export default function AdminModels() {
   const { data: models, isLoading } = useQuery({
     queryKey: ['admin-models'],
     queryFn: () => api.admin.listModels(),
+  })
+
+  const { data: ollamaStatus } = useQuery({
+    queryKey: ['ollama-status'],
+    queryFn: () => api.admin.getOllamaStatus(),
+  })
+
+  const saveOllamaKey = useMutation({
+    mutationFn: () => api.admin.setOllamaKey(ollamaKey),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ollama-status'] })
+      setOllamaKey('')
+    },
+  })
+
+  const clearOllamaKey = useMutation({
+    mutationFn: () => api.admin.deleteOllamaKey(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ollama-status'] }),
   })
 
   const { data: veniceStatus } = useQuery({
@@ -199,6 +219,57 @@ export default function AdminModels() {
           Sync failed: {String(sync.error)}
         </p>
       )}
+
+      {/* Ollama auth section */}
+      <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>Ollama — Auth (optional)</span>
+          {ollamaStatus && (
+            <span style={{ fontSize: 12, color: ollamaStatus.configured ? '#059669' : 'var(--text-muted)' }}>
+              {ollamaStatus.configured ? 'Key set' : 'No key — unauthenticated'}
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+          <input
+            type={showOllamaKey ? 'text' : 'password'}
+            value={ollamaKey}
+            onChange={e => setOllamaKey(e.target.value)}
+            placeholder="Bearer token or API key (optional)…"
+            style={{ flex: 1, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}
+          />
+          <button
+            onClick={() => setShowOllamaKey(v => !v)}
+            style={{ padding: '6px 10px', borderRadius: 4, fontSize: 12, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+          >
+            {showOllamaKey ? 'Hide' : 'Show'}
+          </button>
+          <button
+            onClick={() => saveOllamaKey.mutate()}
+            disabled={saveOllamaKey.isPending || !ollamaKey.trim()}
+            style={{ padding: '6px 14px', borderRadius: 4, fontSize: 12, border: 'none', background: '#6b7de0', color: '#fff', cursor: 'pointer' }}
+          >
+            {saveOllamaKey.isPending ? 'Saving…' : 'Save key'}
+          </button>
+          {ollamaStatus?.configured && (
+            <button
+              onClick={() => clearOllamaKey.mutate()}
+              disabled={clearOllamaKey.isPending}
+              style={{ padding: '6px 14px', borderRadius: 4, fontSize: 12, border: '1px solid rgba(192,0,0,0.3)', background: 'none', color: '#c00', cursor: 'pointer' }}
+            >
+              {clearOllamaKey.isPending ? 'Clearing…' : 'Clear key'}
+            </button>
+          )}
+        </div>
+        <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+          Leave blank for unauthenticated access (default Ollama setup).
+        </p>
+        {(saveOllamaKey.isError || clearOllamaKey.isError) && (
+          <p style={{ color: '#c00', fontSize: 12, margin: '8px 0 0' }}>
+            {String(saveOllamaKey.error || clearOllamaKey.error)}
+          </p>
+        )}
+      </div>
 
       {/* Venice section */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>

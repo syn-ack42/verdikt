@@ -340,7 +340,9 @@ def sync_models(
 ) -> list[dict]:
     import ollama as _ollama
     config = get_config()
-    client = _ollama.Client(host=config.inference.ollama_base_url)
+    key_row = session.get(SiteSettingsRow, "ollama.api_key")
+    extra_headers = {"Authorization": f"Bearer {key_row.value}"} if (key_row and key_row.value) else {}
+    client = _ollama.Client(host=config.inference.ollama_base_url, headers=extra_headers)
     try:
         response = client.list()
     except Exception as exc:
@@ -487,6 +489,48 @@ def update_model(
         row.is_default = body.is_default
     session.commit()
     return _model_dict(row)
+
+
+# ── Ollama auth (optional) ────────────────────────────────────────────────────
+
+class OllamaKeyUpdate(BaseModel):
+    api_key: str
+
+
+@router.put("/ollama/key")
+def set_ollama_key(
+    body: OllamaKeyUpdate,
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    row = session.get(SiteSettingsRow, "ollama.api_key")
+    if row is None:
+        session.add(SiteSettingsRow(key="ollama.api_key", value=body.api_key))
+    else:
+        row.value = body.api_key
+    session.commit()
+    return {"ok": True}
+
+
+@router.delete("/ollama/key")
+def delete_ollama_key(
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    row = session.get(SiteSettingsRow, "ollama.api_key")
+    if row is not None:
+        session.delete(row)
+        session.commit()
+    return {"ok": True}
+
+
+@router.get("/ollama/status")
+def get_ollama_status(
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    row = session.get(SiteSettingsRow, "ollama.api_key")
+    return {"configured": bool(row and row.value)}
 
 
 # ── Venice ────────────────────────────────────────────────────────────────────

@@ -30,6 +30,12 @@ def _get_openrouter_key(auth_session) -> str | None:
     return row.value if row and row.value else None
 
 
+def _get_ollama_key(auth_session) -> str | None:
+    from verdikt.storage.auth_orm import SiteSettingsRow
+    row = auth_session.get(SiteSettingsRow, "ollama.api_key")
+    return row.value if row and row.value else None
+
+
 def _decrypt_user_key(encrypted: str, jwt_secret: str, info: bytes) -> str:
     import base64
     from cryptography.fernet import Fernet
@@ -110,7 +116,8 @@ def resolve_llm_target(project: Project, config: AppConfig, auth_session, user_i
         if not api_key:
             raise RuntimeError("OpenRouter API key not configured. Set it in Admin → Model Catalog.")
         return LLMTarget(provider="openrouter", base_url=OPENROUTER_BASE_URL, model=model_id, api_key=api_key)
-    return LLMTarget(provider="ollama", base_url=config.inference.ollama_base_url, model=model_id)
+    return LLMTarget(provider="ollama", base_url=config.inference.ollama_base_url, model=model_id,
+                     api_key=_get_ollama_key(auth_session))
 
 
 def resolve_llm_model(project: Project, config: AppConfig) -> tuple[str, str]:
@@ -170,7 +177,8 @@ def resolve_embedder(project: Project, config: AppConfig, auth_session=None, use
     model_name = project.embedding_model or config.inference.embedding_model
     if ":" in model_name:
         from verdikt.inference.ollama_embedder import OllamaEmbedder
-        return OllamaEmbedder(model_name, config.inference.ollama_base_url)
+        return OllamaEmbedder(model_name, config.inference.ollama_base_url,
+                              api_key=_get_ollama_key(auth_session) if auth_session else None)
     if "clip" in model_name.lower():
         from verdikt.inference.clip_embedder import CLIPEmbedder
         return CLIPEmbedder(model_name)

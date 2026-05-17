@@ -13,16 +13,19 @@ class OllamaEmbedder(EmbedderBase):
     and can embed with any model that has an embedding layer.
     """
 
-    def __init__(self, model_name: str, base_url: str) -> None:
+    def __init__(self, model_name: str, base_url: str, api_key: str | None = None) -> None:
         self._model_name = model_name
         self._base_url = base_url.rstrip("/")
+        self._api_key = api_key
         self._dim: int | None = None
 
     def embed(self, inputs: list[str | bytes]) -> np.ndarray:
         texts = [inp.decode("utf-8") if isinstance(inp, bytes) else inp for inp in inputs]
+        headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
         resp = httpx.post(
             f"{self._base_url}/api/embed",
             json={"model": self._model_name, "input": texts},
+            headers=headers,
             timeout=120.0,
         )
         resp.raise_for_status()

@@ -243,10 +243,12 @@ class DimensionDiscoverer:
         if image_b64:
             payload["images"] = [image_b64]
 
+        headers = {"Authorization": f"Bearer {self._target.api_key}"} if self._target.api_key else {}
         try:
             response = httpx.post(
                 f"{self._target.base_url}/api/generate",
                 json=payload,
+                headers=headers,
                 timeout=180.0,
             )
             response.raise_for_status()

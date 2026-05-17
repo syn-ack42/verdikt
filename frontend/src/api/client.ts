@@ -111,6 +111,9 @@ export const api = {
     setOpenRouterKey: (api_key: string) => req<{ ok: boolean }>('PUT', '/admin/openrouter/key', { api_key }),
     deleteOpenRouterKey: () => req<{ ok: boolean }>('DELETE', '/admin/openrouter/key'),
     syncOpenRouterModels: () => req<ModelCatalogEntry[]>('POST', '/admin/models/sync-openrouter'),
+    getOllamaStatus: () => req<{ configured: boolean }>('GET', '/admin/ollama/status'),
+    setOllamaKey: (api_key: string) => req<{ ok: boolean }>('PUT', '/admin/ollama/key', { api_key }),
+    deleteOllamaKey: () => req<{ ok: boolean }>('DELETE', '/admin/ollama/key'),
   },
   usage: {
     get: () => req<UsageSummary>('GET', '/usage'),
