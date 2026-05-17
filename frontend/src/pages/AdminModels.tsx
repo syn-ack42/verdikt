@@ -30,11 +30,18 @@ export default function AdminModels() {
   const [sortBy, setSortBy] = useState('display_name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [search, setSearch] = useState('')
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
   const toggleSort = (col: string) => {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortBy(col); setSortDir('asc') }
   }
+
+  const toggleGroup = (key: string) => setCollapsedGroups(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
 
   if (!me.is_admin) return <div style={{ padding: 24 }}>Access denied.</div>
 
@@ -333,119 +340,132 @@ export default function AdminModels() {
         <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>No models match "{search}".</p>
       )}
 
-      {models && models.length > 0 && sorted.length > 0 && (
-        <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-          {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 100px 60px 80px 60px', gap: 8, padding: '8px 14px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border)', background: 'var(--surface, rgba(128,128,128,0.04))', minWidth: 800 }}>
-            <SortHeader col="display_name">Model</SortHeader>
-            <SortHeader col="type">Type</SortHeader>
-            <SortHeader col="domain">Domain</SortHeader>
-            <SortHeader col="parameter_size">Params</SortHeader>
-            <SortHeader col="context_length">Context</SortHeader>
-            <span>Quant</span>
-            <SortHeader col="input_cost" title="Input / output USD per million tokens">Cost/Mtok</SortHeader>
-            <SortHeader col="enabled">Enabled</SortHeader>
-            <span>Default</span>
-            <span></span>
-          </div>
-          {sorted.map((m, i) => (
-            <div
-              key={m.id}
-              style={{
-                borderBottom: i < sorted.length - 1 ? '1px solid var(--border)' : 'none',
-                opacity: m.enabled ? 1 : 0.6,
-                minWidth: 800,
-              }}
-            >
-              {/* Data row */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 60px 90px 90px 70px 100px 60px 80px 60px', gap: 8, padding: '10px 14px 4px', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 500, fontSize: 13, wordBreak: 'break-word' }}>{m.display_name}</span>
-                  {m.source === 'venice' && (
-                    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#7c3aed22', color: '#7c3aed', fontWeight: 600, letterSpacing: 0.3, flexShrink: 0 }}>
-                      Venice
-                    </span>
-                  )}
-                </div>
-                <span><Badge label={TYPE_LABELS[m.type] ?? m.type} color={m.type === 'llm' ? '#6b7de0' : '#059669'} /></span>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{DOMAIN_LABELS[m.domain] ?? m.domain}</span>
-                <span style={{ fontSize: 12 }}>{m.parameter_size ?? '—'}</span>
-                <span style={{ fontSize: 12 }}>{m.context_length ? `${(m.context_length / 1000).toFixed(0)}k` : '—'}</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m.quantization ?? '—'}</span>
-                <span style={{ fontSize: 11 }}>
-                  {m.input_cost_usd_per_mtok != null || m.output_cost_usd_per_mtok != null ? (
-                    <span title={`Input: $${m.input_cost_usd_per_mtok ?? '?'} / Output: $${m.output_cost_usd_per_mtok ?? '?'} per million tokens`}>
-                      <span style={{ color: 'var(--text)' }}>${m.input_cost_usd_per_mtok?.toFixed(2) ?? '?'}</span>
-                      <span style={{ color: 'var(--text-muted)' }}> / ${m.output_cost_usd_per_mtok?.toFixed(2) ?? '?'}</span>
-                    </span>
-                  ) : '—'}
-                </span>
-                <span>
-                  <button
-                    onClick={() => update.mutate({ id: m.id, body: { enabled: !m.enabled } })}
-                    style={{
-                      padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', cursor: 'pointer',
-                      background: m.enabled ? 'rgba(5,150,105,0.12)' : 'none',
-                      color: m.enabled ? '#059669' : 'var(--text-muted)',
-                    }}
-                  >
-                    {m.enabled ? 'On' : 'Off'}
-                  </button>
-                </span>
-                <span>
-                  {m.type === 'llm' && (
-                    m.is_default
-                      ? <span style={{ fontSize: 11, color: '#c08020', fontWeight: 600 }}>★ Default</span>
-                      : m.enabled
-                        ? <button
-                            onClick={() => update.mutate({ id: m.id, body: { is_default: true } })}
-                            style={{ padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                          >
-                            Set
-                          </button>
-                        : null
-                  )}
-                </span>
-                <span>
-                  <button
-                    onClick={() => openEdit(m)}
-                    style={{ padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', background: 'none', cursor: 'pointer' }}
-                  >
-                    Edit
-                  </button>
-                </span>
+      {models && models.length > 0 && sorted.length > 0 && (() => {
+        const GRID_COLS = '1fr 70px 60px 90px 90px 70px 100px 60px 80px 60px'
+        const getGroupKey = (source: string) => (source === 'ollama' || source === 'local') ? 'local' : source
+        const SOURCE_GROUPS = [
+          { key: 'local', label: 'Local / Ollama', color: '#666' },
+          { key: 'venice', label: 'Venice.ai', color: '#7c3aed' },
+          { key: 'openrouter', label: 'OpenRouter', color: '#0ea5e9' },
+        ]
+        const otherSources = [...new Set(sorted.map(m => m.source).filter(s => !['ollama', 'local', 'venice', 'openrouter'].includes(s)))]
+        const allGroups = [
+          ...SOURCE_GROUPS,
+          ...otherSources.map(s => ({ key: s, label: s, color: '#666' })),
+        ]
+
+        const renderModelRow = (m: ModelCatalogEntry, last: boolean) => (
+          <div key={m.id} style={{ borderBottom: last ? 'none' : '1px solid var(--border)', opacity: m.enabled ? 1 : 0.6, minWidth: 800 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: GRID_COLS, gap: 8, padding: '10px 14px 4px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 500, fontSize: 13, wordBreak: 'break-word' }}>{m.display_name}</span>
               </div>
-              {/* Full-width detail row */}
-              {(m.id !== m.display_name || m.description || m.privacy) && (
-                <div style={{ padding: '0 14px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    {m.id !== m.display_name && (
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{m.id}</span>
-                    )}
-                    {m.privacy && (
-                      <span
-                        title={m.privacy === 'private' ? 'Prompts are never logged by Venice' : 'Prompts may be retained in anonymized form'}
-                        style={{
-                          fontSize: 10, padding: '1px 6px', borderRadius: 3, fontWeight: 600, letterSpacing: 0.3, flexShrink: 0,
-                          background: m.privacy === 'private' ? 'rgba(5,150,105,0.12)' : 'rgba(180,83,9,0.12)',
-                          color: m.privacy === 'private' ? '#059669' : '#b45309',
-                        }}
-                      >
-                        {m.privacy === 'private' ? '🔒 Private' : '〜 Anonymized'}
-                      </span>
-                    )}
-                  </div>
-                  {m.description && (
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{m.description}</span>
+              <span><Badge label={TYPE_LABELS[m.type] ?? m.type} color={m.type === 'llm' ? '#6b7de0' : '#059669'} /></span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{DOMAIN_LABELS[m.domain] ?? m.domain}</span>
+              <span style={{ fontSize: 12 }}>{m.parameter_size ?? '—'}</span>
+              <span style={{ fontSize: 12 }}>{m.context_length ? `${(m.context_length / 1000).toFixed(0)}k` : '—'}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m.quantization ?? '—'}</span>
+              <span style={{ fontSize: 11 }}>
+                {m.input_cost_usd_per_mtok != null || m.output_cost_usd_per_mtok != null ? (
+                  <span title={`Input: $${m.input_cost_usd_per_mtok ?? '?'} / Output: $${m.output_cost_usd_per_mtok ?? '?'} per million tokens`}>
+                    <span style={{ color: 'var(--text)' }}>${m.input_cost_usd_per_mtok?.toFixed(2) ?? '?'}</span>
+                    <span style={{ color: 'var(--text-muted)' }}> / ${m.output_cost_usd_per_mtok?.toFixed(2) ?? '?'}</span>
+                  </span>
+                ) : '—'}
+              </span>
+              <span>
+                <button
+                  onClick={() => update.mutate({ id: m.id, body: { enabled: !m.enabled } })}
+                  style={{ padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', cursor: 'pointer', background: m.enabled ? 'rgba(5,150,105,0.12)' : 'none', color: m.enabled ? '#059669' : 'var(--text-muted)' }}
+                >
+                  {m.enabled ? 'On' : 'Off'}
+                </button>
+              </span>
+              <span>
+                {m.type === 'llm' && (
+                  m.is_default
+                    ? <span style={{ fontSize: 11, color: '#c08020', fontWeight: 600 }}>★ Default</span>
+                    : m.enabled
+                      ? <button onClick={() => update.mutate({ id: m.id, body: { is_default: true } })} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>Set</button>
+                      : null
+                )}
+              </span>
+              <span>
+                <button onClick={() => openEdit(m)} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 3, border: '1px solid var(--border)', background: 'none', cursor: 'pointer' }}>Edit</button>
+              </span>
+            </div>
+            {(m.id !== m.display_name || m.description || m.privacy) && (
+              <div style={{ padding: '0 14px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {m.id !== m.display_name && <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{m.id}</span>}
+                  {m.privacy && (
+                    <span
+                      title={m.privacy === 'private' ? 'Prompts are never logged' : 'Prompts may be retained in anonymized form'}
+                      style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, fontWeight: 600, letterSpacing: 0.3, flexShrink: 0, background: m.privacy === 'private' ? 'rgba(5,150,105,0.12)' : 'rgba(180,83,9,0.12)', color: m.privacy === 'private' ? '#059669' : '#b45309' }}
+                    >
+                      {m.privacy === 'private' ? '🔒 Private' : '〜 Anonymized'}
+                    </span>
                   )}
                 </div>
-              )}
-            </div>
-          ))}
+                {m.description && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{m.description}</span>}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )
+
+        return (
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto' }}>
+              {/* Sticky column header */}
+              <div style={{ display: 'grid', gridTemplateColumns: GRID_COLS, gap: 8, padding: '8px 14px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border)', background: 'var(--surface, rgba(128,128,128,0.04))', minWidth: 800 }}>
+                <SortHeader col="display_name">Model</SortHeader>
+                <SortHeader col="type">Type</SortHeader>
+                <SortHeader col="domain">Domain</SortHeader>
+                <SortHeader col="parameter_size">Params</SortHeader>
+                <SortHeader col="context_length">Context</SortHeader>
+                <span>Quant</span>
+                <SortHeader col="input_cost" title="Input / output USD per million tokens">Cost/Mtok</SortHeader>
+                <SortHeader col="enabled">Enabled</SortHeader>
+                <span>Default</span>
+                <span />
+              </div>
+
+              {allGroups.map(group => {
+                const groupModels = sorted.filter(m => getGroupKey(m.source) === group.key)
+                if (groupModels.length === 0) return null
+                const enabledCount = groupModels.filter(m => m.enabled).length
+                const collapsed = collapsedGroups.has(group.key)
+                return (
+                  <div key={group.key}>
+                    {/* Group header */}
+                    <div
+                      onClick={() => toggleGroup(group.key)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '7px 14px', cursor: 'pointer', userSelect: 'none',
+                        background: `${group.color}0a`,
+                        borderBottom: collapsed ? 'none' : '1px solid var(--border)',
+                        borderTop: '1px solid var(--border)',
+                        minWidth: 800,
+                      }}
+                    >
+                      <span style={{ fontSize: 11, color: group.color, flexShrink: 0 }}>
+                        {collapsed ? '▶' : '▼'}
+                      </span>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: group.color }}>{group.label}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>
+                        {groupModels.length} model{groupModels.length !== 1 ? 's' : ''} · {enabledCount} enabled
+                      </span>
+                    </div>
+                    {/* Group rows */}
+                    {!collapsed && groupModels.map((m, i) => renderModelRow(m, i === groupModels.length - 1))}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Edit panel */}
       {editing && (
