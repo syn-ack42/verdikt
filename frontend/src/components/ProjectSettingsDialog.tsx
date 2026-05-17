@@ -215,6 +215,13 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
                     : 'Venice.ai — costs charged via site key.'}
                 </p>
               )}
+              {selectedLlmModel?.source === 'openrouter' && (
+                <p style={{ margin: '6px 0 0', fontSize: 12, color: '#0ea5e9', lineHeight: 1.4 }}>
+                  {selectedLlmIsPersonal
+                    ? 'OpenRouter — costs charged to your personal account.'
+                    : 'OpenRouter — costs charged via site key.'}
+                </p>
+              )}
             </div>
 
             {!isImage && (

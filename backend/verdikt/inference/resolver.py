@@ -100,11 +100,15 @@ def resolve_llm_target(project: Project, config: AppConfig, auth_session, user_i
             if not api_key:
                 raise RuntimeError("No personal OpenRouter API key configured. Add it in Account Settings.")
             return LLMTarget(provider="openrouter", base_url=OPENROUTER_BASE_URL, model=model_id, api_key=api_key)
-        else:
+        if model_source == "venice":
             api_key = _get_user_venice_key(user_id, auth_session)
             if not api_key:
                 raise RuntimeError("No personal Venice API key configured. Add it in Account Settings.")
             return LLMTarget(provider="venice", base_url=VENICE_BASE_URL, model=model_id, api_key=api_key)
+        raise RuntimeError(
+            f"Personal key mode is set but model '{model_id}' is not a Venice or OpenRouter model "
+            f"(catalog source: '{model_source}'). Re-sync models or change the project's model setting."
+        )
 
     if model_source == "venice":
         api_key = _get_venice_key(auth_session)
