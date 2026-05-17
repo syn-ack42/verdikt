@@ -285,11 +285,11 @@ export default function AdminModels() {
             {showVeniceKey ? 'Hide' : 'Show'}
           </button>
           <button
-            onClick={() => saveVeniceKey.mutate()}
-            disabled={saveVeniceKey.isPending || !veniceKey.trim()}
+            onClick={() => saveVeniceKey.mutate(undefined, { onSuccess: () => syncVenice.mutate() })}
+            disabled={saveVeniceKey.isPending || syncVenice.isPending || !veniceKey.trim()}
             style={{ padding: '6px 14px', borderRadius: 4, fontSize: 12, border: 'none', background: '#6b7de0', color: '#fff', cursor: 'pointer' }}
           >
-            {saveVeniceKey.isPending ? 'Saving…' : 'Save key'}
+            {saveVeniceKey.isPending ? 'Saving…' : syncVenice.isPending ? 'Syncing…' : 'Save & sync'}
           </button>
           {veniceStatus?.configured && (
             <button
@@ -342,11 +342,11 @@ export default function AdminModels() {
             {showOpenRouterKey ? 'Hide' : 'Show'}
           </button>
           <button
-            onClick={() => saveOpenRouterKey.mutate()}
-            disabled={saveOpenRouterKey.isPending || !openRouterKey.trim()}
+            onClick={() => saveOpenRouterKey.mutate(undefined, { onSuccess: () => syncOpenRouter.mutate() })}
+            disabled={saveOpenRouterKey.isPending || syncOpenRouter.isPending || !openRouterKey.trim()}
             style={{ padding: '6px 14px', borderRadius: 4, fontSize: 12, border: 'none', background: '#0ea5e9', color: '#fff', cursor: 'pointer' }}
           >
-            {saveOpenRouterKey.isPending ? 'Saving…' : 'Save key'}
+            {saveOpenRouterKey.isPending ? 'Saving…' : syncOpenRouter.isPending ? 'Syncing…' : 'Save & sync'}
           </button>
           {openRouterStatus?.configured && (
             <button
