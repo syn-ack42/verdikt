@@ -125,8 +125,8 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
         ...(isImage ? {} : { chunk_min_size: chunkMin, chunk_max_size: chunkMax }),
         llm_model: llmModel || undefined,
         embedding_model: embModel || undefined,
-        llm_key_source: llmKeySource || undefined,
-        embedding_key_source: embKeySource || undefined,
+        llm_key_source: llmKeySource,
+        embedding_key_source: embKeySource,
         ...(judgeTemp === '' ? { clear_judge_temperature: true } : { judge_temperature: parseFloat(judgeTemp) }),
         ...(Object.keys(renames).length > 0 ? { dimension_renames: renames } : {}),
       })
