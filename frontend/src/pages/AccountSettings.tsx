@@ -35,6 +35,7 @@ function PersonalKeySection({
       await onSave(apiKey.trim())
       setApiKey('')
       setSaveState('saved')
+      onSync()
       setTimeout(() => setSaveState('idle'), 3000)
     } catch (err: any) {
       setSaveError(err.message ?? 'Failed to save key')
@@ -99,14 +100,14 @@ function PersonalKeySection({
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
             type="submit"
-            disabled={!apiKey.trim() || saveState === 'saving'}
+            disabled={!apiKey.trim() || saveState === 'saving' || syncPending}
             style={{
               padding: '8px 18px', background: accentColor, color: '#fff', border: 'none',
-              borderRadius: 4, fontSize: 14, cursor: !apiKey.trim() || saveState === 'saving' ? 'default' : 'pointer',
+              borderRadius: 4, fontSize: 14, cursor: !apiKey.trim() || saveState === 'saving' || syncPending ? 'default' : 'pointer',
               opacity: !apiKey.trim() ? 0.6 : 1,
             }}
           >
-            {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved ✓' : 'Save key'}
+            {saveState === 'saving' ? 'Saving…' : syncPending ? 'Syncing…' : saveState === 'saved' ? 'Saved ✓' : 'Save & sync'}
           </button>
 
           {configured && (
