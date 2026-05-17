@@ -194,13 +194,6 @@ export default function AdminModels() {
         </button>
         <h2 style={{ margin: 0, flex: 1 }}>Model Catalog</h2>
         <button
-          onClick={() => sync.mutate()}
-          disabled={sync.isPending}
-          style={{ padding: '6px 14px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)', cursor: 'pointer' }}
-        >
-          {sync.isPending ? 'Syncing…' : '↻ Sync from Ollama'}
-        </button>
-        <button
           onClick={() => setShowAddModel(true)}
           style={{ padding: '6px 14px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)', cursor: 'pointer' }}
         >
@@ -214,12 +207,6 @@ export default function AdminModels() {
         </button>
       </div>
 
-      {sync.isError && (
-        <p style={{ color: '#c00', fontSize: 13, marginBottom: 12 }}>
-          Sync failed: {String(sync.error)}
-        </p>
-      )}
-
       {/* Ollama auth section */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -229,7 +216,19 @@ export default function AdminModels() {
               {ollamaStatus.configured ? 'Key set' : 'No key — unauthenticated'}
             </span>
           )}
+          <button
+            onClick={() => sync.mutate()}
+            disabled={sync.isPending}
+            style={{ padding: '5px 12px', borderRadius: 4, fontSize: 12, border: '1px solid var(--border)', cursor: 'pointer' }}
+          >
+            {sync.isPending ? 'Syncing…' : '↻ Sync from Ollama'}
+          </button>
         </div>
+        {sync.isError && (
+          <p style={{ color: '#c00', fontSize: 12, margin: '6px 0 0' }}>
+            Sync failed: {String(sync.error)}
+          </p>
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
           <input
             type={showOllamaKey ? 'text' : 'password'}
