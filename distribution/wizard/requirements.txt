@@ -1,0 +1,4 @@
+# The wizard uses only Python standard library (tkinter, subprocess, secrets, pathlib).
+# No pip install needed on macOS or Windows; on Linux install python3-tk if missing:
+#   sudo apt install python3-tk   (Debian/Ubuntu)
+#   sudo dnf install python3-tkinter  (Fedora)

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>Verdikt</title>
+    <options customize="never" rootVolumeOnly="false"/>
+    <allowed-os-versions>
+        <os-version min="12.0"/>
+    </allowed-os-versions>
+    <choices-outline>
+        <line choice="com.verdikt.app"/>
+    </choices-outline>
+    <choice id="com.verdikt.app" title="Verdikt"
+            description="Verdikt application and setup wizard">
+        <pkg-ref id="com.verdikt.app"/>
+    </choice>
+    <pkg-ref id="com.verdikt.app">component.pkg</pkg-ref>
+</installer-gui-script>

@@ -93,6 +93,42 @@ The repo ships a production-ready multi-stage `Dockerfile` and `docker-compose.y
 
 **Ollama:** expected on the host; `docker-compose.yml` sets `host.docker.internal:11434` with `extra_hosts: host.docker.internal:host-gateway` for Linux compatibility.
 
+## Desktop distribution
+
+`distribution/` is an isolated subdirectory (never imported by core) that ships three Docker Compose variants, a tkinter setup wizard, a pystray system-tray launcher, and platform installer scripts.
+
+### Compose variants
+
+| File | Ollama location |
+|------|----------------|
+| `distribution/compose.native-ollama.yml` | Host (`host.docker.internal:11434`) |
+| `distribution/compose.docker-ollama.yml` | `ollama` Docker service; optional NVIDIA GPU via commented `deploy` block |
+| `distribution/compose.no-ollama.yml` | None — cloud models only |
+
+All three auto-load `distribution/.env` (Docker Compose convention: `.env` in same directory as compose file). Key variables: `VERDIKT_HOST_DATA_DIR` (bind-mount source on host), `VERDIKT_PORT`, `VERDIKT_JWT_SECRET`, `VERDIKT_APP_BASE_URL`, `VERDIKT_CORS_ORIGINS`. Container-internal paths (`VERDIKT_DATA_DIR=/var/lib/verdikt`) are hard-coded in the compose files.
+
+### Setup wizard (`distribution/wizard/`)
+
+Pure stdlib (tkinter). Entry point: `python -m wizard` from `distribution/`.
+
+- `detect.py` — `detect_docker()`, `detect_ollama()`, `detect_nvidia_gpu()` (subprocess/urllib, no deps)
+- `env_writer.py` — `validate_data_dir(path)` returns an error string if the path is non-empty (wizard blocks Next until fixed); `write_env(compose_file, port, data_dir, dist_dir)` writes `distribution/.env`, preserving an existing `VERDIKT_JWT_SECRET` on re-run
+- `app.py` — `WizardApp`: 6-step tkinter window (Welcome → Prerequisites → Model Backend → Port → Data Folder → Install). Install step calls `docker compose pull` + `docker compose up -d` in a background thread, then writes `~/.verdikt_tray.json`
+
+### Tray launcher (`distribution/tray/`)
+
+Deps: `pystray>=0.19`, `Pillow>=10`. Entry point: `python -m tray` from `distribution/`.
+
+- `docker_manager.py` — `DockerManager` wraps `docker compose` subprocesses: `start()`, `stop()`, `restart()`, `is_running()`, `open_logs()` (opens a terminal window per platform)
+- `launcher.py` — reads `~/.verdikt_tray.json`, generates a programmatic disc icon with Pillow (`_make_icon(running: bool)`), polls `is_running()` every 10 s to update icon colour (green = running, grey = stopped)
+- `autostart.py` — `register_autostart(exe)` / `unregister_autostart()`: Windows writes to `HKCU\...\Run` via `winreg`; macOS writes a LaunchAgent plist to `~/Library/LaunchAgents/com.verdikt.tray.plist`; Linux writes an XDG `.desktop` file to `~/.config/autostart/`
+
+### Installers
+
+- `installers/linux/install.sh` — bash; validates data dir is empty, detects Ollama, writes `distribution/.env`, installs a systemd user service for the tray
+- `installers/macos/build.sh` — PyInstaller freeze + `pkgbuild` + `productbuild`; `distribution.xml` defines the installer GUI
+- `installers/windows/verdikt.iss` — Inno Setup 6; bundles PyInstaller-frozen `VerdiktTray.exe` + `VerdiktWizard.exe`; checks Docker at post-install
+
 ## Domain implementation details
 
 ### Text projects
@@ -269,6 +305,7 @@ Ollama has no built-in auth, but admins may put it behind a reverse proxy that r
 9. ✅ Discovery mode — dimension discovery from like/dislike reactions; dimension weights surfaced in UI
 10. ✅ `RoyalRoadPlugin` — HTML scraping, two-stage Gaussian chapter+paragraph sampling, login/following-list support, works search box
 11. ✅ Venice.ai integration (Phase 1) — admin-managed API key + model sync; `LLMTarget` abstraction; Venice LLM + embedding in all inference paths; cost notice in project settings; OpenRouter integration (same code path, no embeddings); optional Ollama Bearer-token auth forwarded to all Ollama HTTP calls and catalog sync
+12. ✅ Desktop distribution — `distribution/` subdirectory: three Docker Compose variants (native Ollama / Docker Ollama / cloud-only), tkinter setup wizard with empty-dir validation and data folder picker, pystray tray launcher with green/grey status icon and start/stop/restart/logs menu, platform installers (Inno Setup 6 / pkgbuild / bash)
 
 ## Discovery mode
 

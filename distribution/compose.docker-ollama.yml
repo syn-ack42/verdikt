@@ -1,0 +1,42 @@
+# Verdikt — Docker Compose (Ollama in Docker)
+# Use when you don't have Ollama installed natively.
+# Downloads the Ollama Docker image on first run (~4 GB).
+#
+# Run: docker compose -f compose.docker-ollama.yml up -d
+#
+# NVIDIA GPU: uncomment the deploy block in the ollama service.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    # Uncomment to enable NVIDIA GPU passthrough:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  verdikt:
+    image: ghcr.io/verdikt/verdikt:latest
+    restart: unless-stopped
+    depends_on: [ollama]
+    ports:
+      - "${VERDIKT_PORT:-8765}:8765"
+    volumes:
+      - ${VERDIKT_HOST_DATA_DIR:-./verdikt_data}:/var/lib/verdikt
+    environment:
+      VERDIKT_JWT_SECRET: ${VERDIKT_JWT_SECRET}
+      VERDIKT_APP_BASE_URL: ${VERDIKT_APP_BASE_URL:-http://localhost:8765}
+      VERDIKT_CORS_ORIGINS: ${VERDIKT_CORS_ORIGINS:-'["http://localhost:8765"]'}
+      VERDIKT_INFERENCE__OLLAMA_BASE_URL: http://ollama:11434
+      VERDIKT_FRONTEND_DIR: /app/frontend/dist
+      VERDIKT_DATA_DIR: /var/lib/verdikt
+      VERDIKT_USERS_DIR: /var/lib/verdikt/users
+
+volumes:
+  ollama_data:
