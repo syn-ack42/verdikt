@@ -139,9 +139,8 @@ export default function ModelPickerTable({
 
   const hasRows = siteModels.length + venicePersonal.length + openRouterPersonal.length > 0
 
-  // When searching, treat all non-empty groups as expanded
   const isCollapsed = (key: string, groupHasModels: boolean) =>
-    !q && groupHasModels && collapsedGroups.has(key)
+    groupHasModels && collapsedGroups.has(key)
 
   const renderRow = (m: ModelCatalogEntry, isPersonal: boolean, last: boolean) => {
     const selected = isRowSelected(m, isPersonal)
