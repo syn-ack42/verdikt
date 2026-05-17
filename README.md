@@ -66,7 +66,7 @@ Open `http://localhost:5173`. You will be redirected to the registration page on
 2. Go to **Admin › Models**, click **Sync from Ollama** to discover installed models
 3. Enable the models you want and set a default LLM for each domain you plan to use
 4. Create a project — choose a domain (Text or Image), name it, configure rating dimensions
-5. Click **Browse & Ingest Files** to upload files and select what to ingest (or configure a plugin such as Immich)
+5. Click **Browse & Ingest Files** to upload files, or configure a content plugin (AO3, Royal Road, Immich) via the **Plugins** section on the dashboard
 6. Click **Run Pipeline** on the dashboard — watch chunk / embed / cluster progress live
 7. Click **Rate Chunks** and score passages with the keyboard
 8. Once the dashboard shows enough ratings, open **Profile** and click **Crystallise**
@@ -106,14 +106,44 @@ Image content is displayed as thumbnails throughout the rating and recommendatio
 
 ## Model management (admin)
 
-Admins manage the model catalog at **Admin › Models**. This controls which Ollama models users can select per project.
+Admins manage the model catalog at **Admin › Models**. The catalog controls which models users can select per project and sets domain defaults. Three model sources are supported: local Ollama, Venice.ai (hosted), and OpenRouter (hosted gateway).
 
-1. Click **Sync from Ollama** — discovers all models installed in the local Ollama instance and adds them to the catalog with auto-detected type (LLM / Embedding) and domain (Text / Image / Any)
-2. **Enable** models you want users to be able to select; disabled models do not appear in project settings
+### Local Ollama models
+
+1. In the **Ollama** card, click **↻ Sync from Ollama** — discovers all locally installed models and adds them to the catalog with auto-detected type (LLM / Embedding) and domain (Text / Image / Any)
+2. **Enable** models you want users to be able to select; disabled models are hidden in project settings
 3. **Edit** a model to adjust its type, domain classification, display name, or description
 4. **Set default** — mark one LLM per domain as the default; this model is pre-selected when creating a new project in that domain. A domain with no enabled LLM is unavailable for new projects.
 
-Model catalog entries and defaults are stored in `auth.db` and apply server-wide.
+**Ollama Bearer auth (optional)** — if your Ollama instance is behind a reverse proxy that requires authentication, enter a Bearer token in the **Ollama** card. When set, all Verdikt requests to Ollama (LLM calls, embedding, and catalog sync) include `Authorization: Bearer <token>`. Standard Ollama installs require no key.
+
+**Sentence-transformer embedding models** — these are not discoverable via Ollama sync. Add them manually by clicking **+ Add model** (currently only in the API; manage via Admin › Models). The bundled default (`all-MiniLM-L6-v2`) is always available without registration.
+
+### Venice.ai (hosted LLMs + embeddings)
+
+[Venice.ai](https://venice.ai) provides an OpenAI-compatible API for LLM inference and text embeddings, with a focus on privacy (prompts are not logged by default).
+
+1. Enter your Venice API key in the **Venice.ai** card and click **Save**
+2. Click **↻ Sync from Venice** to populate the catalog with available Venice models
+3. Enable and set defaults as with Ollama models
+
+Venice models are shown with a purple **Venice** badge in the model list. When a Venice model is selected for a project, a cost notice is shown in the project settings dialog.
+
+To get an API key: sign up at [venice.ai](https://venice.ai) and generate a key in your account settings.
+
+### OpenRouter (hosted LLM gateway)
+
+[OpenRouter](https://openrouter.ai) provides a unified API gateway to hundreds of hosted models from Anthropic, Google, Meta, Mistral, and many others.
+
+1. Enter your OpenRouter API key in the **OpenRouter** card and click **Save**
+2. Click **↻ Sync from OpenRouter** to populate the catalog with available models
+3. Enable and set defaults as with Ollama models
+
+OpenRouter models are shown with a teal **OpenRouter** badge. Pricing information (cost per million tokens) is displayed in the model list and in the project settings dialog when an OpenRouter model is selected.
+
+OpenRouter does not support embeddings — all embedding models remain local (sentence-transformers or Ollama embedding models).
+
+To get an API key: sign up at [openrouter.ai](https://openrouter.ai) and generate a key in your account.
 
 ### Model domain classification
 
@@ -123,7 +153,7 @@ Model catalog entries and defaults are stored in `auth.db` and apply server-wide
 | Image | Appears in image-project LLM picker only |
 | Any | Appears in all domains (vision LLMs capable of both text and image) |
 
-Models containing "embed" in their name are auto-classified as Embedding / Text on sync. Models with CLIP in their family or vision in their capabilities list are auto-classified as LLM / Any.
+Models containing "embed" in their name are auto-classified as Embedding / Text on sync. Models with CLIP in their family or vision in their capabilities list are auto-classified as LLM / Any. You can override any classification via **Edit**.
 
 ## Profile confidence
 
@@ -151,42 +181,78 @@ Projects can be exported and imported as JSON from the project list:
 - **Export** — downloads a `verdikt-export-<project>.json` file containing the project, all materials, ratings, profiles, and plugin configs (binary content excluded)
 - **Import** — creates a new project from an export file; materials are marked `ingested` and need the pipeline re-run to regenerate chunks and embeddings
 
-## Content sources
+## Content source plugins
 
-### File storage
+Verdikt fetches content via **plugins** — each plugin knows how to pull from one kind of source. A project can have multiple plugins active simultaneously, each configured independently. New plugins can be installed as Python packages via the plugin entry-points system (see `docs/plugin-developer-guide.md`).
 
-Files for ingest are managed per-user at `~/.verdikt/users/<user_id>/files/`. Two ways to add files:
+### File Drop (text & image)
 
-- **Upload via the UI** — click "Browse & Ingest Files" on any project dashboard, then "Upload files"
-- **Drop files directly** — copy files into `~/.verdikt/users/<user_id>/files/` (or a subdirectory); they appear in the browser immediately
+Upload files directly or drop them into your user storage directory on the server. Files are stored encrypted at rest using AES-256-GCM — on disk each file is an opaque UUID-named blob; filenames and paths are kept only in your per-user SQLCipher database.
 
-**Supported text formats:** `.txt`, `.md`, `.html`, `.epub`, `.pdf`, `.rtf`  
-**Supported image formats:** `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, `.tiff`
+**Upload via the UI** — click "Browse & Ingest Files" on any project dashboard, then "Upload files".  
+**Drop files directly** — copy files into `$VERDIKT_USERS_DIR/<user_id>/files/` on the server; they appear in the browser immediately.
 
-The Storage plugin filters accepted extensions automatically based on the project domain: text projects only ingest text files; image projects only ingest image files.
+**Text formats:** `.txt`, `.md`, `.html`, `.epub`, `.pdf`, `.rtf`  
+**Image formats:** `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, `.tiff`
 
-Files are stored encrypted at rest using AES-256-GCM. On disk each file is an opaque UUID-named blob with no extension or readable metadata; filenames, paths, and sizes are kept only in the per-user SQLCipher database. A server admin with filesystem access cannot read file content or determine what files a user has uploaded. Existing plaintext files are migrated automatically on first login after an upgrade.
+Ingest is idempotent: files already in the project are only updated when their content changes. For full details, open the **Help** page in the plugin config dialog.
 
-The storage root is configurable via `VERDIKT_DATA_DIR` (defaults to `/var/lib/verdikt`). User spaces can be placed on a separate volume with `VERDIKT_USERS_DIR`.
+### AO3 (text)
 
-### Immich
+Fetch fan fiction from [Archive of Our Own](https://archiveofourown.org). Browse or search AO3, copy the URL (e.g. `https://archiveofourown.org/tags/Original%20Work/works`), and paste it into the plugin's **Search URLs** list. Each URL has its own **Max works** cap.
 
-The built-in Immich plugin sources photos from a self-hosted [Immich](https://immich.app) instance. Configure it from the project dashboard under **Plugins**:
+Works are sampled rather than stored in full: roughly 10% of paragraphs are retained per work, selected with a Gaussian distribution centred on the middle of the work. This is enough to learn preferences without holding a copy of the original.
 
-- **Immich URL** — base URL of your Immich instance (e.g. `http://192.168.1.10:2283`)
-- **API Key** — generate one in Immich under Account Settings › API Keys
-- **Image storage** — `preview` (~200 KB per photo, default), `thumbnail` (~30 KB), or `none` (always fetch from Immich; requires Immich to be reachable at rating time)
-- **Sources** — one or more sources: `album` (one specific album by ID), `search` (photos matching a metadata query), or `all` (entire library, up to a configurable cap)
+**Authentication** (optional) — provide your AO3 credentials to access works visible to registered users. Credentials are stored encrypted in your project config.
 
-After ingesting and running the pipeline, you can write Verdikt ratings and AI-generated descriptions back to Immich via the **Write back** button on the project dashboard.
+| Variable | Default | Effect |
+|---|---|---|
+| `VERDIKT_AO3_SAMPLE_RATE` | `0.10` | Fraction of paragraphs to retain |
+| `VERDIKT_AO3_SAMPLE_STDDEV` | `1.5` | Gaussian spread; higher = more even coverage |
+| `VERDIKT_AO3_REQUEST_DELAY` | `5.0` | Seconds between requests (hard minimum 3 s) |
 
-### What is not sealed at rest
+AO3 is a community-run site. The delay minimum is intentional and cannot be configured below 3 seconds. For full details, open the **Help** page in the plugin config dialog.
 
-The embedding database (ChromaDB) does not support encryption and remains unencrypted on disk. It contains only numerical vectors and opaque internal IDs — no filenames, no text content, no usernames. Reconstructing readable content from raw embedding vectors requires reversing the neural network that produced them; this is not a realistic attack for the models Verdikt uses.
+### Royal Road (text)
 
-For deployments where even this residual exposure is unacceptable, full-disk encryption at the OS level (e.g. LUKS on Linux) covers the ChromaDB directory alongside everything else.
+Fetch web fictions from [Royal Road](https://www.royalroad.com). Three source types can be combined in one project:
 
-Verdikt does not log content, filenames, URLs, or email addresses. Log output contains only counts, status codes, UUIDs, and error messages.
+- **Fiction URLs** — paste direct links to specific fiction pages
+- **Search / Browse URLs** — copy a Royal Road browse or tag page URL; set a **Max** cap per URL
+- **Following list** — enable **Import followed fictions** and provide your credentials to pull from your follow list
+
+Long fictions are sampled in two stages: first ~30% of chapters are selected (Gaussian-weighted toward the middle), then ~20% of the downloaded paragraphs are retained. Sampling is deterministic per fiction ID.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `VERDIKT_RR_CHAPTER_RATE` | `0.30` | Fraction of chapters to download |
+| `VERDIKT_RR_CHAPTER_STDDEV` | `1.5` | Gaussian spread for chapter selection |
+| `VERDIKT_RR_SAMPLE_RATE` | `0.20` | Fraction of paragraphs to retain |
+| `VERDIKT_RR_SAMPLE_STDDEV` | `1.5` | Gaussian spread for paragraph sampling |
+| `VERDIKT_RR_REQUEST_DELAY` | `2.0` | Seconds between requests (hard minimum 1 s) |
+
+For full details, open the **Help** page in the plugin config dialog.
+
+### Immich (image)
+
+Fetch photos from a self-hosted [Immich](https://immich.app) instance (v1.90+). Configure it from the project dashboard under **Plugins**:
+
+- **Immich URL** — base URL of your instance (e.g. `http://192.168.1.10:2283`)
+- **API Key** — generate one in Immich › Account Settings › API Keys
+- **Image storage** — `preview` (~200 KB, default), `thumbnail` (~30 KB), or `none` (always fetch live; requires Immich reachable at rating time)
+- **Sources** — one or more of: `album` (by album UUID), `search` (metadata query), or `all` (entire library up to a cap)
+
+After rating and running AI Rating, the **Write back** button pushes Verdikt scores (as Immich star ratings 1–5) and LLM-generated descriptions back to each photo asset. For full details, open the **Help** page in the plugin config dialog.
+
+## Security and privacy
+
+**Encrypted at rest** — all user files and database content are encrypted per-user with AES-256-GCM (files) and SQLCipher (database). The encryption key is derived from the user's login password via Argon2id and is never written to disk. A server administrator with filesystem access cannot read content, filenames, or preference data without the user's password.
+
+**What is not encrypted** — the embedding database (ChromaDB) does not support encryption and remains unencrypted on disk. It contains only numerical vectors and opaque internal IDs — no filenames, no text content, no usernames. Reconstructing readable content from raw embedding vectors requires reversing the neural network that produced them, which is not a realistic attack for the models Verdikt uses. For deployments where even this residual exposure is unacceptable, full-disk encryption at the OS level (e.g. LUKS on Linux) covers the ChromaDB directory alongside everything else.
+
+**No logging of content** — Verdikt does not log content, filenames, URLs, or email addresses. Log output contains only counts, status codes, UUIDs, and error messages.
+
+**Hosted models** — when Venice.ai or OpenRouter models are configured, content sent to them for LLM inference leaves your server. Venice.ai models marked **Private** do not retain prompts; models marked **Anonymized** may retain them in anonymized form. Check the badge shown in Admin › Models and in the project settings dialog before selecting a hosted model for sensitive content.
 
 ## Project settings
 
@@ -221,6 +287,14 @@ All configuration is via environment variables (prefix `VERDIKT_`):
 | `VERDIKT_GITHUB_CLIENT_ID` | *(empty)* | GitHub OAuth App client ID; leave unset to disable GitHub login |
 | `VERDIKT_GITHUB_CLIENT_SECRET` | *(empty)* | GitHub OAuth App client secret |
 | `VERDIKT_OAUTH_REDIRECT_BASE` | `http://localhost:8765` | Base URL used in OAuth callback URIs |
+| `VERDIKT_AO3_SAMPLE_RATE` | `0.10` | AO3: fraction of paragraphs to retain per work |
+| `VERDIKT_AO3_SAMPLE_STDDEV` | `1.5` | AO3: Gaussian spread for paragraph sampling |
+| `VERDIKT_AO3_REQUEST_DELAY` | `5.0` | AO3: seconds between HTTP requests (hard minimum 3 s) |
+| `VERDIKT_RR_CHAPTER_RATE` | `0.30` | Royal Road: fraction of chapters to download per fiction |
+| `VERDIKT_RR_CHAPTER_STDDEV` | `1.5` | Royal Road: Gaussian spread for chapter selection |
+| `VERDIKT_RR_SAMPLE_RATE` | `0.20` | Royal Road: fraction of paragraphs to retain from downloaded chapters |
+| `VERDIKT_RR_SAMPLE_STDDEV` | `1.5` | Royal Road: Gaussian spread for paragraph sampling |
+| `VERDIKT_RR_REQUEST_DELAY` | `2.0` | Royal Road: seconds between HTTP requests (hard minimum 1 s) |
 
 LLM and embedding model defaults are primarily managed through the Admin › Models catalog. The environment variables above serve as global fallbacks when no catalog default has been configured.
 
@@ -256,8 +330,8 @@ The first registered user is automatically an admin. Admins have access to:
 
 ### Models (`/admin/models`)
 
-- Sync the local Ollama model catalog
-- Manually add sentence-transformer embedding models (these are not discoverable via Ollama sync)
+- Sync the local Ollama model catalog; optionally configure a Bearer token for authenticated Ollama instances
+- Sync hosted model catalogs from Venice.ai and OpenRouter after entering API keys
 - Enable/disable models for user selection
 - Set per-domain LLM defaults
 - Edit model type, domain classification, display name, and description
