@@ -63,9 +63,6 @@ export default function AdminSettings() {
           ← Projects
         </button>
         <h2 style={{ margin: 0, flex: 1 }}>Site Settings</h2>
-        <button onClick={() => navigate('/admin/users')} style={{ padding: '6px 14px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
-          Users
-        </button>
       </div>
 
       {/* Default limits */}

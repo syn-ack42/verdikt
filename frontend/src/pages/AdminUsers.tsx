@@ -82,14 +82,6 @@ export default function AdminUsers() {
           style={{ padding: '6px 14px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: '#2e7d32' }}>
           + Add User
         </button>
-        <button onClick={() => navigate('/admin/settings')}
-          style={{ padding: '6px 14px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
-          Settings
-        </button>
-        <button onClick={() => navigate('/admin/models')}
-          style={{ padding: '6px 14px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
-          Models
-        </button>
       </div>
 
       {isLoading && <p style={{ color: 'var(--text-muted)' }}>Loading…</p>}
