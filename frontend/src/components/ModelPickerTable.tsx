@@ -54,7 +54,11 @@ function applySort(models: ModelCatalogEntry[], by: SortKey, dir: 'asc' | 'desc'
   })
 }
 
-function sortSelectedFirst(models: ModelCatalogEntry[], isRowSelected: (m: ModelCatalogEntry, personal: boolean) => boolean, isPersonal: boolean) {
+function sortSelectedFirst(
+  models: ModelCatalogEntry[],
+  isRowSelected: (m: ModelCatalogEntry, personal: boolean) => boolean,
+  isPersonal: boolean,
+) {
   const idx = models.findIndex(m => isRowSelected(m, isPersonal))
   if (idx <= 0) return models
   return [models[idx], ...models.slice(0, idx), ...models.slice(idx + 1)]
@@ -66,6 +70,31 @@ export default function ModelPickerTable({
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<SortKey>('display_name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const isNoneSelected = !selectedId && !isPersonalSelected
+  const isRowSelected = (m: ModelCatalogEntry, personal: boolean) =>
+    m.id === selectedId && personal === isPersonalSelected
+
+  // Initial collapsed state: all groups collapsed except the one holding the selection
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    const all = new Set(['site', 'venice', 'openrouter'])
+    if (isNoneSelected) { all.delete('site'); return all }
+    if (selectedId) {
+      const sel = models.find(m => m.id === selectedId)
+      if (sel) {
+        if (!sel.personal_only) all.delete('site')
+        else if (sel.source === 'venice') all.delete('venice')
+        else if (sel.source === 'openrouter') all.delete('openrouter')
+      }
+    }
+    return all
+  })
+
+  const toggleGroup = (key: string) => setCollapsedGroups(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
 
   const toggleSort = (col: SortKey) => {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -90,10 +119,6 @@ export default function ModelPickerTable({
   )
   const sorted = applySort(filtered, sortBy, sortDir)
 
-  const isNoneSelected = !selectedId && !isPersonalSelected
-  const isRowSelected = (m: ModelCatalogEntry, personal: boolean) =>
-    m.id === selectedId && personal === isPersonalSelected
-
   const hover = (e: React.MouseEvent<HTMLDivElement>, enter: boolean, selected: boolean) => {
     if (!selected) e.currentTarget.style.background = enter ? 'var(--surface, rgba(128,128,128,0.04))' : 'transparent'
   }
@@ -104,11 +129,19 @@ export default function ModelPickerTable({
   const openRouterPersonal = sortSelectedFirst(sorted.filter(m => m.personal_only && m.source === 'openrouter'), isRowSelected, true)
   const hasPersonalGroups = venicePersonal.length > 0 || openRouterPersonal.length > 0
 
-  const siteHasSelected = isNoneSelected || siteModels.some(m => isRowSelected(m, false))
-  const veniceHasSelected = venicePersonal.some(m => isRowSelected(m, true))
-  const openRouterHasSelected = openRouterPersonal.some(m => isRowSelected(m, true))
+  const selectedSiteModel = siteModels.find(m => isRowSelected(m, false))
+  const selectedVeniceModel = venicePersonal.find(m => isRowSelected(m, true))
+  const selectedOpenRouterModel = openRouterPersonal.find(m => isRowSelected(m, true))
+
+  const siteHasSelected = isNoneSelected || !!selectedSiteModel
+  const veniceHasSelected = !!selectedVeniceModel
+  const openRouterHasSelected = !!selectedOpenRouterModel
 
   const hasRows = siteModels.length + venicePersonal.length + openRouterPersonal.length > 0
+
+  // When searching, treat all non-empty groups as expanded
+  const isCollapsed = (key: string, groupHasModels: boolean) =>
+    !q && groupHasModels && collapsedGroups.has(key)
 
   const renderRow = (m: ModelCatalogEntry, isPersonal: boolean, last: boolean) => {
     const selected = isRowSelected(m, isPersonal)
@@ -169,21 +202,45 @@ export default function ModelPickerTable({
     )
   }
 
-  const groupHeader = (label: string, color: string, hasSelected: boolean, extraStyle?: React.CSSProperties) => (
-    <div style={{
-      padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: 0.2,
-      color: hasSelected ? color : 'var(--text-muted)',
-      background: hasSelected ? `${color}0d` : 'var(--surface, rgba(128,128,128,0.04))',
-      borderTop: '1px solid var(--border)',
-      borderBottom: '1px solid var(--border)',
-      borderLeft: hasSelected ? `3px solid ${color}` : '3px solid transparent',
-      display: 'flex', alignItems: 'center', gap: 6,
-      ...extraStyle,
-    }}>
-      {hasSelected && <span style={{ fontSize: 9 }}>●</span>}
-      {label}
-    </div>
-  )
+  const renderGroupHeader = (
+    groupKey: string,
+    label: string,
+    color: string,
+    hasSelected: boolean,
+    selectedModel: ModelCatalogEntry | undefined,
+    count: number,
+    firstGroup: boolean,
+  ) => {
+    const collapsed = isCollapsed(groupKey, count > 0)
+    return (
+      <div
+        onClick={() => toggleGroup(groupKey)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '6px 10px', cursor: 'pointer', userSelect: 'none',
+          color: hasSelected ? color : 'var(--text-muted)',
+          background: hasSelected ? `${color}0d` : 'var(--surface, rgba(128,128,128,0.04))',
+          borderTop: firstGroup ? 'none' : '1px solid var(--border)',
+          borderBottom: collapsed ? 'none' : '1px solid var(--border)',
+          borderLeft: hasSelected ? `3px solid ${color}` : '3px solid transparent',
+          fontSize: 11, fontWeight: 600, letterSpacing: 0.2,
+        }}
+      >
+        <span style={{ fontSize: 9, flexShrink: 0 }}>{collapsed ? '▶' : '▼'}</span>
+        <span>{label}</span>
+        <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 11 }}>· {count}</span>
+        {/* Show selected model name when collapsed */}
+        {collapsed && hasSelected && selectedModel && (
+          <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 500, color, maxWidth: '50%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {selectedModel.display_name}
+          </span>
+        )}
+        {collapsed && hasSelected && !selectedModel && noneLabel && isNoneSelected && (
+          <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 500, color, fontStyle: 'italic' }}>default</span>
+        )}
+      </div>
+    )
+  }
 
   return (
     <>
@@ -217,45 +274,78 @@ export default function ModelPickerTable({
 
         {/* Scrollable rows */}
         <div style={{ maxHeight: listMaxHeight, overflowY: 'auto' }}>
-          {!hasRows && (
+          {!hasRows && !noneLabel && (
             <p style={{ margin: '10px 12px', fontSize: 13, color: 'var(--text-muted)' }}>
               {search ? `No models match "${search}".` : 'No models available for this domain.'}
             </p>
           )}
 
-          {/* None / auto row */}
-          {noneLabel && (() => {
-            const selected = isNoneSelected
-            const last = siteModels.length === 0 && !hasPersonalGroups
-            return (
-              <div
-                onClick={() => onSelect(null, false)}
-                style={{ ...rowOuter(selected), borderBottom: last ? 'none' : '1px solid var(--border)' }}
-                onMouseEnter={e => hover(e, true, selected)}
-                onMouseLeave={e => hover(e, false, selected)}
-              >
-                <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 8, padding: '9px 12px 9px 10px', alignItems: 'center' }}>
-                  <RadioDot selected={selected} />
-                  <span style={{ fontSize: 13, fontStyle: 'italic', color: selected ? 'var(--text)' : 'var(--text-muted)', gridColumn: '2 / -1' }}>
-                    {noneLabel}
-                  </span>
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Site group header — only shown when personal groups exist */}
-          {hasPersonalGroups && siteModels.length > 0 && groupHeader('Site — admin managed', '#6b7de0', siteHasSelected, { borderTop: 'none' })}
-
-          {siteModels.map((m, i) => renderRow(m, false, !hasPersonalGroups && i === siteModels.length - 1))}
+          {/* Site group */}
+          {(siteModels.length > 0 || noneLabel) && (
+            <>
+              {hasPersonalGroups && renderGroupHeader(
+                'site', 'Site — admin managed', '#6b7de0',
+                siteHasSelected, selectedSiteModel,
+                siteModels.length + (noneLabel ? 1 : 0),
+                true,
+              )}
+              {!isCollapsed('site', siteModels.length + (noneLabel ? 1 : 0) > 0) && (
+                <>
+                  {/* None / auto row */}
+                  {noneLabel && (() => {
+                    const selected = isNoneSelected
+                    const last = siteModels.length === 0
+                    return (
+                      <div
+                        onClick={() => onSelect(null, false)}
+                        style={{ ...rowOuter(selected), borderBottom: last ? 'none' : '1px solid var(--border)' }}
+                        onMouseEnter={e => hover(e, true, selected)}
+                        onMouseLeave={e => hover(e, false, selected)}
+                      >
+                        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 8, padding: '9px 12px 9px 10px', alignItems: 'center' }}>
+                          <RadioDot selected={selected} />
+                          <span style={{ fontSize: 13, fontStyle: 'italic', color: selected ? 'var(--text)' : 'var(--text-muted)', gridColumn: '2 / -1' }}>
+                            {noneLabel}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                  {siteModels.map((m, i) => renderRow(m, false, i === siteModels.length - 1))}
+                </>
+              )}
+            </>
+          )}
 
           {/* Venice personal group */}
-          {venicePersonal.length > 0 && groupHeader('Venice · Personal key', '#7c3aed', veniceHasSelected)}
-          {venicePersonal.map((m, i) => renderRow(m, true, openRouterPersonal.length === 0 && i === venicePersonal.length - 1))}
+          {venicePersonal.length > 0 && (
+            <>
+              {renderGroupHeader(
+                'venice', 'Venice · Personal key', '#7c3aed',
+                veniceHasSelected, selectedVeniceModel,
+                venicePersonal.length,
+                !hasPersonalGroups || (siteModels.length === 0 && !noneLabel),
+              )}
+              {!isCollapsed('venice', venicePersonal.length > 0) && (
+                venicePersonal.map((m, i) => renderRow(m, true, openRouterPersonal.length === 0 && i === venicePersonal.length - 1))
+              )}
+            </>
+          )}
 
           {/* OpenRouter personal group */}
-          {openRouterPersonal.length > 0 && groupHeader('OpenRouter · Personal key', '#0ea5e9', openRouterHasSelected)}
-          {openRouterPersonal.map((m, i) => renderRow(m, true, i === openRouterPersonal.length - 1))}
+          {openRouterPersonal.length > 0 && (
+            <>
+              {renderGroupHeader(
+                'openrouter', 'OpenRouter · Personal key', '#0ea5e9',
+                openRouterHasSelected, selectedOpenRouterModel,
+                openRouterPersonal.length,
+                false,
+              )}
+              {!isCollapsed('openrouter', openRouterPersonal.length > 0) && (
+                openRouterPersonal.map((m, i) => renderRow(m, true, i === openRouterPersonal.length - 1))
+              )}
+            </>
+          )}
         </div>
       </div>
     </>
