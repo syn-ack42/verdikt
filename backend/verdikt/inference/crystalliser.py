@@ -194,18 +194,19 @@ class ProfileCrystalliser:
             )
             resp.raise_for_status()
         except httpx.ConnectError as exc:
-            raise RuntimeError(f"Cannot reach Venice API at {self._target.base_url}.") from exc
+            raise RuntimeError(f"Cannot reach {self._target.provider} API at {self._target.base_url}.") from exc
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
             body = exc.response.text[:300]
+            provider = self._target.provider.capitalize()
             if status == 401:
-                raise RuntimeError("Venice API key is invalid or expired.") from exc
+                raise RuntimeError(f"{provider} API key is invalid or expired.") from exc
             if status == 404:
                 raise RuntimeError(
-                    f"Model '{self._target.model}' not found on Venice. "
+                    f"Model '{self._target.model}' not found on {provider}. "
                     "Sync models and check the project's model setting."
                 ) from exc
-            raise RuntimeError(f"Venice API returned {status}: {body}") from exc
+            raise RuntimeError(f"{provider} API returned {status}: {body}") from exc
 
         data = resp.json()
         text = data["choices"][0]["message"]["content"]

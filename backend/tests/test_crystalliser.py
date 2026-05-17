@@ -424,7 +424,7 @@ def test_venice_crystalliser_401_raises():
     mock_resp.text = "Unauthorized"
     exc = httpx.HTTPStatusError("401", request=MagicMock(), response=mock_resp)
     with patch("verdikt.inference.crystalliser.httpx.post", side_effect=exc):
-        with pytest.raises(RuntimeError, match="Venice API key is invalid"):
+        with pytest.raises(RuntimeError, match="API key is invalid"):
             c.crystallise(project, ratings, chunks)
 
 
@@ -439,7 +439,7 @@ def test_venice_crystalliser_404_raises_model_not_found():
     mock_resp.text = "Not found"
     exc = httpx.HTTPStatusError("404", request=MagicMock(), response=mock_resp)
     with patch("verdikt.inference.crystalliser.httpx.post", side_effect=exc):
-        with pytest.raises(RuntimeError, match="not found on Venice"):
+        with pytest.raises(RuntimeError, match="not found on"):
             c.crystallise(project, ratings, chunks)
 
 

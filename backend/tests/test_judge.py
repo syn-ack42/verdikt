@@ -238,7 +238,7 @@ def test_venice_401_raises_readable_error(venice_judge, project, profile):
     mock_resp.text = "Unauthorized"
     exc = httpx.HTTPStatusError("401", request=MagicMock(), response=mock_resp)
     with patch("verdikt.inference.judge.httpx.post", side_effect=exc):
-        with pytest.raises(RuntimeError, match="Venice API key is invalid"):
+        with pytest.raises(RuntimeError, match="API key is invalid"):
             venice_judge.score_chunk("Text", profile, project)
 
 
@@ -248,7 +248,7 @@ def test_venice_404_raises_model_not_found(venice_judge, project, profile):
     mock_resp.text = "Not found"
     exc = httpx.HTTPStatusError("404", request=MagicMock(), response=mock_resp)
     with patch("verdikt.inference.judge.httpx.post", side_effect=exc):
-        with pytest.raises(RuntimeError, match="not found on Venice"):
+        with pytest.raises(RuntimeError, match="not found on"):
             venice_judge.score_chunk("Text", profile, project)
 
 
