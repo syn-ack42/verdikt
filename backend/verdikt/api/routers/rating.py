@@ -165,6 +165,7 @@ _SORT_COLS: dict[str, str] = {
     "work_seq": "COALESCE(m.project_seq, 0)",
     "avg_score": "(SELECT AVG(j.value) FROM json_each(r.dimension_scores) j)",
     "is_ai": "r.is_ai",
+    "rated_at": "r.rated_at",
 }
 
 

@@ -20,6 +20,17 @@ interface Props {
   onOpenWork?: (workSeq: number) => void
 }
 
+function fmtRatedAt(iso: string): string {
+  const d = new Date(iso)
+  const now = Date.now()
+  const diff = now - d.getTime()
+  if (diff < 60_000) return 'just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)}d ago`
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined })
+}
+
 function scoreColor(avg: number | null): string {
   if (avg == null) return 'var(--text-muted)'
   if (avg >= 4) return '#2e7d32'
@@ -37,8 +48,8 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
   const [expandedExpl, setExpandedExpl] = useState<string | null>(null)
   const [scores, setScores] = useState<Record<string, number>>(initialEditing?.dimension_scores ?? {})
   const [activeIdx, setActiveIdx] = useState(0)
-  const [sortBy, setSortBy] = useState<string>('chunk_position')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [sortBy, setSortBy] = useState<string>('rated_at')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(0)
 
   const { data, isLoading } = useQuery({
@@ -248,6 +259,7 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
                 onChange={e => { setSortBy(e.target.value); setSortDir('asc'); setPage(0) }}
                 style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', cursor: 'pointer' }}
               >
+                <option value="rated_at">Date rated</option>
                 <option value="chunk_position">Chunk</option>
                 <option value="work_seq">Work</option>
                 <option value="avg_score">Avg score</option>
@@ -302,6 +314,7 @@ export default function RatedChunksModal({ projectId, filterWorkSeq, filterWorkT
                         {entry.chunk_count > 1 && (
                           <span>Chunk {entry.chunk_position + 1} of {entry.chunk_count}</span>
                         )}
+                        <span title={new Date(entry.rated_at).toLocaleString()}>{fmtRatedAt(entry.rated_at)}</span>
                         {entry.is_ai ? (
                           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                             <span style={{ background: 'rgba(180,83,9,0.12)', color: '#b45309', fontSize: 10, padding: '2px 5px', borderRadius: 3, fontWeight: 600 }}>AI</span>
