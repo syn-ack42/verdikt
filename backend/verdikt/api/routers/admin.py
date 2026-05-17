@@ -624,3 +624,135 @@ def sync_venice_models(
     _sync_venice_catalog(row.value, session)
     rows = session.query(ModelCatalogRow).order_by(ModelCatalogRow.type, ModelCatalogRow.id).all()
     return [_model_dict(r) for r in rows]
+
+
+# ── OpenRouter ────────────────────────────────────────────────────────────────
+
+class OpenRouterKeyUpdate(BaseModel):
+    api_key: str
+
+
+@router.put("/openrouter/key")
+def set_openrouter_key(
+    body: OpenRouterKeyUpdate,
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    row = session.get(SiteSettingsRow, "openrouter.api_key")
+    if row is None:
+        session.add(SiteSettingsRow(key="openrouter.api_key", value=body.api_key))
+    else:
+        row.value = body.api_key
+    session.commit()
+    return {"ok": True}
+
+
+@router.delete("/openrouter/key")
+def delete_openrouter_key(
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    row = session.get(SiteSettingsRow, "openrouter.api_key")
+    if row is not None:
+        session.delete(row)
+        session.commit()
+    return {"ok": True}
+
+
+@router.get("/openrouter/status")
+def get_openrouter_status(
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    row = session.get(SiteSettingsRow, "openrouter.api_key")
+    configured = bool(row and row.value)
+    count = session.query(ModelCatalogRow).filter(ModelCatalogRow.source == "openrouter").count()
+    return {"configured": configured, "model_count": count}
+
+
+def _sync_openrouter_catalog(api_key: str, session) -> None:
+    """Fetch the OpenRouter model list and upsert into the local catalog. Shared by admin and personal-key sync."""
+    import httpx as _httpx
+
+    try:
+        resp = _httpx.get(
+            "https://openrouter.ai/api/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Cannot reach OpenRouter API: {exc}")
+
+    models_data = resp.json().get("data", [])
+    now = datetime.now(timezone.utc)
+    seen_ids: set[str] = set()
+
+    for model in models_data:
+        model_id = model.get("id", "")
+        if not model_id:
+            continue
+
+        name_lower = model_id.lower()
+        if "embed" in name_lower:
+            continue
+
+        seen_ids.add(model_id)
+
+        display_name = model.get("name") or model_id
+        context_length = model.get("context_length") or None
+        pricing = model.get("pricing") or {}
+
+        try:
+            input_cost = float(pricing.get("prompt", 0) or 0) * 1_000_000
+        except (TypeError, ValueError):
+            input_cost = None
+        try:
+            output_cost = float(pricing.get("completion", 0) or 0) * 1_000_000
+        except (TypeError, ValueError):
+            output_cost = None
+
+        architecture = model.get("architecture") or {}
+        modality = str(architecture.get("modality") or "text->text")
+        supports_image_input = "image" in modality.split("->")[0]
+        domain = "any" if supports_image_input else "text"
+
+        existing = session.get(ModelCatalogRow, model_id)
+        if existing is None:
+            session.add(ModelCatalogRow(
+                id=model_id, source="openrouter", type="llm", domain=domain,
+                enabled=False, display_name=display_name, description="",
+                context_length=context_length,
+                input_cost_usd_per_mtok=input_cost, output_cost_usd_per_mtok=output_cost,
+                synced_at=now,
+            ))
+        else:
+            existing.synced_at = now
+            existing.display_name = display_name
+            existing.context_length = context_length
+            existing.input_cost_usd_per_mtok = input_cost
+            existing.output_cost_usd_per_mtok = output_cost
+            existing.domain = domain
+
+    if seen_ids:
+        stale = session.query(ModelCatalogRow).filter(
+            ModelCatalogRow.source == "openrouter",
+            ModelCatalogRow.id.notin_(seen_ids),
+        ).all()
+        for m in stale:
+            m.enabled = False
+
+    session.commit()
+
+
+@router.post("/models/sync-openrouter")
+def sync_openrouter_models(
+    _admin: Annotated[AuthenticatedUser, Depends(require_admin)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> list[dict]:
+    row = session.get(SiteSettingsRow, "openrouter.api_key")
+    if not row or not row.value:
+        raise HTTPException(status_code=422, detail="OpenRouter API key not configured. Set it first.")
+    _sync_openrouter_catalog(row.value, session)
+    rows = session.query(ModelCatalogRow).order_by(ModelCatalogRow.type, ModelCatalogRow.id).all()
+    return [_model_dict(r) for r in rows]

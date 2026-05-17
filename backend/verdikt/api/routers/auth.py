@@ -409,6 +409,77 @@ def sync_venice_models_personal(
     return {"ok": True}
 
 
+# ── Per-user OpenRouter API key ───────────────────────────────────────────────
+
+def _encrypt_user_openrouter_key(raw_key: str, jwt_secret: str) -> str:
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    wrap_key = HKDF(
+        algorithm=hashes.SHA256(), length=32, salt=None,
+        info=b"verdikt-user-openrouter-key-wrap-v1",
+    ).derive(jwt_secret.encode())
+    return Fernet(base64.urlsafe_b64encode(wrap_key)).encrypt(raw_key.encode()).decode()
+
+
+class SetOpenRouterKeyRequest(BaseModel):
+    api_key: str
+
+
+@router.put("/me/openrouter-key")
+def set_openrouter_key(
+    body: SetOpenRouterKeyRequest,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    if not body.api_key.strip():
+        raise HTTPException(status_code=400, detail="api_key must not be empty")
+    config = get_config()
+    row = session.get(UserRow, user.id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    row.openrouter_api_key_enc = _encrypt_user_openrouter_key(body.api_key.strip(), config.jwt_secret)
+    session.commit()
+    return {"ok": True}
+
+
+@router.delete("/me/openrouter-key")
+def delete_openrouter_key(
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    row = session.get(UserRow, user.id)
+    if row is not None:
+        row.openrouter_api_key_enc = None
+        session.commit()
+    return {"ok": True}
+
+
+@router.get("/me/openrouter-key/status")
+def openrouter_key_status(
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_auth_session)],
+):
+    row = session.get(UserRow, user.id)
+    configured = bool(row and getattr(row, "openrouter_api_key_enc", None))
+    return {"configured": configured}
+
+
+@router.post("/me/openrouter-key/sync-models")
+def sync_openrouter_models_personal(
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_auth_session)],
+) -> dict:
+    """Sync OpenRouter model catalog using the current user's personal OpenRouter API key."""
+    from verdikt.api.routers.admin import _sync_openrouter_catalog
+    from verdikt.inference.resolver import _get_user_openrouter_key
+    api_key = _get_user_openrouter_key(user.id, session)
+    if not api_key:
+        raise HTTPException(status_code=422, detail="No personal OpenRouter API key configured.")
+    _sync_openrouter_catalog(api_key, session)
+    return {"ok": True}
+
+
 # ── OAuth ─────────────────────────────────────────────────────────────────────
 
 _OAUTH_PROVIDERS = {

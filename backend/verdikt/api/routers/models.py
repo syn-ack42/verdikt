@@ -67,15 +67,16 @@ def get_domain_availability(
 def list_enabled_models(
     type: str | None = None,
     domain: str | None = None,
-    include_personal_venice: bool = False,
+    include_personal: bool = False,
+    include_personal_venice: bool = False,  # legacy alias
     user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_auth_session),
 ) -> list[dict]:
     """Return admin-enabled models, optionally filtered by type and/or domain.
 
-    When include_personal_venice=true and the current user has a personal Venice API key
-    configured, also includes disabled Venice models (so the personal section of the
-    model picker can show the full Venice catalog).
+    When include_personal=true and the current user has a personal Venice or OpenRouter API key
+    configured, also includes disabled models for those providers (so the personal section of the
+    model picker can show the full catalog for each configured provider).
     """
     q = session.query(ModelCatalogRow).filter(ModelCatalogRow.enabled == True)  # noqa: E712
     if type is not None:
@@ -85,11 +86,18 @@ def list_enabled_models(
     site_rows = q.order_by(ModelCatalogRow.type, ModelCatalogRow.id).all()
 
     personal_rows: list[ModelCatalogRow] = []
-    if include_personal_venice:
+    if include_personal or include_personal_venice:
         from verdikt.storage.auth_orm import UserRow
         user_row = session.get(UserRow, user.id)
+        personal_sources: list[str] = []
         if user_row and getattr(user_row, "venice_api_key_enc", None):
-            personal_q = session.query(ModelCatalogRow).filter(ModelCatalogRow.source == "venice")
+            personal_sources.append("venice")
+        if user_row and getattr(user_row, "openrouter_api_key_enc", None):
+            personal_sources.append("openrouter")
+        if personal_sources:
+            personal_q = session.query(ModelCatalogRow).filter(
+                ModelCatalogRow.source.in_(personal_sources)
+            )
             if type is not None:
                 personal_q = personal_q.filter(ModelCatalogRow.type == type)
             if domain is not None:

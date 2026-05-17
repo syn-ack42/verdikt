@@ -176,7 +176,7 @@ class ProfileCrystalliser:
         return profile, total_prompt, total_completion
 
     def _call_llm(self, prompt: str) -> tuple[str, int, int]:
-        if self._target.provider == "venice":
+        if self._target.provider in ("venice", "openrouter"):
             return self._call_openai_compat(prompt)
         return self._call_ollama(prompt)
 

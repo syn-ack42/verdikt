@@ -25,6 +25,8 @@ export default function AdminModels() {
   const [addForm, setAddForm] = useState({ id: '', type: 'embedding', domain: 'text', display_name: '', description: '' })
   const [veniceKey, setVeniceKey] = useState('')
   const [showVeniceKey, setShowVeniceKey] = useState(false)
+  const [openRouterKey, setOpenRouterKey] = useState('')
+  const [showOpenRouterKey, setShowOpenRouterKey] = useState(false)
   const [sortBy, setSortBy] = useState('display_name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [search, setSearch] = useState('')
@@ -44,6 +46,11 @@ export default function AdminModels() {
   const { data: veniceStatus } = useQuery({
     queryKey: ['venice-status'],
     queryFn: () => api.admin.getVeniceStatus(),
+  })
+
+  const { data: openRouterStatus } = useQuery({
+    queryKey: ['openrouter-status'],
+    queryFn: () => api.admin.getOpenRouterStatus(),
   })
 
   const sync = useMutation({
@@ -71,6 +78,29 @@ export default function AdminModels() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-models'] })
       qc.invalidateQueries({ queryKey: ['venice-status'] })
+    },
+  })
+
+  const saveOpenRouterKey = useMutation({
+    mutationFn: () => api.admin.setOpenRouterKey(openRouterKey),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['openrouter-status'] })
+      setOpenRouterKey('')
+    },
+  })
+
+  const clearOpenRouterKey = useMutation({
+    mutationFn: () => api.admin.deleteOpenRouterKey(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['openrouter-status'] })
+    },
+  })
+
+  const syncOpenRouter = useMutation({
+    mutationFn: () => api.admin.syncOpenRouterModels(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-models'] })
+      qc.invalidateQueries({ queryKey: ['openrouter-status'] })
     },
   })
 
@@ -216,6 +246,63 @@ export default function AdminModels() {
         {(syncVenice.isError || saveVeniceKey.isError || clearVeniceKey.isError) && (
           <p style={{ color: '#c00', fontSize: 12, margin: '8px 0 0' }}>
             {String(syncVenice.error || saveVeniceKey.error || clearVeniceKey.error)}
+          </p>
+        )}
+      </div>
+
+      {/* OpenRouter section */}
+      <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>OpenRouter</span>
+          {openRouterStatus && (
+            <span style={{ fontSize: 12, color: openRouterStatus.configured ? '#059669' : 'var(--text-muted)' }}>
+              {openRouterStatus.configured
+                ? `Key set · ${openRouterStatus.model_count} model${openRouterStatus.model_count !== 1 ? 's' : ''} synced`
+                : 'No API key set'}
+            </span>
+          )}
+          <button
+            onClick={() => syncOpenRouter.mutate()}
+            disabled={syncOpenRouter.isPending || !openRouterStatus?.configured}
+            style={{ padding: '5px 12px', borderRadius: 4, fontSize: 12, border: '1px solid var(--border)', cursor: 'pointer' }}
+          >
+            {syncOpenRouter.isPending ? 'Syncing…' : '↻ Sync OpenRouter models'}
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+          <input
+            type={showOpenRouterKey ? 'text' : 'password'}
+            value={openRouterKey}
+            onChange={e => setOpenRouterKey(e.target.value)}
+            placeholder="OpenRouter API key (sk-or-…)"
+            style={{ flex: 1, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}
+          />
+          <button
+            onClick={() => setShowOpenRouterKey(v => !v)}
+            style={{ padding: '6px 10px', borderRadius: 4, fontSize: 12, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+          >
+            {showOpenRouterKey ? 'Hide' : 'Show'}
+          </button>
+          <button
+            onClick={() => saveOpenRouterKey.mutate()}
+            disabled={saveOpenRouterKey.isPending || !openRouterKey.trim()}
+            style={{ padding: '6px 14px', borderRadius: 4, fontSize: 12, border: 'none', background: '#0ea5e9', color: '#fff', cursor: 'pointer' }}
+          >
+            {saveOpenRouterKey.isPending ? 'Saving…' : 'Save key'}
+          </button>
+          {openRouterStatus?.configured && (
+            <button
+              onClick={() => clearOpenRouterKey.mutate()}
+              disabled={clearOpenRouterKey.isPending}
+              style={{ padding: '6px 14px', borderRadius: 4, fontSize: 12, border: '1px solid rgba(192,0,0,0.3)', background: 'none', color: '#c00', cursor: 'pointer' }}
+            >
+              {clearOpenRouterKey.isPending ? 'Clearing…' : 'Clear key'}
+            </button>
+          )}
+        </div>
+        {(syncOpenRouter.isError || saveOpenRouterKey.isError || clearOpenRouterKey.isError) && (
+          <p style={{ color: '#c00', fontSize: 12, margin: '8px 0 0' }}>
+            {String(syncOpenRouter.error || saveOpenRouterKey.error || clearOpenRouterKey.error)}
           </p>
         )}
       </div>

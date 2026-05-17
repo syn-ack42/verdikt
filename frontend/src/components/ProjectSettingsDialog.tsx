@@ -79,15 +79,19 @@ export default function ProjectSettingsDialog({ project, onClose }: Props) {
     queryKey: ['venice-key-status'],
     queryFn: () => api.auth.veniceKeyStatus(),
   })
-  const hasPersonalVeniceKey = veniceKeyStatus?.configured ?? false
+  const { data: openRouterKeyStatus } = useQuery({
+    queryKey: ['openrouter-key-status'],
+    queryFn: () => api.auth.openRouterKeyStatus(),
+  })
+  const hasPersonalKey = (veniceKeyStatus?.configured || openRouterKeyStatus?.configured) ?? false
 
   const { data: llmModels } = useQuery({
-    queryKey: ['models', 'llm', project.domain, hasPersonalVeniceKey],
-    queryFn: () => api.models.list('llm', project.domain, hasPersonalVeniceKey),
+    queryKey: ['models', 'llm', project.domain, hasPersonalKey],
+    queryFn: () => api.models.list('llm', project.domain, hasPersonalKey),
   })
   const { data: embModels } = useQuery({
-    queryKey: ['models', 'embedding', project.domain, hasPersonalVeniceKey],
-    queryFn: () => api.models.list('embedding', project.domain, hasPersonalVeniceKey),
+    queryKey: ['models', 'embedding', project.domain, hasPersonalKey],
+    queryFn: () => api.models.list('embedding', project.domain, hasPersonalKey),
     enabled: !isImage,
   })
 

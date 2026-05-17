@@ -7,11 +7,12 @@ from verdikt.core.models import Domain, Project
 from verdikt.inference.base import EmbedderBase
 
 VENICE_BASE_URL = "https://api.venice.ai/api/v1"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 @dataclass
 class LLMTarget:
-    provider: str       # "ollama" | "venice"
+    provider: str       # "ollama" | "venice" | "openrouter"
     base_url: str
     model: str
     api_key: str | None = None
@@ -23,6 +24,25 @@ def _get_venice_key(auth_session) -> str | None:
     return row.value if row and row.value else None
 
 
+def _get_openrouter_key(auth_session) -> str | None:
+    from verdikt.storage.auth_orm import SiteSettingsRow
+    row = auth_session.get(SiteSettingsRow, "openrouter.api_key")
+    return row.value if row and row.value else None
+
+
+def _decrypt_user_key(encrypted: str, jwt_secret: str, info: bytes) -> str:
+    import base64
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    wrap_key = HKDF(
+        algorithm=hashes.SHA256(), length=32, salt=None,
+        info=info,
+    ).derive(jwt_secret.encode())
+    raw = Fernet(base64.urlsafe_b64encode(wrap_key)).decrypt(encrypted.encode())
+    return raw.decode()
+
+
 def _get_user_venice_key(user_id: str, auth_session) -> str | None:
     """Return the decrypted personal Venice API key for a user, or None if not set."""
     from verdikt.storage.auth_orm import UserRow
@@ -31,17 +51,22 @@ def _get_user_venice_key(user_id: str, auth_session) -> str | None:
         return None
     try:
         from verdikt.api.deps import get_config
-        from cryptography.fernet import Fernet
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-        import base64
         config = get_config()
-        wrap_key = HKDF(
-            algorithm=hashes.SHA256(), length=32, salt=None,
-            info=b"verdikt-user-venice-key-wrap-v1",
-        ).derive(config.jwt_secret.encode())
-        raw = Fernet(base64.urlsafe_b64encode(wrap_key)).decrypt(row.venice_api_key_enc.encode())
-        return raw.decode()
+        return _decrypt_user_key(row.venice_api_key_enc, config.jwt_secret, b"verdikt-user-venice-key-wrap-v1")
+    except Exception:
+        return None
+
+
+def _get_user_openrouter_key(user_id: str, auth_session) -> str | None:
+    """Return the decrypted personal OpenRouter API key for a user, or None if not set."""
+    from verdikt.storage.auth_orm import UserRow
+    row = auth_session.get(UserRow, user_id)
+    if not row or not getattr(row, "openrouter_api_key_enc", None):
+        return None
+    try:
+        from verdikt.api.deps import get_config
+        config = get_config()
+        return _decrypt_user_key(row.openrouter_api_key_enc, config.jwt_secret, b"verdikt-user-openrouter-key-wrap-v1")
     except Exception:
         return None
 
@@ -50,29 +75,41 @@ def resolve_llm_target(project: Project, config: AppConfig, auth_session, user_i
     """Return LLMTarget for the project's LLM.
 
     If project.llm_key_source == "personal" and user_id is provided, uses the user's
-    own Venice API key (no fallback to site key). Raises if the key is not configured.
+    own provider API key (Venice or OpenRouter, determined by model source).
+    Raises if the key is not configured.
 
-    Otherwise routes to Venice (site key) or Ollama based on ModelCatalogRow.source.
+    Otherwise routes to Venice/OpenRouter (site key) or Ollama based on ModelCatalogRow.source.
     """
     model_id = project.llm_model or config.inference.ollama_model
 
-    if getattr(project, "llm_key_source", None) == "personal":
-        if not user_id:
-            raise RuntimeError("Personal Venice key requested but no user context available")
-        api_key = _get_user_venice_key(user_id, auth_session)
-        if not api_key:
-            raise RuntimeError(
-                "No personal Venice API key configured. Add it in Account Settings."
-            )
-        return LLMTarget(provider="venice", base_url=VENICE_BASE_URL, model=model_id, api_key=api_key)
-
     from verdikt.storage.auth_orm import ModelCatalogRow
     row = auth_session.get(ModelCatalogRow, model_id)
-    if row and row.source == "venice":
+    model_source = row.source if row else "ollama"
+
+    if getattr(project, "llm_key_source", None) == "personal":
+        if not user_id:
+            raise RuntimeError("Personal API key requested but no user context available")
+        if model_source == "openrouter":
+            api_key = _get_user_openrouter_key(user_id, auth_session)
+            if not api_key:
+                raise RuntimeError("No personal OpenRouter API key configured. Add it in Account Settings.")
+            return LLMTarget(provider="openrouter", base_url=OPENROUTER_BASE_URL, model=model_id, api_key=api_key)
+        else:
+            api_key = _get_user_venice_key(user_id, auth_session)
+            if not api_key:
+                raise RuntimeError("No personal Venice API key configured. Add it in Account Settings.")
+            return LLMTarget(provider="venice", base_url=VENICE_BASE_URL, model=model_id, api_key=api_key)
+
+    if model_source == "venice":
         api_key = _get_venice_key(auth_session)
         if not api_key:
             raise RuntimeError("Venice API key not configured. Set it in Admin → Model Catalog.")
         return LLMTarget(provider="venice", base_url=VENICE_BASE_URL, model=model_id, api_key=api_key)
+    if model_source == "openrouter":
+        api_key = _get_openrouter_key(auth_session)
+        if not api_key:
+            raise RuntimeError("OpenRouter API key not configured. Set it in Admin → Model Catalog.")
+        return LLMTarget(provider="openrouter", base_url=OPENROUTER_BASE_URL, model=model_id, api_key=api_key)
     return LLMTarget(provider="ollama", base_url=config.inference.ollama_base_url, model=model_id)
 
 

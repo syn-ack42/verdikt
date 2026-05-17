@@ -137,6 +137,9 @@ def _migrate_auth_db(engine: Engine) -> None:
         if "venice_api_key_enc" not in user_cols:
             conn.execute(_text("ALTER TABLE users ADD COLUMN venice_api_key_enc TEXT"))
             conn.commit()
+        if "openrouter_api_key_enc" not in user_cols:
+            conn.execute(_text("ALTER TABLE users ADD COLUMN openrouter_api_key_enc TEXT"))
+            conn.commit()
 
 
 def get_auth_session() -> Generator[Session, None, None]:

@@ -112,9 +112,11 @@ export default function ModelPickerTable({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 500, fontSize: 13 }}>{m.display_name}</span>
-            {isPersonal && <Badge label="Personal key" color="#7c3aed" />}
+            {isPersonal && m.source === 'openrouter' && <Badge label="OpenRouter · Personal" color="#0ea5e9" />}
+            {isPersonal && m.source !== 'openrouter' && <Badge label="Venice · Personal" color="#7c3aed" />}
             {!isPersonal && m.source === 'venice' && <Badge label="Charged via site" color="#7c3aed" />}
-            {!isPersonal && m.source !== 'venice' && <Badge label="Local" color="#666" />}
+            {!isPersonal && m.source === 'openrouter' && <Badge label="Charged via site" color="#0ea5e9" />}
+            {!isPersonal && m.source !== 'venice' && m.source !== 'openrouter' && <Badge label="Local" color="#666" />}
             {m.is_default && !isPersonal && <Badge label="★ Default" color="#c08020" />}
             {m.privacy === 'private' && (
               <span title="Venice does not log or retain prompts" style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'rgba(5,150,105,0.12)', color: '#059669', fontWeight: 600, letterSpacing: 0.3, flexShrink: 0 }}>🔒 Private</span>

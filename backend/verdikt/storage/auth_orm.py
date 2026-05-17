@@ -37,6 +37,8 @@ class UserRow(AuthBase):
     oauth_db_key_enc: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Personal Venice API key (encrypted; null = no personal key configured)
     venice_api_key_enc: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Personal OpenRouter API key (encrypted; null = no personal key configured)
+    openrouter_api_key_enc: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class TokenUsageRow(AuthBase):

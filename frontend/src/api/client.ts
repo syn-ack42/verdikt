@@ -75,6 +75,10 @@ export const api = {
     setVeniceKey: (api_key: string) => req<{ ok: boolean }>('PUT', '/auth/me/venice-key', { api_key }),
     deleteVeniceKey: () => req<{ ok: boolean }>('DELETE', '/auth/me/venice-key'),
     syncVeniceModels: () => req<{ ok: boolean }>('POST', '/auth/me/venice-key/sync-models'),
+    openRouterKeyStatus: () => req<{ configured: boolean }>('GET', '/auth/me/openrouter-key/status'),
+    setOpenRouterKey: (api_key: string) => req<{ ok: boolean }>('PUT', '/auth/me/openrouter-key', { api_key }),
+    deleteOpenRouterKey: () => req<{ ok: boolean }>('DELETE', '/auth/me/openrouter-key'),
+    syncOpenRouterModels: () => req<{ ok: boolean }>('POST', '/auth/me/openrouter-key/sync-models'),
   },
   admin: {
     listUsers: () => req<User[]>('GET', '/admin/users'),
@@ -103,6 +107,10 @@ export const api = {
     setVeniceKey: (api_key: string) => req<{ ok: boolean }>('PUT', '/admin/venice/key', { api_key }),
     deleteVeniceKey: () => req<{ ok: boolean }>('DELETE', '/admin/venice/key'),
     syncVeniceModels: () => req<ModelCatalogEntry[]>('POST', '/admin/models/sync-venice'),
+    getOpenRouterStatus: () => req<{ configured: boolean; model_count: number }>('GET', '/admin/openrouter/status'),
+    setOpenRouterKey: (api_key: string) => req<{ ok: boolean }>('PUT', '/admin/openrouter/key', { api_key }),
+    deleteOpenRouterKey: () => req<{ ok: boolean }>('DELETE', '/admin/openrouter/key'),
+    syncOpenRouterModels: () => req<ModelCatalogEntry[]>('POST', '/admin/models/sync-openrouter'),
   },
   usage: {
     get: () => req<UsageSummary>('GET', '/usage'),
@@ -110,11 +118,11 @@ export const api = {
   models: {
     defaults: () => req<{ llm_by_domain: Record<string, string | null> }>('GET', '/models/defaults'),
     domainAvailability: () => req<Record<string, boolean>>('GET', '/models/domain-availability'),
-    list: (type?: string, domain?: string, includePersonalVenice?: boolean) => {
+    list: (type?: string, domain?: string, includePersonal?: boolean) => {
       const p = new URLSearchParams()
       if (type) p.set('type', type)
       if (domain) p.set('domain', domain)
-      if (includePersonalVenice) p.set('include_personal_venice', 'true')
+      if (includePersonal) p.set('include_personal', 'true')
       const qs = p.toString()
       return req<ModelCatalogEntry[]>('GET', `/models${qs ? `?${qs}` : ''}`)
     },

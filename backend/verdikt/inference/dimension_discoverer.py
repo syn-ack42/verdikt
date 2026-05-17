@@ -194,7 +194,7 @@ class DimensionDiscoverer:
             ) from exc
 
     def _call_llm(self, prompt: str, image_b64: str | None = None) -> tuple[str, int, int]:
-        if self._target.provider == "venice":
+        if self._target.provider in ("venice", "openrouter"):
             return self._call_openai_compat(prompt, image_b64)
         return self._call_ollama(prompt, image_b64)
 
