@@ -165,13 +165,18 @@ Venice.ai provides an OpenAI-compatible hosted LLM + embedding API (`https://api
 ```python
 @dataclass
 class LLMTarget:
-    provider: str       # "ollama" | "venice"
+    provider: str       # "ollama" | "venice" | "openrouter"
     base_url: str
     model: str
     api_key: str | None = None
 ```
 
-`resolve_llm_target(project, config, auth_session) -> LLMTarget` looks up the project's `llm_model` in `ModelCatalogRow`; if `source == "venice"` it reads `SiteSettingsRow("venice.api_key")` and returns a Venice target, otherwise returns an Ollama target. `resolve_embedder(project, config, auth_session=None)` does the same for embedding models — when the model's catalog row has `source == "venice"` it returns `VeniceEmbedder`.
+`resolve_llm_target(project, config, auth_session) -> LLMTarget` looks up the project's `llm_model` in `ModelCatalogRow`; dispatches on `source`:
+- `"venice"` → reads `SiteSettingsRow("venice.api_key")`, raises `RuntimeError` if missing, returns a Venice target
+- `"openrouter"` → reads `SiteSettingsRow("openrouter.api_key")`, raises `RuntimeError` if missing, returns an OpenRouter target
+- `"ollama"` / anything else → reads optional `SiteSettingsRow("ollama.api_key")`, returns an Ollama target (key may be `None`)
+
+`resolve_embedder(project, config, auth_session=None)` does the same for embedding models — when the model's catalog row has `source == "venice"` it returns `VeniceEmbedder`.
 
 ### OpenAI-compat LLM call
 
@@ -212,6 +217,45 @@ Shown as a coloured badge in the admin model list and appended to the cost notic
 
 No DB schema changes — `SiteSettingsRow` and `ModelCatalogRow.source` already existed.
 
+## OpenRouter integration
+
+OpenRouter (`https://openrouter.ai/api/v1`) provides an OpenAI-compatible gateway to hundreds of hosted models. Uses the same `_call_openai_compat()` code path as Venice. No embedding support (OpenRouter models always `source="openrouter"`, never used for embeddings).
+
+### Admin endpoints
+
+- `PUT /api/admin/openrouter/key` — upserts `SiteSettingsRow("openrouter.api_key")`
+- `DELETE /api/admin/openrouter/key` — removes the key
+- `GET /api/admin/openrouter/status` → `{configured: bool, model_count: int}`
+- `POST /api/admin/models/sync-openrouter` — fetches `GET https://openrouter.ai/api/v1/models`, classifies LLM models (no embeddings), upserts `ModelCatalogRow` with `source="openrouter"`, parses pricing from `pricing.prompt`/`pricing.completion` fields
+
+### Frontend
+
+`AdminModels.tsx` has an OpenRouter section (key input + save/clear, status, sync button) alongside the Venice section. Model list shows a teal `OpenRouter` badge for `source === "openrouter"` rows. `ProjectSettingsDialog.tsx` shows the same cost notice as Venice when an OpenRouter model is selected.
+
+## Ollama authentication (optional)
+
+Ollama has no built-in auth, but admins may put it behind a reverse proxy that requires a Bearer token. The site-wide key is optional — when blank, all behaviour is identical to before.
+
+### How it works
+
+- Key stored as `SiteSettingsRow("ollama.api_key")` in `auth.db` (same key-value table as Venice/OpenRouter keys, no migration needed)
+- `_get_ollama_key(auth_session) -> str | None` in `resolver.py` reads the row; returns `None` when absent
+- `resolve_llm_target` Ollama path passes `api_key=_get_ollama_key(auth_session)` to `LLMTarget`
+- `resolve_embedder` passes `api_key=_get_ollama_key(auth_session) if auth_session else None` to `OllamaEmbedder`
+- All Ollama `httpx.post()` calls in `LLMJudge`, `ProfileCrystalliser`, and `DimensionDiscoverer` build `headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}` and pass it to the request
+- `OllamaEmbedder.__init__` accepts `api_key: str | None = None`; `embed()` applies the same conditional header
+- Catalog sync (`sync_models`): reads the key and passes `headers=extra_headers` to `ollama.Client(host=..., headers=extra_headers)` so the Python SDK also authenticates
+
+### Admin endpoints
+
+- `PUT /api/admin/ollama/key` — upserts `SiteSettingsRow("ollama.api_key")`
+- `DELETE /api/admin/ollama/key` — removes the key
+- `GET /api/admin/ollama/status` → `{configured: bool}`
+
+### Frontend
+
+`AdminModels.tsx` has an Ollama section at the top of the Model Catalog page (above Venice and OpenRouter) containing: optional Bearer token input with show/hide, save/clear buttons, status indicator, and the "↻ Sync from Ollama" button. A note clarifies the key is optional (standard Ollama installs need no key).
+
 ## Build order (milestones)
 
 1. ✅ `MaterialItem` dataclass + SQLite schema + `FileDropPlugin` + chunk/embed/cluster pipeline (no UI)
@@ -224,7 +268,7 @@ No DB schema changes — `SiteSettingsRow` and `ModelCatalogRow.source` already 
 8. ✅ `ImmichPlugin` + remote content protocol + chunk descriptions from LLM judge + Immich writeback (star ratings + `#verdikt:` descriptions)
 9. ✅ Discovery mode — dimension discovery from like/dislike reactions; dimension weights surfaced in UI
 10. ✅ `RoyalRoadPlugin` — HTML scraping, two-stage Gaussian chapter+paragraph sampling, login/following-list support, works search box
-11. ✅ Venice.ai integration (Phase 1) — admin-managed API key + model sync; `LLMTarget` abstraction; Venice LLM + embedding in all inference paths; cost notice in project settings
+11. ✅ Venice.ai integration (Phase 1) — admin-managed API key + model sync; `LLMTarget` abstraction; Venice LLM + embedding in all inference paths; cost notice in project settings; OpenRouter integration (same code path, no embeddings); optional Ollama Bearer-token auth forwarded to all Ollama HTTP calls and catalog sync
 
 ## Discovery mode
 

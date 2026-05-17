@@ -61,8 +61,20 @@ def _mock_venice_response(data: dict, prompt_tokens: int = 10, completion_tokens
 
 
 @pytest.fixture
+def judge_with_auth() -> LLMJudge:
+    target = LLMTarget(provider="ollama", base_url="http://localhost:11434", model="llama3.1:8b", api_key="my-token")
+    return LLMJudge(target)
+
+
+@pytest.fixture
 def venice_judge() -> LLMJudge:
     target = LLMTarget(provider="venice", base_url="https://api.venice.ai/api/v1", model="llama-3.3-70b", api_key="sk-test")
+    return LLMJudge(target)
+
+
+@pytest.fixture
+def openrouter_judge() -> LLMJudge:
+    target = LLMTarget(provider="openrouter", base_url="https://openrouter.ai/api/v1", model="anthropic/claude-3.5-sonnet", api_key="sk-or-test")
     return LLMJudge(target)
 
 
@@ -166,6 +178,26 @@ def test_explanations_partial_when_dimension_missing(judge, project, profile):
     assert "Pacing" not in explanations
 
 
+# ── Ollama auth header ────────────────────────────────────────────────────────
+
+def test_ollama_auth_header_sent_when_key_set(judge_with_auth, project, profile):
+    payload = {"Prose": {"score": 4, "explanation": "ok"}, "Pacing": {"score": 3, "explanation": "ok"}}
+    with patch("verdikt.inference.judge.httpx.post", return_value=_mock_response(payload)) as mock_post:
+        judge_with_auth.score_chunk("Text", profile, project)
+
+    headers = mock_post.call_args[1]["headers"]
+    assert headers.get("Authorization") == "Bearer my-token"
+
+
+def test_ollama_no_auth_header_when_no_key(judge, project, profile):
+    payload = {"Prose": {"score": 4, "explanation": "ok"}, "Pacing": {"score": 3, "explanation": "ok"}}
+    with patch("verdikt.inference.judge.httpx.post", return_value=_mock_response(payload)) as mock_post:
+        judge.score_chunk("Text", profile, project)
+
+    headers = mock_post.call_args[1]["headers"]
+    assert "Authorization" not in headers
+
+
 # ── Venice path ───────────────────────────────────────────────────────────────
 
 def test_venice_scores_extracted(venice_judge, project, profile):
@@ -218,3 +250,27 @@ def test_venice_404_raises_model_not_found(venice_judge, project, profile):
     with patch("verdikt.inference.judge.httpx.post", side_effect=exc):
         with pytest.raises(RuntimeError, match="not found on Venice"):
             venice_judge.score_chunk("Text", profile, project)
+
+
+# ── OpenRouter path ───────────────────────────────────────────────────────────
+
+def test_openrouter_uses_chat_completions_endpoint(openrouter_judge, project, profile):
+    payload = {"Prose": {"score": 4, "explanation": "ok"}, "Pacing": {"score": 3, "explanation": "ok"}}
+    with patch("verdikt.inference.judge.httpx.post", return_value=_mock_venice_response(payload)) as mock_post:
+        openrouter_judge.score_chunk("Text", profile, project)
+
+    url = mock_post.call_args[0][0]
+    assert "chat/completions" in url
+    assert mock_post.call_args[1]["headers"]["Authorization"] == "Bearer sk-or-test"
+
+
+def test_openrouter_scores_extracted(openrouter_judge, project, profile):
+    payload = {
+        "Prose": {"score": 5, "explanation": "Excellent."},
+        "Pacing": {"score": 4, "explanation": "Good."},
+    }
+    with patch("verdikt.inference.judge.httpx.post", return_value=_mock_venice_response(payload)):
+        scores, overall, explanations, _desc = openrouter_judge.score_chunk("Text", profile, project)
+
+    assert scores == {"Prose": 5.0, "Pacing": 4.0}
+    assert explanations["Prose"] == "Excellent."

@@ -99,20 +99,34 @@ def test_resolve_llm_model_falls_back_to_config():
 
 # ── resolve_llm_target ────────────────────────────────────────────────────────
 
-def _auth_session(model_id: str, source: str = "ollama", venice_key: str | None = None) -> MagicMock:
-    """Build a mock auth session that returns a catalog row and optional Venice key."""
+def _auth_session(
+    model_id: str,
+    source: str = "ollama",
+    venice_key: str | None = None,
+    openrouter_key: str | None = None,
+    ollama_key: str | None = None,
+) -> MagicMock:
+    """Build a mock auth session that returns a catalog row and optional site keys."""
     catalog_row = MagicMock(spec=ModelCatalogRow)
     catalog_row.source = source
 
-    key_row = MagicMock(spec=SiteSettingsRow)
-    key_row.value = venice_key
+    site_keys = {
+        "venice.api_key": venice_key,
+        "openrouter.api_key": openrouter_key,
+        "ollama.api_key": ollama_key,
+    }
 
     session = MagicMock()
     def _get(cls, pk):
         if cls is ModelCatalogRow:
             return catalog_row
         if cls is SiteSettingsRow:
-            return key_row if venice_key is not None else None
+            val = site_keys.get(pk)
+            if val is None:
+                return None
+            row = MagicMock(spec=SiteSettingsRow)
+            row.value = val
+            return row
         return None
     session.get.side_effect = _get
     return session
@@ -125,6 +139,14 @@ def test_resolve_llm_target_ollama():
     assert target.provider == "ollama"
     assert target.model == "mistral:7b"
     assert target.api_key is None
+
+
+def test_resolve_llm_target_ollama_with_auth_key():
+    proj = _project(llm_model="mistral:7b")
+    session = _auth_session("mistral:7b", source="ollama", ollama_key="my-bearer-token")
+    target = resolve_llm_target(proj, _config(), session)
+    assert target.provider == "ollama"
+    assert target.api_key == "my-bearer-token"
 
 
 def test_resolve_llm_target_venice():
@@ -141,6 +163,23 @@ def test_resolve_llm_target_venice_missing_key_raises():
     proj = _project(llm_model="llama-3.3-70b")
     session = _auth_session("llama-3.3-70b", source="venice", venice_key=None)
     with pytest.raises(RuntimeError, match="Venice API key not configured"):
+        resolve_llm_target(proj, _config(), session)
+
+
+def test_resolve_llm_target_openrouter():
+    proj = _project(llm_model="anthropic/claude-3.5-sonnet")
+    session = _auth_session("anthropic/claude-3.5-sonnet", source="openrouter", openrouter_key="sk-or-test")
+    target = resolve_llm_target(proj, _config(), session)
+    assert target.provider == "openrouter"
+    assert target.model == "anthropic/claude-3.5-sonnet"
+    assert target.api_key == "sk-or-test"
+    assert "openrouter.ai" in target.base_url
+
+
+def test_resolve_llm_target_openrouter_missing_key_raises():
+    proj = _project(llm_model="anthropic/claude-3.5-sonnet")
+    session = _auth_session("anthropic/claude-3.5-sonnet", source="openrouter")
+    with pytest.raises(RuntimeError, match="OpenRouter API key not configured"):
         resolve_llm_target(proj, _config(), session)
 
 
@@ -195,3 +234,35 @@ def test_resolve_embedder_no_auth_session_skips_venice_check():
     with patch.object(SentenceTransformerEmbedder, "__init__", return_value=None):
         emb = resolve_embedder(proj, _config())  # no auth_session
     assert isinstance(emb, SentenceTransformerEmbedder)
+
+
+def test_resolve_embedder_ollama_passes_auth_key():
+    """Ollama auth key is forwarded to OllamaEmbedder when configured."""
+    from verdikt.inference.ollama_embedder import OllamaEmbedder
+    proj = _project(Domain.TEXT, embedding_model="nomic-embed-text:latest")
+    session = _auth_session("nomic-embed-text:latest", source="ollama", ollama_key="tok-123")
+
+    captured_kwargs: dict = {}
+    def _fake_init(self, model_name, base_url, api_key=None):
+        captured_kwargs["api_key"] = api_key
+
+    with patch.object(OllamaEmbedder, "__init__", _fake_init):
+        resolve_embedder(proj, _config(), session)
+
+    assert captured_kwargs["api_key"] == "tok-123"
+
+
+def test_resolve_embedder_ollama_no_key_when_unconfigured():
+    """No api_key is passed to OllamaEmbedder when none is configured."""
+    from verdikt.inference.ollama_embedder import OllamaEmbedder
+    proj = _project(Domain.TEXT, embedding_model="nomic-embed-text:latest")
+    session = _auth_session("nomic-embed-text:latest", source="ollama")  # no ollama_key
+
+    captured_kwargs: dict = {}
+    def _fake_init(self, model_name, base_url, api_key=None):
+        captured_kwargs["api_key"] = api_key
+
+    with patch.object(OllamaEmbedder, "__init__", _fake_init):
+        resolve_embedder(proj, _config(), session)
+
+    assert captured_kwargs["api_key"] is None

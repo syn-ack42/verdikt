@@ -80,6 +80,16 @@ def _make_venice_crystalliser() -> ProfileCrystalliser:
     return ProfileCrystalliser(target)
 
 
+def _make_crystalliser_with_auth() -> ProfileCrystalliser:
+    target = LLMTarget(provider="ollama", base_url="http://localhost:11434", model="llama3.1:8b", api_key="my-bearer-token")
+    return ProfileCrystalliser(target)
+
+
+def _make_openrouter_crystalliser() -> ProfileCrystalliser:
+    target = LLMTarget(provider="openrouter", base_url="https://openrouter.ai/api/v1", model="anthropic/claude-3.5-sonnet", api_key="sk-or-test")
+    return ProfileCrystalliser(target)
+
+
 # ── _truncate ─────────────────────────────────────────────────────────────────
 
 def test_truncate_short_text():
@@ -224,8 +234,8 @@ def test_crystallise_prompt_includes_high_and_low_examples():
         c.crystallise(project, ratings, chunks)
 
     dim_prompt = captured[0]
-    assert "High-scoring" in dim_prompt
-    assert "Low-scoring" in dim_prompt
+    assert "Highest-rated" in dim_prompt
+    assert "Lowest-rated" in dim_prompt
 
 
 def test_crystallise_long_content_truncated_in_prompt():
@@ -431,3 +441,82 @@ def test_venice_crystalliser_404_raises_model_not_found():
     with patch("verdikt.inference.crystalliser.httpx.post", side_effect=exc):
         with pytest.raises(RuntimeError, match="not found on Venice"):
             c.crystallise(project, ratings, chunks)
+
+
+# ── Ollama auth header ─────────────────────────────────────────────────────────
+
+def test_ollama_auth_header_sent_when_key_set():
+    project = _make_project([("Prose", "Writing quality")])
+    chunks = {"c1": _make_chunk("c1", "Text " * 10)}
+    ratings = [_make_rating(project.id, "c1", "m1", {"Prose": 4.0})]
+
+    c = _make_crystalliser_with_auth()
+    with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
+        mock_post.return_value = _ollama_response("Prefers clear prose.")
+        c.crystallise(project, ratings, chunks)
+
+    headers = mock_post.call_args[1]["headers"]
+    assert headers.get("Authorization") == "Bearer my-bearer-token"
+
+
+def test_ollama_no_auth_header_when_no_key():
+    project = _make_project([("Prose", "Writing quality")])
+    chunks = {"c1": _make_chunk("c1", "Text " * 10)}
+    ratings = [_make_rating(project.id, "c1", "m1", {"Prose": 4.0})]
+
+    c = _make_crystalliser()
+    with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
+        mock_post.return_value = _ollama_response("Prefers clear prose.")
+        c.crystallise(project, ratings, chunks)
+
+    headers = mock_post.call_args[1]["headers"]
+    assert "Authorization" not in headers
+
+
+# ── OpenRouter path ───────────────────────────────────────────────────────────
+
+def test_openrouter_crystalliser_uses_chat_completions_endpoint():
+    project = _make_project([("Style", "Style")])
+    chunks = {"c1": _make_chunk("c1", "Text " * 10)}
+    ratings = [_make_rating(project.id, "c1", "m1", {"Style": 3.0})]
+
+    c = _make_openrouter_crystalliser()
+    called_urls: list[str] = []
+    def capture(url, **kwargs):
+        called_urls.append(url)
+        return _venice_response("Summary.")
+
+    with patch("verdikt.inference.crystalliser.httpx.post", side_effect=capture):
+        c.crystallise(project, ratings, chunks)
+
+    assert all("chat/completions" in u for u in called_urls)
+    assert all("openrouter.ai" in u for u in called_urls)
+
+
+def test_openrouter_crystalliser_sends_auth_header():
+    project = _make_project([("Prose", "Quality")])
+    chunks = {"c1": _make_chunk("c1", "Text " * 10)}
+    ratings = [_make_rating(project.id, "c1", "m1", {"Prose": 4.0})]
+
+    c = _make_openrouter_crystalliser()
+    with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
+        mock_post.return_value = _venice_response("Good prose taste.")
+        c.crystallise(project, ratings, chunks)
+
+    headers = mock_post.call_args[1]["headers"]
+    assert headers.get("Authorization") == "Bearer sk-or-test"
+
+
+def test_openrouter_crystalliser_produces_profile():
+    project = _make_project([("Prose", "Writing quality")])
+    chunks = {"c1": _make_chunk("c1", "Great writing " * 10)}
+    ratings = [_make_rating(project.id, "c1", "m1", {"Prose": 4.0})]
+
+    c = _make_openrouter_crystalliser()
+    with patch("verdikt.inference.crystalliser.httpx.post") as mock_post:
+        mock_post.return_value = _venice_response("User prefers literary prose.")
+        profile, pt, ct = c.crystallise(project, ratings, chunks)
+
+    assert profile.dimensions[0].summary == "User prefers literary prose."
+    assert pt > 0
+    assert ct > 0
