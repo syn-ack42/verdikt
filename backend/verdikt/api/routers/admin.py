@@ -17,6 +17,8 @@ from verdikt.storage.auth_orm import ModelCatalogRow, SiteSettingsRow, TokenGran
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 _ph = PasswordHasher()
 
+from verdikt.inference.prompts import PROMPT_KEYS as _PROMPT_KEYS
+
 _DEFAULT_SETTINGS: dict[str, str] = {
     "default_storage_limit_mb": "10",
     "default_daily_token_grant": "",          # empty = unlimited
@@ -27,6 +29,7 @@ _DEFAULT_SETTINGS: dict[str, str] = {
     "smtp_password": "",
     "smtp_from": "",
     "smtp_use_tls": "true",
+    **_PROMPT_KEYS,
 }
 
 

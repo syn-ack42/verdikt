@@ -16,6 +16,7 @@ from verdikt.api.token_budget import check_token_budget, record_usage
 from verdikt.core.models import DiscoveryRating, RatingDimension
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.dimension_discoverer import DimensionDiscoverer
+from verdikt.inference.prompts import load_prompts
 from verdikt.inference.resolver import resolve_llm_target
 from verdikt.pipeline.selector import RatingSelector
 from verdikt.storage.orm import ProjectRow
@@ -233,7 +234,7 @@ def start_analysis(
     _target = target
 
     def _run() -> None:
-        discoverer = DimensionDiscoverer(target=_target)
+        discoverer = DimensionDiscoverer(target=_target, prompts=load_prompts(auth_session))
         prompt_tokens = 0
         completion_tokens = 0
         descriptions: list[tuple[float, str]] = []

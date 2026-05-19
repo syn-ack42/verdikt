@@ -20,6 +20,7 @@ from verdikt.api.token_budget import check_token_budget, record_usage
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.core.models import DimensionProfile, PreferenceProfile
 from verdikt.inference.crystalliser import ProfileCrystalliser
+from verdikt.inference.prompts import load_prompts
 from verdikt.inference.resolver import resolve_llm_target
 from verdikt.storage.sqlite import (
     SQLiteChunkStore, SQLiteProfileStore, SQLiteProjectStore, SQLiteRatingStore,
@@ -119,7 +120,7 @@ def crystallise_profile(
 
     config = get_config()
     target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
-    crystalliser = ProfileCrystalliser(target)
+    crystalliser = ProfileCrystalliser(target, prompts=load_prompts(auth_session))
     _crystallise_status[project_id] = {"running": True, "tokens_prompt": 0, "tokens_completion": 0}
     log.info("crystallise: starting for project %s (user=%s, model=%s, ratings=%d)",
              project_id, user.id, target.model, len(non_skipped))
@@ -193,7 +194,7 @@ async def crystallise_stream(
 
     config = get_config()
     target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
-    crystalliser = ProfileCrystalliser(target)
+    crystalliser = ProfileCrystalliser(target, prompts=load_prompts(auth_session))
 
     _user = user
     _user_id = user.id

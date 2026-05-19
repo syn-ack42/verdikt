@@ -7,6 +7,7 @@ import logging
 import httpx
 
 from verdikt.core.models import PreferenceProfile, Project
+from verdikt.inference.prompts import PROMPT_KEYS, load_prompts, render
 from verdikt.inference.resolver import LLMTarget
 
 log = logging.getLogger(__name__)
@@ -22,10 +23,17 @@ def _truncate(text: str, max_words: int = _MAX_WORDS) -> str:
 
 
 class LLMJudge:
-    def __init__(self, target: LLMTarget, timeout: float = 300.0, temperature: float | None = None) -> None:
+    def __init__(
+        self,
+        target: LLMTarget,
+        timeout: float = 300.0,
+        temperature: float | None = None,
+        prompts: dict[str, str] | None = None,
+    ) -> None:
         self._target = target
         self._timeout = timeout
         self._temperature = temperature
+        self._prompts = prompts or dict(PROMPT_KEYS)
         # Accumulates (prompt_tokens, completion_tokens) per call; flush after each run.
         self.usage: list[tuple[int, int]] = []
 
@@ -55,17 +63,7 @@ class LLMJudge:
             "1-2 sentence neutral factual description of what the passage is about (topic, scene, content type, narrative voice) — no evaluative language"
         )
 
-        score_rubric = (
-            "Score guide (predict the score THIS USER would give — not an objective quality rating):\n"
-            "  1 = strongly dislikes — clearly contradicts their stated preferences\n"
-            "  2 = dislikes — misses what they value; generic, forgettable, or unremarkable\n"
-            "  3 = mixed — has some qualities they value and some they don't; a genuine trade-off\n"
-            "  4 = likes — clearly shows qualities they value\n"
-            "  5 = strongly likes — exemplifies exactly what they want\n"
-            "Use the full range. Do NOT inflate scores: content that is merely inoffensive "
-            "or unremarkable scores 2, not 3 or 4. The typical score shown per dimension is "
-            "the user's historical average — use it as a calibration anchor."
-        )
+        score_rubric = self._prompts.get("prompt.judge.score_rubric", PROMPT_KEYS["prompt.judge.score_rubric"])
 
         # Build an explicit per-dimension schema so the model knows exactly what keys to emit
         dim_schema = ",\n".join(
@@ -74,24 +72,16 @@ class LLMJudge:
         )
         response_schema = f'{{\n{dim_schema},\n  "description": "<{description_hint}>"\n}}'
 
-        if is_image:
-            prompt = (
-                f"You are predicting how a person with specific taste preferences would rate an {content_label}.\n\n"
-                f"{score_rubric}\n\n"
-                f"Their overall preferences:\n{profile.overall_summary}\n\n"
-                f"Per-dimension preferences (typical score = their historical average for calibration):\n{dim_lines}\n\n"
-                f"Evaluate the attached image.\n\n"
-                f"Respond with a JSON object only (no prose, no markdown):\n{response_schema}"
-            )
-        else:
-            prompt = (
-                f"You are predicting how a person with specific taste preferences would rate a {content_label}.\n\n"
-                f"{score_rubric}\n\n"
-                f"Their overall preferences:\n{profile.overall_summary}\n\n"
-                f"Per-dimension preferences (typical score = their historical average for calibration):\n{dim_lines}\n\n"
-                f"Passage to evaluate:\n{_truncate(chunk_content)}\n\n"
-                f"Respond with a JSON object only (no prose, no markdown):\n{response_schema}"
-            )
+        template_key = "prompt.judge.image" if is_image else "prompt.judge.text"
+        template = self._prompts.get(template_key, PROMPT_KEYS[template_key])
+        prompt = render(
+            template,
+            SCORE_RUBRIC=score_rubric,
+            OVERALL_SUMMARY=profile.overall_summary,
+            DIM_LINES=dim_lines,
+            CONTENT="" if is_image else _truncate(chunk_content),  # type: ignore[arg-type]
+            RESPONSE_SCHEMA=response_schema,
+        )
 
         image_b64 = base64.b64encode(chunk_content).decode() if is_image else None
         raw, prompt_tokens, completion_tokens = self._call_llm(prompt, image_b64)

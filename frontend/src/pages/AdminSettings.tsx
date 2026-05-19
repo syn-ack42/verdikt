@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
+import PromptEditor from '../components/PromptEditor'
 import type { SiteSettings, User } from '../api/types'
 
 function Field({ label, help, children }: { label: string; help?: string; children: React.ReactNode }) {
@@ -134,6 +135,86 @@ export default function AdminSettings() {
           )}
         </div>
       </section>
+
+      {/* AI Prompts */}
+      <details style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 20, overflow: 'hidden' }}>
+        <summary style={{ padding: '14px 20px', fontSize: 15, fontWeight: 600, cursor: 'pointer', userSelect: 'none', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>▶</span> AI Prompts
+          <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 4 }}>
+            — customise the instructions sent to the language model
+          </span>
+        </summary>
+        <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0', lineHeight: 1.6 }}>
+            Placeholders are written as <code style={{ background: 'rgba(107,125,224,0.12)', color: '#4755b8', padding: '1px 5px', borderRadius: 3 }}>{'{{TOKEN}}'}</code>.
+            They are highlighted in the editor — blue if recognised, red if unknown.
+            Click a token pill to insert it at the cursor. Leave a field blank to use the built-in default.
+          </p>
+
+          {([
+            {
+              key: 'prompt.judge.score_rubric' as const,
+              label: 'Score rubric',
+              help: 'The 1–5 scale explanation injected as {{SCORE_RUBRIC}} into the text and image scoring prompts.',
+              tokens: [],
+              rows: 7,
+            },
+            {
+              key: 'prompt.judge.text' as const,
+              label: 'Scoring — text passages',
+              help: 'Prompt used when scoring a text chunk against the preference profile.',
+              tokens: ['SCORE_RUBRIC', 'OVERALL_SUMMARY', 'DIM_LINES', 'CONTENT', 'RESPONSE_SCHEMA'],
+              rows: 12,
+            },
+            {
+              key: 'prompt.judge.image' as const,
+              label: 'Scoring — images',
+              help: 'Prompt used when scoring an image. The image is attached separately; omit {{CONTENT}}.',
+              tokens: ['SCORE_RUBRIC', 'OVERALL_SUMMARY', 'DIM_LINES', 'RESPONSE_SCHEMA'],
+              rows: 10,
+            },
+            {
+              key: 'prompt.crystalliser.dimension' as const,
+              label: 'Crystalliser — dimension summary',
+              help: 'Describes what drives a high vs low score on a single dimension. Called once per dimension during crystallisation.',
+              tokens: ['DOMAIN', 'DIM_NAME', 'DIM_DESCRIPTION', 'EXAMPLES', 'CONTRAST_INSTRUCTION'],
+              rows: 12,
+            },
+            {
+              key: 'prompt.crystalliser.overall' as const,
+              label: 'Crystalliser — overall profile synthesis',
+              help: 'Synthesises all dimension summaries into a single coherent preference profile.',
+              tokens: ['DIM_COUNT', 'DIMENSIONS_LIST'],
+              rows: 10,
+            },
+            {
+              key: 'prompt.discoverer.qualities' as const,
+              label: 'Discovery — chunk quality description',
+              help: 'Describes the 2–3 most characteristic qualities of a content sample that drove the user\'s reaction.',
+              tokens: ['LABEL', 'MEDIUM', 'REASON_BLOCK', 'CONTENT_BLOCK'],
+              rows: 10,
+            },
+            {
+              key: 'prompt.discoverer.dimensions' as const,
+              label: 'Discovery — dimension extraction',
+              help: 'Analyses liked vs disliked quality descriptions and proposes rating dimensions.',
+              tokens: ['DOMAIN', 'LIKED_BLOCK', 'DISLIKED_BLOCK', 'EXISTING_BLOCK'],
+              rows: 16,
+            },
+          ] as const).map(({ key, label, help, tokens, rows }) => (
+            <div key={key}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 3 }}>{label}</label>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '0 0 6px' }}>{help}</p>
+              <PromptEditor
+                value={merged[key] ?? ''}
+                onChange={v => setForm(p => ({ ...p, [key]: v }))}
+                tokens={tokens as unknown as string[]}
+                rows={rows}
+              />
+            </div>
+          ))}
+        </div>
+      </details>
 
       {save.isError && <p style={{ color: '#c00', fontSize: 13 }}>{(save.error as Error).message}</p>}
 

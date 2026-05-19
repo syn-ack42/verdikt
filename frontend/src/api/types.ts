@@ -22,6 +22,13 @@ export interface SiteSettings {
   smtp_password: string
   smtp_from: string
   smtp_use_tls: string
+  'prompt.judge.score_rubric': string
+  'prompt.judge.text': string
+  'prompt.judge.image': string
+  'prompt.crystalliser.dimension': string
+  'prompt.crystalliser.overall': string
+  'prompt.discoverer.qualities': string
+  'prompt.discoverer.dimensions': string
 }
 
 export interface TokenWindowStats {

@@ -13,6 +13,7 @@ from verdikt.api.token_budget import check_token_budget, record_usage
 from verdikt.core.user_models import AuthenticatedUser
 from verdikt.inference.ai_rater import AIRater
 from verdikt.inference.judge import LLMJudge
+from verdikt.inference.prompts import load_prompts
 from verdikt.inference.resolver import resolve_embedder, resolve_llm_target
 from verdikt.storage.chroma import ChromaVectorStore
 from verdikt.core.models import Rating
@@ -115,7 +116,7 @@ def start_ai_rating(
         raise HTTPException(status_code=503, detail=str(exc))
     chroma = get_cached_chroma_client(user.id)
     vector_store = ChromaVectorStore(chroma, f"project_{project_id}")
-    judge = LLMJudge(target, timeout=config.inference.ollama_timeout, temperature=proj.judge_temperature if proj.judge_temperature is not None else config.inference.judge_temperature)
+    judge = LLMJudge(target, timeout=config.inference.ollama_timeout, temperature=proj.judge_temperature if proj.judge_temperature is not None else config.inference.judge_temperature, prompts=load_prompts(auth_session))
 
     # Take copies for the thread (session is not thread-safe; import lazily for testability)
     from sqlalchemy.orm import Session as _Session
@@ -268,7 +269,7 @@ def ai_preview_rating(
         target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
-    judge = LLMJudge(target, timeout=config.inference.ollama_timeout, temperature=proj.judge_temperature if proj.judge_temperature is not None else config.inference.judge_temperature)
+    judge = LLMJudge(target, timeout=config.inference.ollama_timeout, temperature=proj.judge_temperature if proj.judge_temperature is not None else config.inference.judge_temperature, prompts=load_prompts(auth_session))
 
     lock = _get_preview_lock(project_id)
     if not lock.acquire(blocking=False):
@@ -333,7 +334,7 @@ def rate_chunk_ai(
         target = resolve_llm_target(proj, config, auth_session, user_id=user.id)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
-    judge = LLMJudge(target, timeout=config.inference.ollama_timeout, temperature=proj.judge_temperature if proj.judge_temperature is not None else config.inference.judge_temperature)
+    judge = LLMJudge(target, timeout=config.inference.ollama_timeout, temperature=proj.judge_temperature if proj.judge_temperature is not None else config.inference.judge_temperature, prompts=load_prompts(auth_session))
 
     chunk_store = SQLiteChunkStore(session)
     rating_store = SQLiteRatingStore(session)
@@ -396,3 +397,14 @@ def get_ai_rating_status(
     state["unconfirmed_ai_count"] = len(SQLiteRatingStore(session).list_unconfirmed_ai(project_id))
 
     return state
+
+
+@router.delete("/unconfirmed", status_code=200)
+def delete_unconfirmed_ai_ratings(
+    project_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    _get_project_or_404(project_id, session)
+    deleted = SQLiteRatingStore(session).delete_unconfirmed_ai(project_id)
+    session.commit()
+    return {"deleted": deleted}

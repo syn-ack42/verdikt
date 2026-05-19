@@ -6,6 +6,7 @@ from typing import Callable
 import httpx
 
 from verdikt.core.models import Chunk, DiscoveryAnalysisResult, DiscoveryRating, DimensionProposal, Project
+from verdikt.inference.prompts import PROMPT_KEYS, load_prompts, render
 from verdikt.inference.resolver import LLMTarget
 
 
@@ -28,8 +29,9 @@ def _preference_label(preference: float) -> str:
 
 
 class DimensionDiscoverer:
-    def __init__(self, target: LLMTarget) -> None:
+    def __init__(self, target: LLMTarget, prompts: dict[str, str] | None = None) -> None:
         self._target = target
+        self._prompts = prompts or dict(PROMPT_KEYS)
 
     def analyse(
         self,
@@ -91,16 +93,12 @@ class DimensionDiscoverer:
             image_b64 = None
 
         reason_block = f' The user said: "{dr.reason}".' if dr.reason else ""
-        prompt = (
-            f"A user {label} this {medium}.{reason_block}"
-            f"{content_block}\n\n"
-            f"Describe the 2–3 most characteristic qualities of this {medium} that likely "
-            f"drove the user's reaction. Consider all relevant dimensions: aesthetic and visual "
-            f"qualities (style, composition, tone, mood), structural qualities (pacing, structure, "
-            f"density), and the type of content or subject matter itself (e.g. action, intimacy, "
-            f"technical detail, humour, a particular subject or setting) — any of these can be a "
-            f"genuine driver of preference. Be specific and concrete.\n"
-            f'Respond with JSON only: {{"qualities": "<your 2-3 sentence description>"}}'
+        prompt = render(
+            self._prompts.get("prompt.discoverer.qualities", PROMPT_KEYS["prompt.discoverer.qualities"]),
+            LABEL=label,
+            MEDIUM=medium,
+            REASON_BLOCK=reason_block,
+            CONTENT_BLOCK=content_block,
         )
 
         try:
@@ -138,28 +136,12 @@ class DimensionDiscoverer:
 
         domain_hint = "images" if project.domain == "image" else "text content"
 
-        prompt = (
-            f"You are helping a user discover what they care about in {domain_hint}. "
-            f"Below are quality-descriptions of samples they reacted to strongly, "
-            f"labelled by how much they liked or disliked each sample.\n\n"
-            f"LIKED samples:\n{liked_block}\n\n"
-            f"DISLIKED samples:\n{disliked_block}"
-            f"{existing_block}\n\n"
-            f"Based on the contrast between liked and disliked qualities, identify 3–6 rating "
-            f"dimensions that capture what matters most to this user.\n\n"
-            f"For each proposed dimension:\n"
-            f"  - name: short label (2–4 words)\n"
-            f"  - description: one sentence describing what a HIGH score means\n"
-            f"  - weight: importance to this user "
-            f"(0.5=weak signal, 1.0=normal, 1.5–2.0=consistently decisive)\n"
-            f"  - is_new: true unless it clearly maps to an existing dimension by name\n"
-            f"  - existing_name: the existing dimension name it replaces (or null)\n\n"
-            f"Also list any existing dimensions whose qualities NEVER appeared in either liked "
-            f"or disliked descriptions as irrelevant_existing.\n\n"
-            f"Respond with JSON only:\n"
-            f'{{"proposed_dimensions": [{{"name":"...","description":"...","weight":1.0,"is_new":true,"existing_name":null}}], '
-            f'"irrelevant_existing": [], '
-            f'"analysis_notes": null}}'
+        prompt = render(
+            self._prompts.get("prompt.discoverer.dimensions", PROMPT_KEYS["prompt.discoverer.dimensions"]),
+            DOMAIN=domain_hint,
+            LIKED_BLOCK=liked_block,
+            DISLIKED_BLOCK=disliked_block,
+            EXISTING_BLOCK=existing_block,
         )
 
         try:

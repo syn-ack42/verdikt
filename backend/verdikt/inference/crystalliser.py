@@ -10,6 +10,7 @@ import httpx
 log = logging.getLogger(__name__)
 
 from verdikt.core.models import Chunk, DimensionProfile, PreferenceProfile, Project, Rating
+from verdikt.inference.prompts import PROMPT_KEYS, load_prompts, render
 from verdikt.inference.resolver import LLMTarget
 
 
@@ -25,8 +26,9 @@ def _truncate(text: str, max_words: int) -> str:
 
 
 class ProfileCrystalliser:
-    def __init__(self, target: LLMTarget) -> None:
+    def __init__(self, target: LLMTarget, prompts: dict[str, str] | None = None) -> None:
         self._target = target
+        self._prompts = prompts or dict(PROMPT_KEYS)
 
     def crystallise(
         self,
@@ -107,16 +109,13 @@ class ProfileCrystalliser:
                     "examples but absent or reversed in the low-scoring ones."
                 )
 
-            prompt = (
-                f"A user has rated {domain_hint} on the dimension '{dim.name}': {dim.description}.\n\n"
-                f"{examples_text}"
-                f"{contrast_instruction}\n\n"
-                f"Write 2–4 sentences that describe the specific properties of {domain_hint} that drive "
-                f"a high vs low score on '{dim.name}' for this user. "
-                f"Be concrete: name the actual visual qualities, subjects, styles, techniques, or content "
-                f"characteristics you observe — not just that the user 'prefers high-scoring' examples, "
-                f"which would be a tautology. "
-                f'Respond with a JSON object: {{"summary": "<your summary here>"}}'
+            prompt = render(
+                self._prompts.get("prompt.crystalliser.dimension", PROMPT_KEYS["prompt.crystalliser.dimension"]),
+                DOMAIN=domain_hint,
+                DIM_NAME=dim.name,
+                DIM_DESCRIPTION=dim.description,
+                EXAMPLES=examples_text,
+                CONTRAST_INSTRUCTION=contrast_instruction,
             )
 
             log.debug("crystalliser: calling LLM for dim '%s' (project=%s)", dim.name, project.id)
@@ -139,17 +138,14 @@ class ProfileCrystalliser:
                 typical_score=round(typical_score, 2),
             ))
 
-        overall_prompt = (
-            f"A user's preferences have been analysed across {len(dimensions)} dimensions:\n\n"
-            + "\n".join(
-                f"- {d.name} (avg score {d.typical_score:.1f}/5): {d.summary}"
-                for d in dimensions
-            )
-            + "\n\nWrite a 3–5 sentence synthesis of this user's overall preferences. "
-            "Focus on the concrete visual or content qualities that characterise what they enjoy — "
-            "drawing out patterns that cut across multiple dimensions where they exist. "
-            "Avoid restating each dimension in turn; synthesise into a coherent picture of their taste. "
-            'Respond with a JSON object: {"summary": "<your summary here>"}'
+        dimensions_list = "\n".join(
+            f"- {d.name} (avg score {d.typical_score:.1f}/5): {d.summary}"
+            for d in dimensions
+        )
+        overall_prompt = render(
+            self._prompts.get("prompt.crystalliser.overall", PROMPT_KEYS["prompt.crystalliser.overall"]),
+            DIM_COUNT=str(len(dimensions)),
+            DIMENSIONS_LIST=dimensions_list,
         )
         overall_raw, opt, oct = self._call_llm(overall_prompt)
         total_prompt += opt
